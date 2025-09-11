@@ -1,0 +1,61 @@
+// This file is part of Notepad++ plugin MIME Tools project
+// Copyright (C)2023 Don HO <don.h@free.fr>
+
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// at your option any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+
+#include <windows.h>
+#include "NppVim.h"
+
+#define VERSION_VALUE "0.1\0"
+#define VERSION_DIGITALVALUE 0, 1, 0
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION	VERSION_DIGITALVALUE
+PRODUCTVERSION	VERSION_DIGITALVALUE
+FILEFLAGSMASK	0x3fL
+FILEFLAGS 0
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_APP
+FILESUBTYPE VFT2_UNKNOWN
+BEGIN
+	BLOCK	"VarFileInfo"
+	BEGIN
+		VALUE	"Translation",	0x409,	1200
+	END
+	BLOCK	"StringFileInfo"
+	BEGIN
+		BLOCK "040904b0"
+		BEGIN
+			VALUE	"FileDescription",	"Vim mode plugin for Notepad++\0"
+			VALUE	"FileVersion",	VERSION_VALUE
+			VALUE	"InternalName",	"NppVim.dll\0"
+			VALUE	"LegalCopyright",	"NULL\0"
+			VALUE	"OriginalFilename",	"NppVim.dll\0"
+			VALUE	"ProductName",	"NppVim\0"
+			VALUE	"ProductVersion",	VERSION_VALUE
+		END
+	END
+END
+
+IDD_ABOUTBOX DIALOGEX 0, 0, 223, 130
+STYLE DS_SETFONT | DS_FIXEDSYS | WS_POPUP | WS_BORDER | WS_SYSMENU
+FONT 8, "MS Shell Dlg", 0, 0, 0x1
+BEGIN
+    PUSHBUTTON      "Close",IDCLOSE,86,109,50,14
+    GROUPBOX        "NppVim",IDC_STATIC,10,9,201,93,BS_CENTER
+    LTEXT           "Author : h\-jangra",IDC_STATIC,30,26,70,8
+    LTEXT           "Version : ",IDC_STATIC,30,43,31,8
+    LTEXT           VERSION_VALUE, IDC_STATIC,65,43,40,8
+END
