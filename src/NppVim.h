@@ -25,10 +25,5 @@
 #endif
  
 void ToggleVimMode();
-void UpdateStatusBar();
-void ToggleToInsertMode(HWND hwndEdit);
-void ToggleToNormalMode(HWND hwndEdit);
-void HandleKeyPress(HWND hwndEdit, WPARAM wParam);
-void SetCursorStyle(HWND hwndEdit);
 void about();
 
