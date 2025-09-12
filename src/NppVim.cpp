@@ -103,11 +103,30 @@ void setVisualSelection(HWND hwndEdit)
     if (visualAnchor < 0) return;
     int caret = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
 
-    int a = (std::min)(visualAnchor, caret);
-    int b = (std::max)(visualAnchor, caret);
+    int a, b;
+
+    if (isLineVisual)
+    {
+        // Compute line-wise selection
+        int line1 = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, visualAnchor, 0);
+        int line2 = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, caret, 0);
+
+        int start = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, (std::min)(line1, line2), 0);
+        int end = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, (std::max)(line1, line2), 0);
+
+        a = start;
+        b = end;
+    }
+    else
+    {
+        // Char-wise selection
+        a = (std::min)(visualAnchor, caret);
+        b = (std::max)(visualAnchor, caret);
+    }
 
     ::SendMessage(hwndEdit, SCI_SETSEL, a, b);
 }
+
 
 // delete current line (caret stays roughly at same line)
 void DeleteLineOnce(HWND hwndEdit)
@@ -220,8 +239,14 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
         // handle motions & commands
         switch (c)
         {
-        case 'h': DoMotion_char_left(hwndEdit, count); break;
-        case 'l': DoMotion_char_right(hwndEdit, count); break;
+        case 'h':
+            DoMotion_char_left(hwndEdit, count);
+            if (currentMode == VISUAL) setVisualSelection(hwndEdit);
+            break;
+        case 'l': 
+            DoMotion_char_right(hwndEdit, count);
+            if (currentMode == VISUAL) setVisualSelection(hwndEdit);
+            break;
         case 'j':
             DoMotion_line_down(hwndEdit, count);
             if (currentMode == VISUAL) setVisualSelection(hwndEdit);
@@ -263,6 +288,26 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
         case 'p':
             ::SendMessage(hwndEdit, SCI_PASTE, 0, 0);
             break;
+
+        case '0':
+        {
+            int line = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0), 0);
+            int pos = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, line, 0);
+            ::SendMessage(hwndEdit, SCI_GOTOPOS, pos, 0);
+            if (currentMode == VISUAL) setVisualSelection(hwndEdit);
+            break;
+        }
+        case '$': // move to line end
+        {
+            for (int i = 0; i < count; i++)
+            {
+                int line = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0), 0);
+                int pos = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, line, 0);
+                ::SendMessage(hwndEdit, SCI_GOTOPOS, pos, 0);
+            }
+            if (currentMode == VISUAL) setVisualSelection(hwndEdit);
+            break;
+        }
         default:
             // unknown command — ignore (and block insertion)
             break;
@@ -355,6 +400,16 @@ extern "C" __declspec(dllexport) FuncItem* getFuncsArray(int* nbF)
     funcItem[0]._pFunc = ToggleVimMode;
     funcItem[0]._pShKey = NULL;
     funcItem[0]._init2Check = false;
+
+    lstrcpy(funcItem[1]._itemName, TEXT("--SEPARATOR--"));
+    funcItem[1]._pFunc = NULL;
+    funcItem[1]._pShKey = NULL;
+    funcItem[1]._init2Check = false;
+
+    lstrcpy(funcItem[2]._itemName, TEXT("About"));
+    funcItem[2]._pFunc = about;
+    funcItem[2]._pShKey = NULL;
+    funcItem[2]._init2Check = false;
 
     return funcItem;
 }
