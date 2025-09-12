@@ -1,72 +1,33 @@
 # NppVim
 
-NppVim is a Notepad++ plugin that brings Vim-style modal editing and key bindings to Notepad++. It allows you to use familiar Vim navigation, editing, and selection commands directly in Notepad++.
+NppVim is a Notepad++ plugin that brings Vim-style modal editing and key bindings to Notepad++.
 
 ## Features
 
-- **Vim Modes:**  
-  - **Normal Mode:** Navigate and manipulate text using Vim-like commands.
-  - **Insert Mode:** Type and edit text as in standard Notepad++.
-  - **Visual Mode:** Select text using Vim-style motions (character-wise and line-wise).
-
-- **Mode Switching:**
-  - `i` — Enter Insert mode.
-  - `v` — Enter/exit Visual (character-wise) mode.
-  - `V` — Enter/exit Visual Line mode.
-  - `ESC` — Return to Normal mode from Insert or Visual mode.
-
-- **Navigation (Normal/Visual mode):**
-  - `h` — Move cursor left.
-  - `l` — Move cursor right.
-  - `j` — Move cursor down.
-  - `k` — Move cursor up.
-  - `w` — Move to start of next word.
-  - `b` — Move to start of previous word.
-  - `0` — Move to start of line (only if not entering a repeat count).
-  - `$` — Move to end of line.
-
-- **Repeat Counts:**
-  - Prefix navigation and editing commands with a number to repeat them (e.g., `3j` moves down 3 lines).
-
-- **Editing:**
-  - `dd` — Delete current line (can be repeated, e.g., `3dd`).
-  - `yy` — Yank (copy) current line (can be repeated).
-  - `p` — Paste clipboard at cursor.
-  - `D` — Delete from cursor to end of line.
-  - `u` — Undo last change.
-  - `o` — Open a new line below and enter Insert mode.
-
-- **Visual Mode:**
-  - Use navigation keys (`h`, `j`, `k`, `l`, `w`, `b`, `0`, `$`) to expand/shrink selection.
-  - `v` — Exit Visual mode (if in character-wise).
-  - `V` — Exit Visual mode (if in line-wise).
-
-- **Other:**
-  - **About:** Menu entry to show plugin information.
-  - **Toggle Vim Mode:** Menu entry to switch between Normal and Insert mode.
+* **Modes:** Normal, Insert, Visual (character/line-wise).
+* **Mode Switching:** `i` → Insert, `v` → Visual, `V` → Visual Line, `ESC` → Normal.
+* **Navigation:** `h`, `j`, `k`, `l`, `w`, `b`, `0`, `$`.
+* **Editing:** `dd` (delete line), `yy` (yank line), `p` (paste), `D` (delete to end), `u` (undo), `o` (new line).
+* **Repeat Counts:** Prefix commands with numbers (e.g., `3j`).
+* **Visual Mode:** Expand/shrink selection using navigation keys.
+* **Extras:** Toggle Vim Mode and view About info from the menu.
 
 ## Installation
 
-1. Build the plugin using Visual Studio 2022 (C++14).
-2. Place the compiled DLL in the Notepad++ `plugins` directory.
+1. Build with Visual Studio 2022 (C++14).
+2. Place DLL in Notepad++ `plugins` folder.
 3. Restart Notepad++.
 
 ## Usage
 
-- After installation, use the menu entry **Toggle Vim Mode** to enable/disable Vim emulation.
-- Use the key bindings above to navigate and edit text as you would in Vim.
+Enable Vim emulation via **Toggle Vim Mode**. Use the key bindings as in Vim.
 
 ## Notes
 
-- Only a subset of Vim's features are implemented.
-- The plugin is modal: most keys are interpreted as commands in Normal/Visual mode, and as text input in Insert mode.
-- Repeat counts work for most navigation and editing commands.
-- Visual mode supports both character-wise and line-wise selection.
+* Partial Vim support.
+* Modal behavior: commands in Normal/Visual, typing in Insert.
+* Repeat counts supported for most commands.
 
 ## License
 
-See [LICENSE](LICENSE) for details.
-
----
-
-**Enjoy modal editing in Notepad++ with NppVim!**
+See [LICENSE](LICENSE).
