@@ -1,5 +1,4 @@
-﻿// NppVim.cpp
-#include "PluginInterface.h"
+﻿#include "PluginInterface.h"
 #include "Scintilla.h"
 #include "Notepad_plus_msgs.h"
 #include <windows.h>
@@ -10,11 +9,8 @@
 
 #define NOMINMAX
 
-// ---------------------------
-// Globals
-// ---------------------------
 HINSTANCE g_hInstance = nullptr;
-NppData nppData; // define here to avoid linker issues
+NppData nppData;
 const TCHAR PLUGIN_NAME[] = TEXT("NppVim");
 const int nbFunc = 3;
 FuncItem funcItem[nbFunc];
@@ -28,9 +24,22 @@ static int repeatCount = 0;
 static char opPending = 0; // 'd' or 'y' when waiting for second key
 static std::map<HWND, WNDPROC> origProcMap;
 
-// ---------------------------
-// Helpers
-// ---------------------------
+static bool vimModeEnabled = false;
+
+enum LastOpType { OP_NONE, OP_DELETE_LINE, OP_YANK_LINE, OP_PASTE_LINE, OP_MOTION };
+
+struct LastOperation {
+    LastOpType type = OP_NONE;
+    int count = 1;
+    char motion = 0; // for motions: 'h','j','k','l','w','b'
+};
+static LastOperation lastOp;
+void RecordLastOp(LastOpType type, int count = 1, char motion = 0) {
+    lastOp.type = type;
+    lastOp.count = count;
+    lastOp.motion = motion;
+}
+
 HWND getCurrentScintillaHandle()
 {
     int which = 0;
@@ -81,7 +90,6 @@ void enterVisualCharMode(HWND hwndEdit)
     currentMode = VISUAL;
     isLineVisual = false;
     visualAnchor = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
-    // selection initially empty; anchor is stored
     setStatus(TEXT("-- VISUAL --"));
 }
 
@@ -107,7 +115,6 @@ void setVisualSelection(HWND hwndEdit)
 
     if (isLineVisual)
     {
-        // Compute line-wise selection
         int line1 = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, visualAnchor, 0);
         int line2 = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, caret, 0);
 
@@ -119,7 +126,6 @@ void setVisualSelection(HWND hwndEdit)
     }
     else
     {
-        // Char-wise selection
         a = (std::min)(visualAnchor, caret);
         b = (std::max)(visualAnchor, caret);
     }
@@ -128,14 +134,12 @@ void setVisualSelection(HWND hwndEdit)
 }
 
 
-// delete current line (caret stays roughly at same line)
 void DeleteLineOnce(HWND hwndEdit)
 {
     ::SendMessage(hwndEdit, SCI_HOME, 0, 0);
     ::SendMessage(hwndEdit, SCI_LINEDELETE, 0, 0);
 }
 
-// yank (copy) single line into clipboard
 void YankLineOnce(HWND hwndEdit)
 {
     int caret = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
@@ -144,8 +148,6 @@ void YankLineOnce(HWND hwndEdit)
     int end = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, line, 0);
     ::SendMessage(hwndEdit, SCI_COPYRANGE, start, end);
 }
-
-// apply a motion 'count' times (helpers)
 void DoMotion_char_left(HWND hwndEdit, int count) { for (int i = 0; i < count; i++) ::SendMessage(hwndEdit, SCI_CHARLEFT, 0, 0); }
 void DoMotion_char_right(HWND hwndEdit, int count) { for (int i = 0; i < count; i++) ::SendMessage(hwndEdit, SCI_CHARRIGHT, 0, 0); }
 void DoMotion_line_down(HWND hwndEdit, int count) { for (int i = 0; i < count; i++) ::SendMessage(hwndEdit, SCI_LINEDOWN, 0, 0); }
@@ -153,15 +155,48 @@ void DoMotion_line_up(HWND hwndEdit, int count) { for (int i = 0; i < count; i++
 void DoMotion_word_right(HWND hwndEdit, int count) { for (int i = 0; i < count; i++) ::SendMessage(hwndEdit, SCI_WORDRIGHT, 0, 0); }
 void DoMotion_word_left(HWND hwndEdit, int count) { for (int i = 0; i < count; i++) ::SendMessage(hwndEdit, SCI_WORDLEFT, 0, 0); }
 
+// Helper to repeat last operation
+void RepeatLastOp(HWND hwndEdit) {
+    switch (lastOp.type) {
+    case OP_DELETE_LINE:
+        for (int i = 0; i < lastOp.count; ++i) DeleteLineOnce(hwndEdit);
+        break;
+    case OP_YANK_LINE:
+        for (int i = 0; i < lastOp.count; ++i) YankLineOnce(hwndEdit);
+        break;
+    case OP_PASTE_LINE:
+        for (int i = 0; i < lastOp.count; ++i)
+            ::SendMessage(hwndEdit, SCI_PASTE, 0, 0);
+        break;
+    case OP_MOTION:
+        switch (lastOp.motion) {
+        case 'h': DoMotion_char_left(hwndEdit, lastOp.count); break;
+        case 'l': DoMotion_char_right(hwndEdit, lastOp.count); break;
+        case 'j': DoMotion_line_down(hwndEdit, lastOp.count); break;
+        case 'k': DoMotion_line_up(hwndEdit, lastOp.count); break;
+        case 'w': DoMotion_word_right(hwndEdit, lastOp.count); break;
+        case 'b': DoMotion_word_left(hwndEdit, lastOp.count); break;
+        }
+        break;
+    default: break;
+    }
+}
+
+
 LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     WNDPROC orig = nullptr;
     auto it = origProcMap.find(hwnd);
     if (it != origProcMap.end()) orig = it->second;
 
+    // If Vim mode is disabled, pass all messages through
+    if (!vimModeEnabled) {
+        return CallWindowProc(orig, hwnd, msg, wParam, lParam);
+    }
+
     if (msg == WM_CHAR)
     {
-        HWND hwndEdit = hwnd; // the Scintilla control
+        HWND hwndEdit = hwnd;
 
         // ESC (27) always to Normal
         if ((int)wParam == VK_ESCAPE)
@@ -170,17 +205,20 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
             return 0; // block further processing
         }
 
-        // If we are in INSERT mode, allow char to pass through
         if (currentMode == INSERT)
         {
-            // reset transient state
             repeatCount = 0;
             opPending = 0;
             return CallWindowProc(orig, hwnd, msg, wParam, lParam);
         }
 
-        // NORMAL or VISUAL mode: interpret keys as commands, block default typing
         char c = (char)wParam;
+
+        if (c == '.') {
+            HWND hwndEdit = hwnd;
+            RepeatLastOp(hwndEdit);
+            return 0;
+        }
 
         // digits -> repeat count (accumulate)
         if (std::isdigit(static_cast<unsigned char>(c)))
@@ -188,7 +226,7 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
             int digit = c - '0';
             if (c == '0' && repeatCount == 0)
             {
-                // '0' as a command: move to start of line
+                // '0' command: move to start of line
                 ::SendMessage(hwndEdit, SCI_HOME, 0, 0); 
                 int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
                 ::SendMessage(hwndEdit, SCI_SETANCHOR, pos, 0); 
@@ -198,7 +236,7 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
             }
             // Otherwise, accumulate repeat count
             repeatCount = repeatCount * 10 + digit;
-            return 0; // consumed
+            return 0;
         }
 
         // compute effective count
@@ -212,6 +250,7 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
             {
                 // perform dd
                 for (int i = 0; i < count; ++i) DeleteLineOnce(hwndEdit);
+                RecordLastOp(OP_DELETE_LINE, count);
                 opPending = 0;
                 return 0;
             }
@@ -227,6 +266,7 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
             if (opPending == 'y')
             {
                 for (int i = 0; i < count; ++i) YankLineOnce(hwndEdit);
+                RecordLastOp(OP_YANK_LINE, count);
                 opPending = 0;
                 return 0;
             }
@@ -236,6 +276,25 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
                 return 0;
             }
         }
+        else if (c == 'g')
+        {
+            if (opPending == 'g')
+            {
+                // perform gg: go to first line
+                ::SendMessage(hwndEdit, SCI_GOTOPOS, 0, 0);
+                int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+                ::SendMessage(hwndEdit, SCI_SETANCHOR, pos, 0);
+                if (currentMode == VISUAL) setVisualSelection(hwndEdit);
+                opPending = 0;
+                return 0;
+            }
+            else
+            {
+                opPending = 'g'; // wait for next key
+                return 0;
+            }
+        }
+
         else
         {
             // any other key clears operator pending
@@ -248,26 +307,32 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
         case 'h':
             DoMotion_char_left(hwndEdit, count);
             if (currentMode == VISUAL) setVisualSelection(hwndEdit);
+            RecordLastOp(OP_MOTION, count, 'h');
             break;
         case 'l': 
             DoMotion_char_right(hwndEdit, count);
             if (currentMode == VISUAL) setVisualSelection(hwndEdit);
+            RecordLastOp(OP_MOTION, count, 'l');
             break;
         case 'j':
             DoMotion_line_down(hwndEdit, count);
             if (currentMode == VISUAL) setVisualSelection(hwndEdit);
+            RecordLastOp(OP_MOTION, count, 'j');
             break;
         case 'k':
             DoMotion_line_up(hwndEdit, count);
             if (currentMode == VISUAL) setVisualSelection(hwndEdit);
+            RecordLastOp(OP_MOTION, count, 'k');
             break;
         case 'w':
             DoMotion_word_right(hwndEdit, count);
             if (currentMode == VISUAL) setVisualSelection(hwndEdit);
+            RecordLastOp(OP_MOTION, count, 'w');
             break;
         case 'b':
             DoMotion_word_left(hwndEdit, count);
             if (currentMode == VISUAL) setVisualSelection(hwndEdit);
+            RecordLastOp(OP_MOTION, count, 'b');
             break;
         case 'i':
             enterInsertMode();
@@ -284,6 +349,22 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
                 ::SendMessage(hwndEdit, SCI_SETSEL, caret, endPos);
                 ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0);
             }
+            break;
+        }
+        case 'O':
+        {
+            int line = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION,
+                (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0), 0);
+
+            int lineStart = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, line, 0);
+            ::SendMessage(hwndEdit, SCI_GOTOPOS, lineStart, 0);
+
+            ::SendMessage(hwndEdit, SCI_NEWLINE, 0, 0);
+
+            int newLinePos = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, line, 0);
+            ::SendMessage(hwndEdit, SCI_GOTOPOS, newLinePos, 0);
+
+            enterInsertMode();
             break;
         }
 
@@ -340,6 +421,40 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
             if (currentMode == VISUAL) setVisualSelection(hwndEdit);
             break;
         }
+        case 'x':
+        {
+            if (currentMode == VISUAL) {
+                // delete selection
+                ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0);
+                enterNormalMode(); // exit visual after delete
+            }
+            else {
+                // delete single char under cursor
+                int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+                int nextPos = (int)::SendMessage(hwndEdit, SCI_POSITIONAFTER, pos, 0);
+                if (nextPos > pos) {
+                    ::SendMessage(hwndEdit, SCI_SETSEL, pos, nextPos);
+                    ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0);
+                }
+            }
+            break;
+        }
+
+        case 'gg':
+
+
+        case 'G':
+        {
+            int lineCount = (int)::SendMessage(hwndEdit, SCI_GETLINECOUNT, 0, 0);
+            int lastLineStart = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, lineCount - 1, 0);
+            ::SendMessage(hwndEdit, SCI_GOTOPOS, lastLineStart, 0);
+            if (currentMode == VISUAL) setVisualSelection(hwndEdit);
+            break;
+		}
+        case '0':
+            // Handled above as special case
+			break;
+
         default: break;
         }
 
@@ -348,7 +463,7 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
             setVisualSelection(hwndEdit);
         }
 
-        return 0; // we handled/blocked the char
+        return 0;
     }
 
     return CallWindowProc(orig, hwnd, msg, wParam, lParam);
@@ -388,10 +503,23 @@ void EnsureScintillaHooks()
 
 void ToggleVimMode()
 {
-    HWND hwndEdit = getCurrentScintillaHandle();
-    if (currentMode == NORMAL) enterInsertMode();
-    else enterNormalMode();
+    vimModeEnabled = !vimModeEnabled;
+
+    HMENU hMenu = (HMENU)::SendMessage(nppData._nppHandle, NPPM_GETMENUHANDLE, NPPPLUGINMENU, 0);
+    if (hMenu != NULL) {
+        ::CheckMenuItem(hMenu, funcItem[0]._cmdID, MF_BYCOMMAND | (vimModeEnabled ? MF_CHECKED : MF_UNCHECKED));
+    }
+
+    if (vimModeEnabled) {
+        enterNormalMode(); // enable Vim mode
+    }
+    else {
+        // Disable Vim mode
+        setStatus(TEXT(""));
+        ::SendMessage(getCurrentScintillaHandle(), SCI_SETCARETSTYLE, CARETSTYLE_LINE, 0);
+    }
 }
+
 
 BOOL APIENTRY DllMain(HANDLE hModule, DWORD reasonForCall, LPVOID /*lpReserved*/)
 {
@@ -407,8 +535,9 @@ BOOL APIENTRY DllMain(HANDLE hModule, DWORD reasonForCall, LPVOID /*lpReserved*/
 extern "C" __declspec(dllexport) void setInfo(NppData notpadPlusData)
 {
     nppData = notpadPlusData;
-    enterNormalMode();
+    vimModeEnabled = true; // Start with Vim mode enabled
     EnsureScintillaHooks();
+    enterNormalMode();;
 }
 
 extern "C" __declspec(dllexport) const TCHAR* getName()
@@ -423,7 +552,7 @@ extern "C" __declspec(dllexport) FuncItem* getFuncsArray(int* nbF)
     lstrcpy(funcItem[0]._itemName, TEXT("Toggle Vim Mode"));
     funcItem[0]._pFunc = ToggleVimMode;
     funcItem[0]._pShKey = NULL;
-    funcItem[0]._init2Check = false;
+    funcItem[0]._init2Check = false; // Ensure it starts unchecked
 
     lstrcpy(funcItem[1]._itemName, TEXT("--SEPARATOR--"));
     funcItem[1]._pFunc = NULL;

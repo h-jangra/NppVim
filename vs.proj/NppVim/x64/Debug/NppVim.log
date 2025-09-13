@@ -1,2 +1,9 @@
 ﻿  NppVim.cpp
-  NppVim.vcxproj -> C:\Users\HJangra1\Music\cpp\vs.proj\x64\Debug\NppVim.dll
+C:\Users\Himanshu\Music\NppVim\src\NppVim.cpp(218,18): warning C4456: declaration of 'hwndEdit' hides previous local declaration
+      C:\Users\Himanshu\Music\NppVim\src\NppVim.cpp(199,14):
+      see declaration of 'hwndEdit'
+  
+C:\Users\Himanshu\Music\NppVim\src\NppVim.cpp(588,90): warning C4100: 'lParam': unreferenced parameter
+C:\Users\Himanshu\Music\NppVim\src\NppVim.cpp(588,75): warning C4100: 'wParam': unreferenced parameter
+C:\Users\Himanshu\Music\NppVim\src\NppVim.cpp(588,59): warning C4100: 'Message': unreferenced parameter
+  NppVim.vcxproj -> C:\Users\Himanshu\Music\NppVim\vs.proj\x64\Debug\NppVim.dll
