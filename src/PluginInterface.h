@@ -18,12 +18,10 @@
 
 // For more comprehensive information on plugin communication, please refer to the following resource:
 // https://npp-user-manual.org/docs/plugin-communication/
-
 #pragma once
 
 #include "Scintilla.h"
 #include "Notepad_plus_msgs.h"
-
 
 typedef const TCHAR * (__cdecl * PFUNCGETNAME)();
 

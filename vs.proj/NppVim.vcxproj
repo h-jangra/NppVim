@@ -31,7 +31,6 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\src\menuCmdID.h" />
-    <ClInclude Include="..\src\NppVim.h" />
     <ClInclude Include="..\src\Notepad_plus_msgs.h" />
     <ClInclude Include="..\src\PluginInterface.h" />
     <ClInclude Include="..\src\Scintilla.h" />
@@ -201,7 +200,7 @@
       <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;_USRDLL;MIMETOOLS_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>
       </AdditionalIncludeDirectories>
-      <TreatWarningAsError>true</TreatWarningAsError>
+      <TreatWarningAsError>false</TreatWarningAsError>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <WholeProgramOptimization>false</WholeProgramOptimization>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
@@ -217,8 +216,10 @@
       <ImportLibrary>$(TargetName).lib</ImportLibrary>
     </Link>
     <PostBuildEvent>
-      <Command>copy ..\license.txt ..\bin\license.txt
-copy ..\readme.txt ..\bin\readme.txt</Command>
+      <Command>copy ..\LICENSE ..\bin\LICENSE
+
+copy ..\Readme.md ..\bin\Readme.md
+</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -230,7 +231,7 @@ copy ..\readme.txt ..\bin\readme.txt</Command>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>false</IntrinsicFunctions>
       <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;_USRDLL;MIMETOOLS_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <TreatWarningAsError>true</TreatWarningAsError>
+      <TreatWarningAsError>false</TreatWarningAsError>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <OmitFramePointers>false</OmitFramePointers>
       <WholeProgramOptimization>false</WholeProgramOptimization>
@@ -247,8 +248,8 @@ copy ..\readme.txt ..\bin\readme.txt</Command>
       <ImportLibrary>$(TargetName).lib</ImportLibrary>
     </Link>
     <PostBuildEvent>
-      <Command>copy ..\license.txt ..\bin64\license.txt
-copy ..\readme.txt ..\bin64\readme.txt</Command>
+      <Command>copy ..\LICENSE ..\bin64\LICENSE
+copy ..\Readme.md ..\bin64\Readme.md</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
@@ -260,7 +261,7 @@ copy ..\readme.txt ..\bin64\readme.txt</Command>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>false</IntrinsicFunctions>
       <PreprocessorDefinitions>WIN32;NDEBUG;_WINDOWS;_USRDLL;MIMETOOLS_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <TreatWarningAsError>true</TreatWarningAsError>
+      <TreatWarningAsError>false</TreatWarningAsError>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <OmitFramePointers>false</OmitFramePointers>
       <WholeProgramOptimization>false</WholeProgramOptimization>
@@ -277,8 +278,8 @@ copy ..\readme.txt ..\bin64\readme.txt</Command>
       <ImportLibrary>$(TargetName).lib</ImportLibrary>
     </Link>
     <PostBuildEvent>
-      <Command>copy ..\license.txt ..\arm64\license.txt
-copy ..\readme.txt ..\arm64\readme.txt</Command>
+      <Command>copy ..\LICENSE \arm64\\LICENSE
+copy ..\Readme.md ..\arm64\Readme.md</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

@@ -1,6 +1,6 @@
 // This file is part of Notepad++ project
 // Copyright (C)2024 Don HO <don.h@free.fr>
-
+//  Notepad_plus_msgs.h
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or
@@ -52,6 +52,7 @@ enum Platform { PF_UNKNOWN, PF_X86, PF_X64, PF_IA64, PF_ARM64 };
 
 #define NPPMSG  (WM_USER + 1000)
 
+
 	#define NPPM_GETCURRENTSCINTILLA (NPPMSG + 4)
 	// BOOL NPPM_GETCURRENTSCINTILLA(0, int* iScintillaView)
 	// Get current Scintilla view.
@@ -89,6 +90,8 @@ enum Platform { PF_UNKNOWN, PF_X86, PF_X64, PF_IA64, PF_ARM64 };
 	// wParam[out]: fileNames - array of file path
 	// lParam[in]: nbFileNames is the number of file path.
 	// return value: The number of files copied into fileNames array
+
+	#define NPPM_CLOSEFILE (NPPMSG + 8) // 8 is the message number for NPPM_CLOSEFILE in Notepad++ API
 
 	#define NPPM_MODELESSDIALOG  (NPPMSG + 12)
 		#define MODELESSDIALOGADD    0
@@ -416,7 +419,6 @@ enum Platform { PF_UNKNOWN, PF_X86, PF_X64, PF_IA64, PF_ARM64 };
 	// 6.6.6    | 6      | 660
 	// 13.6.6.6 | 13     | 666
 	// 
-	// 
 	// ADD_ZERO_PADDING == FALSE
 	// 
 	// version  | HIWORD | LOWORD
@@ -586,7 +588,7 @@ enum Platform { PF_UNKNOWN, PF_X86, PF_X64, PF_IA64, PF_ARM64 };
 	// Get your plugin command current mapped shortcut into sk via cmdID.
 	// wParam[in]: cmdID is your plugin command ID 
 	// lParam[out]: sk is a pointer of ShortcutKey strcture which will receive the requested CMD shortcut. It should be allocated in the plugin before being used.
-	// For ShortcutKey strcture, see in "PluginInterface.h". You may need it after getting NPPN_READY notification.
+	// For ShortcutKey struture, see in "PluginInterface.h". You may need it after getting NPPN_READY notification.
 	// return value: TRUE if this function call is successful and shortcut is enable, otherwise FALSE
 
 	#define NPPM_DOOPEN (NPPMSG + 77)
@@ -1172,3 +1174,5 @@ enum Platform { PF_UNKNOWN, PF_X86, PF_X64, PF_IA64, PF_ARM64 };
 	//scnNotification->nmhdr.code = NPPN_EXTERNALLEXERBUFFER;
 	//scnNotification->nmhdr.hwndFrom = hwndNpp;
 	//scnNotification->nmhdr.idFrom = BufferID; //where pluginMessage is pointer of type wchar_t
+	#define NPPM_SAVECURRENTPATH (NPPMSG + 86) 
+	#define NPPM_SETBUFFERFILENAME (NPPMSG + 106)
