@@ -10,6 +10,7 @@ UpgradeLog.htm
 vs.proj/NppVim.vcxproj.user
 vs.proj/NppVim.exp
 vs.proj/NppVim.lib
+vs.proj/NppVim
 *.sdf
 *.suo
 *.filters
