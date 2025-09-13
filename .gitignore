@@ -7,9 +7,9 @@ vs.proj/ARM64
 vs.proj/Debug/
 vs.proj/Release/
 UpgradeLog.htm
-vs.proj/NppPluginConverter.vcxproj.user
-vs.proj/NppPluginConverter.exp
-vs.proj/NppPluginConverter.lib
+vs.proj/NppVim.vcxproj.user
+vs.proj/NppVim.exp
+vs.proj/NppVim.lib
 *.sdf
 *.suo
 *.filters
@@ -18,4 +18,4 @@ vs.proj/NppPluginConverter.lib
 *.exp
 *.aps
 *.bak
-vs.proj/NppConverter.lib
+vs.proj/NppVim.lib
