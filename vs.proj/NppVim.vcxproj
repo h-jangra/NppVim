@@ -217,8 +217,8 @@
     </Link>
     <PostBuildEvent>
       <Command>copy ..\LICENSE ..\bin\LICENSE
-
 copy ..\Readme.md ..\bin\Readme.md
+copy ..\LICENSE ..\bin\tutor.txt
 </Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
@@ -249,7 +249,8 @@ copy ..\Readme.md ..\bin\Readme.md
     </Link>
     <PostBuildEvent>
       <Command>copy ..\LICENSE ..\bin64\LICENSE
-copy ..\Readme.md ..\bin64\Readme.md</Command>
+copy ..\Readme.md ..\bin64\Readme.md
+copy ..\LICENSE ..\bin64\tutor.txt</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
@@ -278,8 +279,9 @@ copy ..\Readme.md ..\bin64\Readme.md</Command>
       <ImportLibrary>$(TargetName).lib</ImportLibrary>
     </Link>
     <PostBuildEvent>
-      <Command>copy ..\LICENSE \arm64\\LICENSE
-copy ..\Readme.md ..\arm64\Readme.md</Command>
+      <Command>copy ..\LICENSE ..\arm64\LICENSE
+copy ..\Readme.md ..\arm64\Readme.md
+copy ..\LICENSE ..\arm64\tutor.txt</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

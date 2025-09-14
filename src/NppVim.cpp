@@ -17,6 +17,7 @@ const int nbFunc = 3;
 FuncItem funcItem[nbFunc];
 
 enum VimMode { NORMAL, INSERT, VISUAL };
+
 static VimMode currentMode = NORMAL;
 static bool isLineVisual = false;
 static int visualAnchor = -1;
@@ -81,23 +82,42 @@ void enterInsertMode() {
     ::SendMessage(hwndEdit, SCI_SETCARETSTYLE, CARETSTYLE_LINE, 0);
 }
 
-void enterVisualCharMode(HWND hwndEdit) {
-    currentMode = VISUAL;
-    isLineVisual = false;
-    visualAnchor = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
-    setStatus(TEXT("-- VISUAL --"));
+void setVisualSelection(HWND hwndEdit) {
+    if (visualAnchor < 0 || currentMode != VISUAL) return;
+    int caret = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0), start, end;
+    if (isLineVisual) {
+        int line1 = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, visualAnchor, 0);
+        int line2 = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, caret, 0);
+        int startLine = (std::min)(line1, line2), endLine = (std::max)(line1, line2);
+        start = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, startLine, 0);
+        end = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, endLine, 0);
+        int totalLines = (int)::SendMessage(hwndEdit, SCI_GETLINECOUNT, 0, 0);
+        if (endLine < totalLines - 1)
+            end = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, endLine + 1, 0);
+    }
+    else {
+        start = (std::min)(visualAnchor, caret);
+        end = (std::max)(visualAnchor, caret);
+        if (end > start) {
+            end++;
+            int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
+            if (end > docLen) end = docLen;
+        }
+    }
+    ::SendMessage(hwndEdit, SCI_SETSEL, start, end);
 }
-
+void enterVisualCharMode(HWND hwndEdit) {
+    currentMode = VISUAL; isLineVisual = false;
+    visualAnchor = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+    setStatus(TEXT("-- VISUAL --")); setVisualSelection(hwndEdit);
+}
 void enterVisualLineMode(HWND hwndEdit) {
-    currentMode = VISUAL;
-    isLineVisual = true;
+    currentMode = VISUAL; isLineVisual = true;
     int caret = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
     int line = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, caret, 0);
     int start = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, line, 0);
-    int end = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, line, 0);
-    visualAnchor = start;
-    ::SendMessage(hwndEdit, SCI_SETSEL, start, end);
-    setStatus(TEXT("-- VISUAL LINE --"));
+    visualAnchor = start; setStatus(TEXT("-- VISUAL LINE --"));
+    setVisualSelection(hwndEdit);
 }
 
 void enterCommandMode() {
@@ -113,33 +133,10 @@ void exitCommandMode() {
 }
 
 void updateCommandStatus() {
-    if (commandBuffer.empty()) {
-        setStatus(TEXT(":"));
-        return;
-    }
+    if (commandBuffer.empty()) { setStatus(TEXT(":")); return; }
     std::string display = commandBuffer;
     std::wstring wdisplay(display.begin(), display.end());
     setStatus(wdisplay.c_str());
-}
-
-void setVisualSelection(HWND hwndEdit) {
-    if (visualAnchor < 0) return;
-    int caret = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
-    int a, b;
-    if (isLineVisual) {
-        int line1 = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, visualAnchor, 0);
-        int line2 = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, caret, 0);
-        int start = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, (std::min)(line1, line2), 0);
-        int end = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, (std::max)(line1, line2), 0);
-        a = start;
-        b = end;
-    }
-    else {
-        a = (std::min)(visualAnchor, caret);
-        b = (std::max)(visualAnchor, caret);
-        if (b > a) b++;
-    }
-    ::SendMessage(hwndEdit, SCI_SETSEL, a, b);
 }
 
 std::pair<int, int> findWordBounds(HWND hwndEdit, int pos) {
@@ -150,164 +147,34 @@ std::pair<int, int> findWordBounds(HWND hwndEdit, int pos) {
 
 std::pair<int, int> findMatchingBrackets(HWND hwndEdit, int pos, bool includeOuter) {
     int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
-    std::vector<char> text(docLen + 1);
-    ::SendMessage(hwndEdit, SCI_GETTEXT, docLen + 1, (LPARAM)text.data());
-    const char* brackets = "(){}[]";
-    int bracketPos = -1;
-    char bracketChar = 0;
-    for (int i = pos; i >= 0; i--) {
-        char c = text[i];
-        if (strchr(brackets, c)) {
-            bracketPos = i;
-            bracketChar = c;
-            break;
-        }
-    }
-    if (bracketPos == -1) {
-        for (int i = pos; i < docLen; i++) {
-            char c = text[i];
-            if (strchr(brackets, c)) {
-                bracketPos = i;
-                bracketChar = c;
-                break;
-            }
-        }
-    }
-    if (bracketPos == -1) return { pos, pos };
-    char openBracket, closeBracket;
-    int direction;
-    int start;
-    if (bracketChar == '(' || bracketChar == ')') {
-        openBracket = '('; closeBracket = ')';
-        direction = (bracketChar == '(') ? 1 : -1;
-        start = bracketPos;
-    }
-    else if (bracketChar == '{' || bracketChar == '}') {
-        openBracket = '{'; closeBracket = '}';
-        direction = (bracketChar == '{') ? 1 : -1;
-        start = bracketPos;
-    }
-    else if (bracketChar == '[' || bracketChar == ']') {
-        openBracket = '['; closeBracket = ']';
-        direction = (bracketChar == '[') ? 1 : -1;
-        start = bracketPos;
-    }
-    else {
-        return { pos, pos };
-    }
-    int count = 1;
-    int i = start + direction;
-    while (i >= 0 && i < docLen && count > 0) {
-        if (text[i] == openBracket) {
-            count += direction;
-        }
-        else if (text[i] == closeBracket) {
-            count -= direction;
-        }
-        if (count > 0) i += direction;
-    }
-    if (count == 0) {
-        int left = (std::min)(start, i);
-        int right = (std::max)(start, i);
-        if (includeOuter) {
-            return { left, right + 1 };
-        }
-        else {
-            return { left + 1, right };
-        }
-    }
-    return { pos, pos };
+    return { pos, pos + 1 };
 }
-
 std::pair<int, int> findParagraphBounds(HWND hwndEdit, int pos, bool includeOuter) {
-    int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
-    std::vector<char> text(docLen + 1);
-    ::SendMessage(hwndEdit, SCI_GETTEXT, docLen + 1, (LPARAM)text.data());
-    int start = pos;
-    int end = pos;
-    while (start > 0) {
-        int lineStart = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, start, 0);
-        int linePos = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, lineStart, 0);
-        int lineEnd = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, lineStart, 0);
-        bool isEmpty = true;
-        for (int i = linePos; i < lineEnd; i++) {
-            if (!isspace(text[i])) {
-                isEmpty = false;
-                break;
-            }
-        }
-        if (isEmpty) {
-            start = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, lineStart + 1, 0);
-            break;
-        }
-        if (lineStart == 0) {
-            start = 0;
-            break;
-        }
-        start = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, lineStart - 1, 0);
-    }
-    while (end < docLen) {
-        int lineEnd = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, end, 0);
-        int linePos = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, lineEnd, 0);
-        int lineEndPos = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, lineEnd, 0);
-        bool isEmpty = true;
-        for (int i = linePos; i < lineEndPos; i++) {
-            if (!isspace(text[i])) {
-                isEmpty = false;
-                break;
-            }
-        }
-        if (isEmpty) {
-            end = linePos;
-            break;
-        }
-        int totalLines = (int)::SendMessage(hwndEdit, SCI_GETLINECOUNT, 0, 0);
-        if (lineEnd >= totalLines - 1) {
-            end = docLen;
-            break;
-        }
-        end = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, lineEnd + 1, 0);
-    }
-    if (includeOuter) {
-        while (start > 0 && isspace(text[start - 1])) start--;
-        while (end < docLen && isspace(text[end])) end++;
-    }
+    int line = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, pos, 0);
+    int start = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, line, 0);
+    int end = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, line, 0);
     return { start, end };
 }
-
 void applyTextObject(HWND hwndEdit, char op, char modifier, char object) {
     int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
     std::pair<int, int> bounds = { pos, pos };
     bool includeOuter = (modifier == 'a');
     switch (object) {
-    case 'w':
-        bounds = findWordBounds(hwndEdit, pos);
-        break;
-    case 'b':
-        bounds = findMatchingBrackets(hwndEdit, pos, includeOuter);
-        break;
-    case 'p':
-        bounds = findParagraphBounds(hwndEdit, pos, includeOuter);
-        break;
+    case 'w': bounds = findWordBounds(hwndEdit, pos); break;
+    case 'b': bounds = findMatchingBrackets(hwndEdit, pos, includeOuter); break;
+    case 'p': bounds = findParagraphBounds(hwndEdit, pos, includeOuter); break;
+    default: return;
     }
     if (bounds.first != bounds.second) {
-        ::SendMessage(hwndEdit, SCI_SETSEL, bounds.first, bounds.second);
+        int start = bounds.first, end = bounds.second;
+        ::SendMessage(hwndEdit, SCI_SETSEL, start, end);
         switch (op) {
-        case 'd':
-            ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0);
-            break;
-        case 'y':
-            ::SendMessage(hwndEdit, SCI_COPY, 0, 0);
-            ::SendMessage(hwndEdit, SCI_SETSEL, bounds.first, bounds.first);
-            break;
-        case 'c':
-            ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0);
-            enterInsertMode();
-            break;
+        case 'd': ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0); break;
+        case 'y': ::SendMessage(hwndEdit, SCI_COPYRANGE, start, end); ::SendMessage(hwndEdit, SCI_SETSEL, start, start); break;
+        case 'c': ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0); ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, start, 0); enterInsertMode(); break;
         }
     }
 }
-
 void executeEditCommand(const std::string& tabName) {
     ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_FILE_NEW);
     setStatus((TEXT("New tab: ") + std::wstring(tabName.begin(), tabName.end())).c_str());
@@ -326,35 +193,115 @@ void YankLineOnce(HWND hwndEdit) {
     ::SendMessage(hwndEdit, SCI_COPYRANGE, start, end);
 }
 
-void DoMotion_char_left(HWND hwndEdit, int count) { for (int i = 0; i < count; i++) ::SendMessage(hwndEdit, SCI_CHARLEFT, 0, 0); }
-void DoMotion_char_right(HWND hwndEdit, int count) { for (int i = 0; i < count; i++) ::SendMessage(hwndEdit, SCI_CHARRIGHT, 0, 0); }
-void DoMotion_line_down(HWND hwndEdit, int count) { for (int i = 0; i < count; i++) ::SendMessage(hwndEdit, SCI_LINEDOWN, 0, 0); }
-void DoMotion_line_up(HWND hwndEdit, int count) { for (int i = 0; i < count; i++) ::SendMessage(hwndEdit, SCI_LINEUP, 0, 0); }
-void DoMotion_word_right(HWND hwndEdit, int count) { for (int i = 0; i < count; i++) ::SendMessage(hwndEdit, SCI_WORDRIGHT, 0, 0); }
-void DoMotion_word_left(HWND hwndEdit, int count) { for (int i = 0; i < count; i++) ::SendMessage(hwndEdit, SCI_WORDLEFT, 0, 0); }
+void DoMotion_char_left(HWND hwndEdit, int count) {
+    int caret = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+    caret = (std::max)(0, caret - count);
+    ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, caret, 0);
 
+    if (currentMode == VISUAL) {
+        if (isLineVisual) {
+            int startLine = (std::min)(
+                (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, caret, 0),
+                (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, visualAnchor, 0)
+                );
+            int endLine = (std::max)(
+                (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, caret, 0),
+                (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, visualAnchor, 0)
+                );
+            ::SendMessage(hwndEdit, SCI_SETSEL,
+                (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, startLine, 0),
+                (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, endLine, 0)
+            );
+        }
+        else {
+            ::SendMessage(hwndEdit, SCI_SETSEL,
+                (std::min)(caret, visualAnchor),
+                (std::max)(caret, visualAnchor)
+            );
+        }
+    }
+}
+
+void DoMotion_char_right(HWND hwndEdit, int count) {
+    for (int i = 0; i < count; i++) ::SendMessage(hwndEdit, SCI_CHARRIGHT, 0, 0);
+    if (currentMode == VISUAL) setVisualSelection(hwndEdit);
+}
+
+void DoMotion_line_down(HWND hwndEdit, int count) {
+    for (int i = 0; i < count; i++) ::SendMessage(hwndEdit, SCI_LINEDOWN, 0, 0);
+    if (currentMode == VISUAL) setVisualSelection(hwndEdit);
+}
+void DoMotion_line_up(HWND hwndEdit, int count) {
+    int anchor = (int)::SendMessage(hwndEdit, SCI_GETANCHOR, 0, 0);
+    int caret = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+
+    for (int i = 0; i < count; i++) {
+        ::SendMessage(hwndEdit, SCI_LINEUP, 0, 0);
+    }
+
+    if (currentMode == VISUAL) {
+        int newCaret = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+        ::SendMessage(hwndEdit, SCI_SETSEL, anchor, newCaret);
+    }
+}
+
+
+void DoMotion_word_right(HWND hwndEdit, int count) {
+    for (int i = 0; i < count; i++) ::SendMessage(hwndEdit, SCI_WORDRIGHT, 0, 0);
+    if (currentMode == VISUAL) setVisualSelection(hwndEdit);
+}
+void DoMotion_word_left(HWND hwndEdit, int count) {
+    for (int i = 0; i < count; i++) ::SendMessage(hwndEdit, SCI_WORDLEFT, 0, 0);
+    if (currentMode == VISUAL) setVisualSelection(hwndEdit);
+}
 void DoMotion_end_word(HWND hwndEdit, int count) {
     for (int i = 0; i < count; i++) ::SendMessage(hwndEdit, SCI_WORDRIGHTEND, 0, 0);
+    if (currentMode == VISUAL) setVisualSelection(hwndEdit);
 }
-
 void DoMotion_end_WORD(HWND hwndEdit, int count) {
+    for (int i = 0; i < count; i++) ::SendMessage(hwndEdit, SCI_WORDRIGHTEND, 0, 0);
+    if (currentMode == VISUAL) setVisualSelection(hwndEdit);
+}
+void DoMotion_end_line(HWND hwndEdit, int count) {
+    ::SendMessage(hwndEdit, SCI_LINEEND, 0, 0);
+    if (currentMode == VISUAL) setVisualSelection(hwndEdit);
+}
+
+void DoMotion_half_page_down(HWND hwndEdit, int count) {
+    int linesVisible = (int)::SendMessage(hwndEdit, SCI_LINESONSCREEN, 0, 0);
+    int halfPage = (std::max)(1, linesVisible / 2);
+
     for (int i = 0; i < count; i++) {
-        int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
-        pos = (int)::SendMessage(hwndEdit, SCI_WORDRIGHTEND, pos, 0);
-        while (true) {
-            char c = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, pos, 0);
-            if (isspace(c) || c == '\0') break;
-            pos = (int)::SendMessage(hwndEdit, SCI_WORDRIGHTEND, pos, 0);
+        for (int j = 0; j < halfPage; j++) {
+            ::SendMessage(hwndEdit, SCI_LINEDOWN, 0, 0);
         }
-        ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, pos - 1, 0);
+    }
+    if (currentMode == VISUAL) {
+        setVisualSelection(hwndEdit);
     }
 }
 
-void DoMotion_end_line(HWND hwndEdit, int count) {
+void DoMotion_half_page_up(HWND hwndEdit, int count) {
+    int visibleLines = (int)::SendMessage(hwndEdit, SCI_LINESONSCREEN, 0, 0);
+    int halfPage = visibleLines / 2;
+
     for (int i = 0; i < count; i++) {
-        ::SendMessage(hwndEdit, SCI_LINEEND, 0, 0);
+        ::SendMessage(hwndEdit, SCI_LINESCROLL, 0, -halfPage);
+
+        int currentPos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+        int currentLine = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, currentPos, 0);
+        int newLine = (std::max)(0, currentLine - halfPage);
+        int newPos = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, newLine, 0);
+
+        ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, newPos, 0);
+        ::SendMessage(hwndEdit, SCI_SETANCHOR, newPos, 0);
+
+        if (currentMode == VISUAL) {
+            setVisualSelection(hwndEdit);
+        }
     }
 }
+
 
 void ApplyOperatorToMotion(HWND hwndEdit, char op, char motion, int count) {
     int start = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
@@ -364,45 +311,45 @@ void ApplyOperatorToMotion(HWND hwndEdit, char op, char motion, int count) {
     case 'e': DoMotion_end_word(hwndEdit, count); break;
     case 'E': DoMotion_end_WORD(hwndEdit, count); break;
     case '$': DoMotion_end_line(hwndEdit, count); break;
+    case 'h': DoMotion_char_left(hwndEdit, count); break;
+    case 'l': DoMotion_char_right(hwndEdit, count); break;
+    case 'j': DoMotion_line_down(hwndEdit, count); break;
+    case 'k': DoMotion_line_up(hwndEdit, count); break;
+    default: break;
     }
     int end = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
     if (start > end) std::swap(start, end);
-    if (op != 'd' && op != 'c') end++;
-    ::SendMessage(hwndEdit, SCI_SETSEL, start, end);
-    switch (op) {
-    case 'd': ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0); break;
-    case 'y': ::SendMessage(hwndEdit, SCI_COPY, 0, 0); ::SendMessage(hwndEdit, SCI_SETSEL, start, start); break;
-    case 'c': ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0); enterInsertMode(); break;
+    if (start == end) {
+        int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
+        if (end < docLen) end++;
     }
-    RecordLastOp(OP_MOTION, count, motion);
+    ::SendMessage(hwndEdit, SCI_SETSEL, start, end);
+    if (op == 'd') {
+        ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0); ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, start, 0); RecordLastOp(OP_MOTION, count, motion);
+    }
+    else if (op == 'y') {
+        ::SendMessage(hwndEdit, SCI_COPYRANGE, start, end); ::SendMessage(hwndEdit, SCI_SETSEL, start, start); RecordLastOp(OP_MOTION, count, motion);
+    }
+    else if (op == 'c') {
+        ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0); ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, start, 0); enterInsertMode(); RecordLastOp(OP_MOTION, count, motion);
+    }
 }
 
 void RepeatLastOp(HWND hwndEdit) {
     switch (lastOp.type) {
-    case OP_DELETE_LINE:
-        for (int i = 0; i < lastOp.count; ++i) DeleteLineOnce(hwndEdit);
-        break;
-    case OP_YANK_LINE:
-        for (int i = 0; i < lastOp.count; ++i) YankLineOnce(hwndEdit);
-        break;
-    case OP_PASTE_LINE:
-        for (int i = 0; i < lastOp.count; ++i) ::SendMessage(hwndEdit, SCI_PASTE, 0, 0);
-        break;
-    case OP_MOTION:
-        switch (lastOp.motion) {
-        case 'h': DoMotion_char_left(hwndEdit, lastOp.count); break;
-        case 'l': DoMotion_char_right(hwndEdit, lastOp.count); break;
-        case 'j': DoMotion_line_down(hwndEdit, lastOp.count); break;
-        case 'k': DoMotion_line_up(hwndEdit, lastOp.count); break;
-        case 'w': DoMotion_word_right(hwndEdit, lastOp.count); break;
-        case 'b': DoMotion_word_left(hwndEdit, lastOp.count); break;
-        case 'e': DoMotion_end_word(hwndEdit, lastOp.count); break;
-        case 'E': DoMotion_end_WORD(hwndEdit, lastOp.count); break;
-        case '$': DoMotion_end_line(hwndEdit, lastOp.count); break;
-        }
-        break;
+    case OP_DELETE_LINE: for (int i = 0; i < lastOp.count; ++i) DeleteLineOnce(hwndEdit); break;
+    case OP_YANK_LINE: for (int i = 0; i < lastOp.count; ++i) YankLineOnce(hwndEdit); break;
+    case OP_PASTE_LINE: for (int i = 0; i < lastOp.count; ++i) ::SendMessage(hwndEdit, SCI_PASTE, 0, 0); break;
+    case OP_MOTION: ApplyOperatorToMotion(hwndEdit, 'd', lastOp.motion, lastOp.count); break;
     default: break;
     }
+}
+
+void opentutor() {
+    TCHAR nppPath[MAX_PATH];
+    ::SendMessage(nppData._nppHandle, NPPM_GETNPPDIRECTORY, MAX_PATH, (LPARAM)nppPath);
+    std::wstring tutorPath = std::wstring(nppPath) + L"\\plugins\\NppVim\\tutor.txt";
+    ::SendMessage(nppData._nppHandle, NPPM_DOOPEN, 0, (LPARAM)tutorPath.c_str());
 }
 
 LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -464,7 +411,6 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
                             matchCount++;
                         }
 
-                        // Update status bar
                         if (matchCount > 0) {
                             std::string status = "Found " + std::to_string(matchCount) + " match" + (matchCount > 1 ? "es" : "");
                             std::wstring wstatus(status.begin(), status.end());
@@ -474,12 +420,14 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
                             setStatus(TEXT("No match found"));
                         }
                     }
-
                     else if (commandBuffer.rfind(":e ", 0) == 0) {
                         std::string tabName = commandBuffer.substr(3);
                         if (!tabName.empty()) {
                             executeEditCommand(tabName);
                         }
+                    }
+                    else if (commandBuffer == ":tutor") {
+                        opentutor();
                     }
                     leaveCommandMode();
                     return 0;
@@ -508,13 +456,42 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
         return 0;
     }
 
+    //if (msg == WM_KEYDOWN) {
+    //    if (!commandMode && vimModeEnabled) {
+    //        // Handle Ctrl+D (half page down)
+    //        if (wParam == 'D' && (GetKeyState(VK_CONTROL) & 0x8000)) {
+    //            int count = (repeatCount > 0) ? repeatCount : 1;
+    //            repeatCount = 0;
+    //            DoMotion_half_page_down(hwndEdit, count);
+    //            RecordLastOp(OP_MOTION, count, 4); // Use 4 as special code for Ctrl-D
+    //            return 0;
+    //        }
+    //        // Handle Ctrl+U (half page up)  
+    //        else if (wParam == 'U' && (GetKeyState(VK_CONTROL) & 0x8000)) {
+    //            int count = (repeatCount > 0) ? repeatCount : 1;
+    //            repeatCount = 0;
+    //            
+    //            DoMotion_half_page_up(hwndEdit, count);
+    //            RecordLastOp(OP_MOTION, count, 21); // Use 21 as special code for Ctrl-U
+    //            return 0;
+    //        }
+    //    }
+    //}
+
     if (msg == WM_CHAR) {
         char c = (char)wParam;
         if ((int)wParam == VK_ESCAPE) {
             enterNormalMode();
             return 0;
         }
-        if (currentMode == NORMAL) {
+
+        // Handle INSERT mode first
+        if (currentMode == INSERT) {
+            return CallWindowProc(orig, hwnd, msg, wParam, lParam);
+        }
+
+        // Handle NORMAL and VISUAL mode
+        if (currentMode == NORMAL || currentMode == VISUAL) {
             if (replacePending) {
                 HWND sc = hwndEdit;
                 int pos = (int)::SendMessage(sc, SCI_GETCURRENTPOS, 0, 0);
@@ -530,12 +507,6 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
             if (c == 'r') {
                 replacePending = true;
                 return 0;
-            }
-            if (currentMode == INSERT) {
-                repeatCount = 0;
-                opPending = 0;
-                textObjectPending = 0;
-                return CallWindowProc(orig, hwnd, msg, wParam, lParam);
             }
             if (c == '.') {
                 RepeatLastOp(hwndEdit);
@@ -553,265 +524,316 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
             }
             int count = (repeatCount > 0) ? repeatCount : 1;
             repeatCount = 0;
+
+            // Handle visual mode operations first
+            if (currentMode == VISUAL) {
+                switch (c) {
+                case 'd':
+                case 'x':
+                    ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0);
+                    enterNormalMode();
+                    return 0;
+                case 'y':
+                {
+                    int start = (int)::SendMessage(hwndEdit, SCI_GETSELECTIONSTART, 0, 0);
+                    int end = (int)::SendMessage(hwndEdit, SCI_GETSELECTIONEND, 0, 0);
+                    ::SendMessage(hwndEdit, SCI_COPYRANGE, start, end);
+                    ::SendMessage(hwndEdit, SCI_SETSEL, start, start);
+                    enterNormalMode();
+                    return 0;
+                }
+                case 'c':
+                    ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0);
+                    enterInsertMode();
+                    return 0;
+                case 'v':
+                    if (!isLineVisual) {
+                        enterNormalMode();
+                    }
+                    else {
+                        enterVisualCharMode(hwndEdit);
+                    }
+                    return 0;
+                case 'V':
+                    if (isLineVisual) {
+                        enterNormalMode();
+                    }
+                    else {
+                        enterVisualLineMode(hwndEdit);
+                    }
+                    return 0;
+                }
+                // Fall through to motion handling for visual mode
+            }
+
+            // FIRST: handle text-object composition (e.g., 'y' then 'i' then 'w' => yiw)
             if (textObjectPending && (c == 'w' || c == 'b' || c == 'p')) {
                 applyTextObject(hwndEdit, opPending, textObjectPending, c);
                 opPending = 0;
                 textObjectPending = 0;
                 return 0;
             }
+            // If operator is waiting and user typed 'i' or 'a' -> mark text-object modifier and wait
             if (opPending && (c == 'i' || c == 'a')) {
                 textObjectPending = c;
                 return 0;
             }
-            if (c == 'd') {
-                if (opPending == 'd') {
-                    for (int i = 0; i < count; ++i) DeleteLineOnce(hwndEdit);
-                    RecordLastOp(OP_DELETE_LINE, count);
-                    opPending = 0;
-                    return 0;
-                }
-                else { opPending = 'd'; return 0; }
-            }
-            else if (c == 'y') {
-                if (opPending == 'y') {
-                    for (int i = 0; i < count; ++i) YankLineOnce(hwndEdit);
-                    RecordLastOp(OP_YANK_LINE, count);
-                    opPending = 0;
-                    return 0;
-                }
-                else { opPending = 'y'; return 0; }
-            }
-            else if (c == 'c') {
-                if (opPending == 'c') {
-                    ::SendMessage(hwndEdit, SCI_HOME, 0, 0);
-                    ::SendMessage(hwndEdit, SCI_LINEEND, 0, 0);
-                    ::SendMessage(hwndEdit, SCI_LINEEND, 1, 0);
-                    ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0);
-                    enterInsertMode();
-                    opPending = 0;
-                    return 0;
-                }
-                else { opPending = 'c'; return 0; }
-            }
-            else if (c == 'g') {
-                if (opPending == 'g') {
-                    ::SendMessage(hwndEdit, SCI_GOTOPOS, 0, 0);
-                    opPending = 0;
-                    if (currentMode == VISUAL) setVisualSelection(hwndEdit);
-                    return 0;
-                }
-                else { opPending = 'g'; return 0; }
-            }
-            else {
-                if (opPending && c != 'i' && c != 'a') {
-                    opPending = 0;
-                    textObjectPending = 0;
-                }
-                if (opPending && (c == 'w' || c == 'e' || c == 'E' || c == '$' || c == 'b')) {
-                    ApplyOperatorToMotion(hwndEdit, opPending, c, count);
-                    opPending = 0;
-                    return 0;
-                }
-                switch (c) {
-                case 'h':
-                    DoMotion_char_left(hwndEdit, count);
-                    RecordLastOp(OP_MOTION, count, 'h');
-                    if (currentMode == VISUAL) setVisualSelection(hwndEdit);
-                    break;
-                case 'l':
-                    DoMotion_char_right(hwndEdit, count);
-                    RecordLastOp(OP_MOTION, count, 'l');
-                    if (currentMode == VISUAL) setVisualSelection(hwndEdit);
-                    break;
-                case 'j':
-                    DoMotion_line_down(hwndEdit, count);
-                    RecordLastOp(OP_MOTION, count, 'j');
-                    if (currentMode == VISUAL) setVisualSelection(hwndEdit);
-                    break;
-                case 'k':
-                    DoMotion_line_up(hwndEdit, count);
-                    RecordLastOp(OP_MOTION, count, 'k');
-                    if (currentMode == VISUAL) setVisualSelection(hwndEdit);
-                    break;
-                case 'w':
-                    DoMotion_word_right(hwndEdit, count);
-                    RecordLastOp(OP_MOTION, count, 'w');
-                    if (currentMode == VISUAL) setVisualSelection(hwndEdit);
-                    break;
-                case 'b':
-                    DoMotion_word_left(hwndEdit, count);
-                    RecordLastOp(OP_MOTION, count, 'b');
-                    if (currentMode == VISUAL) setVisualSelection(hwndEdit);
-                    break;
-                case 'e':
-                    DoMotion_end_word(hwndEdit, count);
-                    RecordLastOp(OP_MOTION, count, 'e');
-                    if (currentMode == VISUAL) setVisualSelection(hwndEdit);
-                    break;
-                case 'E':
-                    DoMotion_end_WORD(hwndEdit, count);
-                    RecordLastOp(OP_MOTION, count, 'E');
-                    if (currentMode == VISUAL) setVisualSelection(hwndEdit);
-                    break;
-                case 'i':
-                    if (!opPending) enterInsertMode();
-                    break;
-                case 'a':
-                    if (!opPending) {
-                        DoMotion_char_right(hwndEdit, 1);
-                        enterInsertMode();
+
+            // Now handle operator-first commands like dd, dw, etc. (NORMAL mode only)
+            if (currentMode == NORMAL) {
+                if (c == 'd') {
+                    if (opPending == 'd') {
+                        for (int i = 0; i < count; ++i) DeleteLineOnce(hwndEdit);
+                        RecordLastOp(OP_DELETE_LINE, count);
+                        opPending = 0;
+                        return 0;
                     }
-                    break;
-                case 'A':
+                    else { opPending = 'd'; return 0; }
+                }
+                else if (c == 'y') {
+                    if (opPending == 'y') {
+                        for (int i = 0; i < count; ++i) YankLineOnce(hwndEdit);
+                        RecordLastOp(OP_YANK_LINE, count);
+                        opPending = 0;
+                        return 0;
+                    }
+                    else { opPending = 'y'; return 0; }
+                }
+                else if (c == 'c') {
+                    if (opPending == 'c') {
+                        // cc: change whole line
+                        ::SendMessage(hwndEdit, SCI_HOME, 0, 0);
+                        ::SendMessage(hwndEdit, SCI_LINEEND, 0, 0);
+                        ::SendMessage(hwndEdit, SCI_LINEEND, 1, 0);
+                        ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0);
+                        enterInsertMode();
+                        opPending = 0;
+                        return 0;
+                    }
+                    else { opPending = 'c'; return 0; }
+                }
+                else if (c == 'g') {
+                    if (opPending == 'g') {
+                        ::SendMessage(hwndEdit, SCI_GOTOPOS, 0, 0);
+                        opPending = 0;
+                        if (currentMode == VISUAL) setVisualSelection(hwndEdit);
+                        return 0;
+                    }
+                    else { opPending = 'g'; return 0; }
+                }
+            }
+
+            if (currentMode == NORMAL && opPending && (c == 'w' || c == '$' || c == 'e' || c == 'E' || c == 'b' || c == 'h' || c == 'l' || c == 'j' || c == 'k')) {
+                ApplyOperatorToMotion(hwndEdit, opPending, c, count);
+                opPending = 0;
+                return 0;
+            }
+
+            if (opPending && c != 'i' && c != 'a') {
+                opPending = 0;
+                textObjectPending = 0;
+            }
+
+            // Default single-key motions and commands
+            switch (c) {
+            case 'h':
+                DoMotion_char_left(hwndEdit, count);
+                RecordLastOp(OP_MOTION, count, 'h');
+                break;
+            case 'l':
+                DoMotion_char_right(hwndEdit, count);
+                RecordLastOp(OP_MOTION, count, 'l');
+                break;
+            case 'j':
+                DoMotion_line_down(hwndEdit, count);
+                RecordLastOp(OP_MOTION, count, 'j');
+                break;
+            case 'k':
+                DoMotion_line_up(hwndEdit, count);
+                RecordLastOp(OP_MOTION, count, 'k');
+                break;
+            case 'w':
+                DoMotion_word_right(hwndEdit, count);
+                RecordLastOp(OP_MOTION, count, 'w');
+                break;
+            case 'b':
+                DoMotion_word_left(hwndEdit, count);
+                RecordLastOp(OP_MOTION, count, 'b');
+                break;
+            case 'e':
+                DoMotion_end_word(hwndEdit, count);
+                RecordLastOp(OP_MOTION, count, 'e');
+                break;
+            case 'E':
+                DoMotion_end_WORD(hwndEdit, count);
+                RecordLastOp(OP_MOTION, count, 'E');
+                break;
+            case '$':
+                DoMotion_end_line(hwndEdit, count);
+                RecordLastOp(OP_MOTION, count, '$');
+                break;
+            case 'i':
+                if (!opPending && currentMode == NORMAL) enterInsertMode();
+                break;
+            case 'a':
+                if (!opPending && currentMode == NORMAL) {
+                    DoMotion_char_right(hwndEdit, 1);
+                    enterInsertMode();
+                }
+                break;
+            case 'A':
+                if (currentMode == NORMAL) {
                     ::SendMessage(hwndEdit, SCI_LINEEND, 0, 0);
                     enterInsertMode();
-                    break;
-                case 'I':
+                }
+                break;
+            case 'I':
+                if (currentMode == NORMAL) {
                     ::SendMessage(hwndEdit, SCI_HOME, 0, 0);
                     enterInsertMode();
-                    break;
-                case 'o':
+                }
+                break;
+            case 'o':
+                if (currentMode == NORMAL) {
                     ::SendMessage(hwndEdit, SCI_LINEEND, 0, 0);
                     ::SendMessage(hwndEdit, SCI_NEWLINE, 0, 0);
                     enterInsertMode();
-                    break;
-                case 'O':
+                }
+                break;
+            case 'O':
+                if (currentMode == NORMAL) {
                     ::SendMessage(hwndEdit, SCI_HOME, 0, 0);
                     ::SendMessage(hwndEdit, SCI_NEWLINE, 0, 0);
                     DoMotion_line_up(hwndEdit, 1);
                     enterInsertMode();
-                    break;
-                case 'u': ::SendMessage(hwndEdit, SCI_UNDO, 0, 0); break;
-                case 'v':
-                    if (currentMode == VISUAL && !isLineVisual)
-                        enterNormalMode();
-                    else
-                        enterVisualCharMode(hwndEdit);
-                    break;
-                case 'V':
-                    if (currentMode == VISUAL && isLineVisual)
-                        enterNormalMode();
-                    else
-                        enterVisualLineMode(hwndEdit);
-                    break;
-                case 'p':
+                }
+                break;
+            case 'u':
+                if (currentMode == NORMAL) {
+                    ::SendMessage(hwndEdit, SCI_UNDO, 0, 0);
+                }
+                break;
+            case 'v':
+                if (currentMode == NORMAL) {
+                    enterVisualCharMode(hwndEdit);
+                }
+                else if (currentMode == VISUAL && !isLineVisual) {
+                    enterNormalMode();
+                }
+                else if (currentMode == VISUAL && isLineVisual) {
+                    enterVisualCharMode(hwndEdit);
+                }
+                break;
+            case 'V':
+                if (currentMode == NORMAL) {
+                    enterVisualLineMode(hwndEdit);
+                }
+                else if (currentMode == VISUAL && isLineVisual) {
+                    enterNormalMode();
+                }
+                else if (currentMode == VISUAL && !isLineVisual) {
+                    enterVisualLineMode(hwndEdit);
+                }
+                break;
+            case 'p':
+                if (currentMode == NORMAL) {
                     for (int i = 0; i < count; i++) {
                         ::SendMessage(hwndEdit, SCI_PASTE, 0, 0);
                     }
                     RecordLastOp(OP_PASTE_LINE, count);
-                    break;
-                case 'x':
-                    if (currentMode == VISUAL) {
-                        ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0);
-                        enterNormalMode();
-                    }
-                    else {
-                        for (int i = 0; i < count; i++) {
-                            int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
-                            int nextPos = (int)::SendMessage(hwndEdit, SCI_POSITIONAFTER, pos, 0);
-                            if (nextPos > pos) {
-                                ::SendMessage(hwndEdit, SCI_SETSEL, pos, nextPos);
-                                ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0);
-                            }
+                }
+                break;
+            case 'x':
+                if (currentMode == NORMAL) {
+                    for (int i = 0; i < count; i++) {
+                        int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+                        int nextPos = pos + 1;
+                        int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
+                        if (nextPos > docLen) nextPos = docLen;
+                        if (nextPos > pos) {
+                            ::SendMessage(hwndEdit, SCI_SETSEL, pos, nextPos);
+                            ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0);
                         }
                     }
-                    break;
-                case '0':
-                    if (repeatCount == 0) {
-                        ::SendMessage(hwndEdit, SCI_HOME, 0, 0);
-                        if (currentMode == VISUAL) setVisualSelection(hwndEdit);
+                }
+                break;
+            case 'G':
+                ::SendMessage(hwndEdit, SCI_DOCUMENTEND, 0, 0);
+                if (currentMode == VISUAL) setVisualSelection(hwndEdit);
+                break;
+            case ':':
+                if (currentMode == NORMAL) enterCommandModeWith(':');
+                break;
+            case '/':
+                if (currentMode == NORMAL) enterCommandModeWith('/');
+                break;
+            case 'n':
+                if (currentMode == NORMAL && !lastSearchTerm.empty()) {
+                    HWND sc = getCurrentScintillaHandle();
+                    int docLen = (int)::SendMessage(sc, SCI_GETTEXTLENGTH, 0, 0);
+                    int caret = (int)::SendMessage(sc, SCI_GETCURRENTPOS, 0, 0);
+                    ::SendMessage(sc, SCI_SETTARGETSTART, caret, 0);
+                    ::SendMessage(sc, SCI_SETTARGETEND, docLen, 0);
+                    int found = (int)::SendMessage(sc, SCI_SEARCHINTARGET, (WPARAM)lastSearchTerm.length(), (LPARAM)lastSearchTerm.c_str());
+                    if (found != -1) {
+                        int s = (int)::SendMessage(sc, SCI_GETTARGETSTART, 0, 0);
+                        int e = (int)::SendMessage(sc, SCI_GETTARGETEND, 0, 0);
+                        ::SendMessage(sc, SCI_SETSEL, s, e);
                     }
-                    break;
-                case '$':
-                    DoMotion_end_line(hwndEdit, count);
-                    RecordLastOp(OP_MOTION, count, '$');
-                    if (currentMode == VISUAL) setVisualSelection(hwndEdit);
-                    break;
-                case 'G':
-                    ::SendMessage(hwndEdit, SCI_DOCUMENTEND, 0, 0);
-                    if (currentMode == VISUAL) setVisualSelection(hwndEdit);
-                    break;
-                case ':': enterCommandModeWith(':'); break;
-                case 'n':
-                {
-                    if (!lastSearchTerm.empty())
-                    {
-                        HWND sc = getCurrentScintillaHandle();
-                        int docLen = (int)::SendMessage(sc, SCI_GETTEXTLENGTH, 0, 0);
-                        int caret = (int)::SendMessage(sc, SCI_GETCURRENTPOS, 0, 0);
-                        ::SendMessage(sc, SCI_SETTARGETSTART, caret, 0);
+                    else {
+                        ::SendMessage(sc, SCI_SETTARGETSTART, 0, 0);
                         ::SendMessage(sc, SCI_SETTARGETEND, docLen, 0);
-                        int found = (int)::SendMessage(sc, SCI_SEARCHINTARGET, (WPARAM)lastSearchTerm.length(), (LPARAM)lastSearchTerm.c_str());
-                        if (found != -1)
-                        {
+                        found = (int)::SendMessage(sc, SCI_SEARCHINTARGET, (WPARAM)lastSearchTerm.length(), (LPARAM)lastSearchTerm.c_str());
+                        if (found != -1) {
                             int s = (int)::SendMessage(sc, SCI_GETTARGETSTART, 0, 0);
                             int e = (int)::SendMessage(sc, SCI_GETTARGETEND, 0, 0);
                             ::SendMessage(sc, SCI_SETSEL, s, e);
                         }
-                        else {
-                            ::SendMessage(sc, SCI_SETTARGETSTART, 0, 0);
-                            ::SendMessage(sc, SCI_SETTARGETEND, docLen, 0);
-                            found = (int)::SendMessage(sc, SCI_SEARCHINTARGET, (WPARAM)lastSearchTerm.length(), (LPARAM)lastSearchTerm.c_str());
-                            if (found != -1) {
-                                int s = (int)::SendMessage(sc, SCI_GETTARGETSTART, 0, 0);
-                                int e = (int)::SendMessage(sc, SCI_GETTARGETEND, 0, 0);
-                                ::SendMessage(sc, SCI_SETSEL, s, e);
-                            }
-                        }
                     }
-                    break;
                 }
+                break;
+            case 'N':
+                if (currentMode == NORMAL && !lastSearchTerm.empty()) {
+                    HWND sc = getCurrentScintillaHandle();
+                    int docLen = (int)::SendMessage(sc, SCI_GETTEXTLENGTH, 0, 0);
+                    int caret = (int)::SendMessage(sc, SCI_GETCURRENTPOS, 0, 0);
 
-                case 'N':
-                {
-                    if (!lastSearchTerm.empty())
-                    {
-                        HWND sc = getCurrentScintillaHandle();
-                        int docLen = (int)::SendMessage(sc, SCI_GETTEXTLENGTH, 0, 0);
-                        int caret = (int)::SendMessage(sc, SCI_GETCURRENTPOS, 0, 0);
+                    int pos = 0;
+                    int lastStart = -1, lastEnd = -1;
+                    while (pos < docLen) {
+                        ::SendMessage(sc, SCI_SETTARGETSTART, pos, 0);
+                        ::SendMessage(sc, SCI_SETTARGETEND, docLen, 0);
+                        int found = (int)::SendMessage(sc, SCI_SEARCHINTARGET, (WPARAM)lastSearchTerm.length(), (LPARAM)lastSearchTerm.c_str());
+                        if (found == -1) break;
 
-                        int pos = 0;
-                        int lastStart = -1, lastEnd = -1;
-                        while (pos < docLen)
-                        {
+                        int s = (int)::SendMessage(sc, SCI_GETTARGETSTART, 0, 0);
+                        int e = (int)::SendMessage(sc, SCI_GETTARGETEND, 0, 0);
+                        if (e >= caret) break;
+                        lastStart = s; lastEnd = e;
+                        pos = e;
+                    }
+
+                    if (lastStart != -1) {
+                        ::SendMessage(sc, SCI_SETSEL, lastStart, lastEnd);
+                    }
+                    else {
+                        pos = 0; lastStart = -1; lastEnd = -1;
+                        while (pos < docLen) {
                             ::SendMessage(sc, SCI_SETTARGETSTART, pos, 0);
                             ::SendMessage(sc, SCI_SETTARGETEND, docLen, 0);
                             int found = (int)::SendMessage(sc, SCI_SEARCHINTARGET, (WPARAM)lastSearchTerm.length(), (LPARAM)lastSearchTerm.c_str());
                             if (found == -1) break;
-
                             int s = (int)::SendMessage(sc, SCI_GETTARGETSTART, 0, 0);
                             int e = (int)::SendMessage(sc, SCI_GETTARGETEND, 0, 0);
-                            if (e >= caret) break;
                             lastStart = s; lastEnd = e;
                             pos = e;
                         }
-
-                        if (lastStart != -1)
-                        {
-                            ::SendMessage(sc, SCI_SETSEL, lastStart, lastEnd);
-                        }
-                        else {
-                            pos = 0; lastStart = -1; lastEnd = -1;
-                            while (pos < docLen)
-                            {
-                                ::SendMessage(sc, SCI_SETTARGETSTART, pos, 0);
-                                ::SendMessage(sc, SCI_SETTARGETEND, docLen, 0);
-                                int found = (int)::SendMessage(sc, SCI_SEARCHINTARGET, (WPARAM)lastSearchTerm.length(), (LPARAM)lastSearchTerm.c_str());
-                                if (found == -1) break;
-                                int s = (int)::SendMessage(sc, SCI_GETTARGETSTART, 0, 0);
-                                int e = (int)::SendMessage(sc, SCI_GETTARGETEND, 0, 0);
-                                lastStart = s; lastEnd = e;
-                                pos = e;
-                            }
-                            if (lastStart != -1) ::SendMessage(sc, SCI_SETSEL, lastStart, lastEnd);
-                        }
+                        if (lastStart != -1) ::SendMessage(sc, SCI_SETSEL, lastStart, lastEnd);
                     }
-                    break;
                 }
-                case '/': enterCommandModeWith('/'); break;
+                break;
             }
-                return 0;
-            }
+            return 0;
         }
     }
     return CallWindowProc(orig, hwnd, msg, wParam, lParam);
