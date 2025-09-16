@@ -12,7 +12,7 @@ vs.proj/NppVim.exp
 vs.proj/NppVim.lib
 vs.proj/NppVim.log
 vs.proj/NppVim.sln
-vs.proj/NppVim/.vs/
+vs.proj/NppVim
 *.sdf
 *.suo
 *.filters

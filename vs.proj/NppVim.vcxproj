@@ -33,6 +33,7 @@
     <ClInclude Include="..\src\menuCmdID.h" />
     <ClInclude Include="..\src\Notepad_plus_msgs.h" />
     <ClInclude Include="..\src\PluginInterface.h" />
+    <ClInclude Include="..\src\resource.h" />
     <ClInclude Include="..\src\Scintilla.h" />
   </ItemGroup>
   <ItemGroup>
@@ -218,7 +219,7 @@
     <PostBuildEvent>
       <Command>copy ..\LICENSE ..\bin\LICENSE
 copy ..\Readme.md ..\bin\Readme.md
-copy ..\LICENSE ..\bin\tutor.txt
+copy ..\tutor.txt ..\bin\tutor.txt
 </Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
@@ -250,7 +251,7 @@ copy ..\LICENSE ..\bin\tutor.txt
     <PostBuildEvent>
       <Command>copy ..\LICENSE ..\bin64\LICENSE
 copy ..\Readme.md ..\bin64\Readme.md
-copy ..\LICENSE ..\bin64\tutor.txt</Command>
+copy ..\tutor.txt ..\bin64\tutor.txt</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
@@ -281,7 +282,7 @@ copy ..\LICENSE ..\bin64\tutor.txt</Command>
     <PostBuildEvent>
       <Command>copy ..\LICENSE ..\arm64\LICENSE
 copy ..\Readme.md ..\arm64\Readme.md
-copy ..\LICENSE ..\arm64\tutor.txt</Command>
+copy ..\tutor.txt ..\arm64\tutor.txt</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
