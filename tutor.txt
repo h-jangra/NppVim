@@ -231,7 +231,7 @@ Access command mode with :
 
 Available commands:
   :e filename - create new file/tab
-  :vimtutor - open this tutorial
+  :tutor - open this tutorial
 
 ** Try typing :vimtutor and press Enter to reload this tutorial **
 
