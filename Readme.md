@@ -1,21 +1,30 @@
-# NppVim
+# NppVim – Vim Mode for Notepad++
 
-NppVim is a Notepad++ plugin that brings Vim-style modal editing and key bindings to Notepad++.
+NppVim brings **Vim-like modal editing** to Notepad++.
 
 ## Features
 
-* **Modes:** Normal, Insert, Visual (character/line-wise).
-* **Mode Switching:** `i` → Insert, `v` → Visual, `V` → Visual Line, `ESC` → Normal.
-* **Navigation:** `h`, `j`, `k`, `l`, `w`, `b`, `0`, `$`,`o`,`O`.
-* **Editing:** `dd` (delete line), `yy` (yank line), `p` (paste), `D` (delete to end), `u` (undo), `o` (new line).
-* **Repeat Counts:** Prefix commands with numbers (e.g., `3j`,`d3d`).
-
-## Notes
-
-* Partial Vim support.
-* Modal behavior: commands in Normal/Visual, typing in Insert.
-* Repeat counts supported for most commands.
-
-## License
-
-See [LICENSE](LICENSE).
+- **Modes**
+  - Normal, Insert, Visual (char & line), Command
+- **Vim Motions**
+  - `h`, `j`, `k`, `l`, `w`, `b`, `e`, `$`, `^`, `{`, `}`, `G`, `%`, etc.
+- **Operators**
+  - `d` (delete), `y` (yank), `c` (change), `.` (repeat last op)
+- **Text Objects**
+  - Word-based operations (`iw`, `aw`)  
+- **Visual Selection**
+  - Character-wise and line-wise
+- **Search**
+  - `/search`, `:s pattern` (regex supported), `n`/`N` navigation
+- **Insert Enhancements**
+  - `i`, `a`, `I`, `A`, `o`, `O` for flexible insert positions
+- **Undo**
+  - `u` for undo
+- **Replace**
+  - `r` to replace single character
+- **Command Mode**
+  - `:` commands like `:w` (save), `:tutor` (open tutor)
+- **Repeatable Operations**
+  - `.` repeats last operator or motion
+- **Line Operations**
+  - Delete, yank, paste multiple lines

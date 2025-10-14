@@ -486,6 +486,7 @@ typedef sptr_t (*SciFnDirectStatus)(sptr_t ptr, unsigned int iMessage, uptr_t wP
 #define SCI_GETPRINTCOLOURMODE 2149
 #define SCFIND_NONE 0x0
 #define SCFIND_WHOLEWORD 0x2
+#define SCFIND_WRAP 0x200
 #define SCFIND_MATCHCASE 0x4
 #define SCFIND_WORDSTART 0x00100000
 #define SCFIND_REGEXP 0x00200000

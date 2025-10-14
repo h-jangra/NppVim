@@ -1,320 +1,469 @@
-===============================================================================
-=                     W e l c o m e   t o   N p p V i m                     =
-===============================================================================
+==================================================================================
+															NppVim Tutor v1.1.0.0
+==================================================================================
 
-NppVim is a Notepad++ plugin that brings Vim-style editing to your favorite
-text editor. This tutorial will teach you the essential commands and motions
-available in NppVim.
+Welcome to NppVim! This interactive tutor will guide you through Vim-style editing.
+Complete each exercise before moving to the next one.
 
-Prerequisites: Make sure NppVim is enabled (toggle via Plugins > NppVim > 
-Toggle Vim Mode). You should see "-- NORMAL --" in the status bar.
+IMPORTANT: Press ESC to ensure you're in NORMAL mode before each exercise.
+Use :q to close this file when done.
 
-===============================================================================
-=                           Lesson 1: BASIC MOTIONS                         =
-===============================================================================
+Lesson 1: BASIC MOVEMENT
+~~~~~~~~~~~~~~~~~~~~~~~~
 
-The most basic motions in Vim are the arrow key equivalents:
+The cursor is moved using the h,j,k,l keys.
 
-  h - move cursor left
-  j - move cursor down  
-  k - move cursor up
-  l - move cursor right
+   k
+ h   l
+   j
 
-** Practice moving around this text using h, j, k, l keys **
+Exercise 1.1: Move the cursor around using h,j,k,l
+  - Press j to move down to the next line
+  - Press k to move up
+  - Press l to move right
+  - Press h to move left
 
-You can also use numbers to repeat motions:
-  5h - move 5 characters left
-  3j - move 3 lines down
-  10l - move 10 characters right
+Practice moving between these lines:
+Line 1 - practice moving here
+Line 2 - continue practicing
+Line 3 - almost done
+Line 4 - great job!
 
-Try it: Move to the word "PRACTICE" below using these motions.
+---
 
-PRACTICE TARGET: Use hjkl to navigate here!
+Exercise 1.2: Word Movement
+w - move to next word
+b - move to previous word
+e - move to end of word
 
-===============================================================================
-=                           Lesson 2: WORD MOTIONS                          =
-===============================================================================
+Practice on this line:
+The quick brown fox jumps over the lazy dog
 
-Word motions are essential for efficient text navigation:
+Move to the beginning of this line and use:
+- w to move forward by words
+- b to move backward by words  
+- e to move to word ends
 
-  w - move to beginning of next word
-  b - move to beginning of previous word  
-  e - move to end of current word
-  E - move to end of current WORD (non-whitespace)
+---
 
-** Practice: Navigate through the sentence below using w, b, e **
+Exercise 1.3: Line Movement
+0 - move to beginning of line
+^ - move to first non-blank character  
+$ - move to end of line
 
-The quick brown fox jumps over the lazy dog.
+Practice on these lines:
+   This line has leading spaces
+This line starts immediately
+    Another indented line
 
-Try combining with numbers:
-  3w - move forward 3 words
-  2b - move back 2 words
+Use 0, ^, and $ to navigate these lines.
 
-===============================================================================
-=                         Lesson 3: LINE MOTIONS                           =
-===============================================================================
+---
 
-Navigate within lines quickly:
+Exercise 1.4: File Movement
+gg - move to top of file
+G - move to bottom of file
 
-  0 - move to beginning of line
-  $ - move to end of line
-  G - move to end of document
-  gg - move to beginning of document
+Practice:
+- Use gg to jump to the top
+- Use G to jump to the bottom
+- Use 10G to jump to line 10
 
-** Practice navigating to different parts of these lines: **
+Now try: gg to top, then 5G to line 5, then G to bottom.
 
-This is the beginning of a line                    This is the end
-Another line here with some text at the end.
-Use 0 to go to start, $ to go to end.
+---
 
-===============================================================================
-=                         Lesson 4: MODES IN VIM                           =
-===============================================================================
+Lesson 2: INSERT MODE
+~~~~~~~~~~~~~~~~~~~~~
 
-NppVim has three main modes:
+Exercise 2.1: Basic Insertion
+i - insert before cursor
+a - append after cursor
+I - insert at line start
+A - append at line end
 
-1. NORMAL mode (-- NORMAL --): For navigation and commands
-2. INSERT mode (-- INSERT --): For typing text  
-3. VISUAL mode (-- VISUAL --): For selecting text
+Practice on this text:
+Start with this text
 
-Switching between modes:
-  ESC - always returns to NORMAL mode
-  i   - enter INSERT mode at cursor
-  a   - enter INSERT mode after cursor
-  A   - enter INSERT mode at end of line
-  I   - enter INSERT mode at beginning of line
-  o   - create new line below and enter INSERT mode
-  O   - create new line above and enter INSERT mode
+- Move to "with" and press i to insert before it
+- Move to "text" and press a to append after it  
+- Press I to insert at line beginning
+- Press A to append at line end
 
-** Practice: Try entering INSERT mode below this line and type something **
+Remember: Press ESC after each insertion to return to NORMAL mode.
 
+---
 
-** Remember to press ESC to return to NORMAL mode **
+Exercise 2.2: Line Creation
+o - open new line below
+O - open new line above
 
-===============================================================================
-=                         Lesson 5: VISUAL MODE                            =
-===============================================================================
+Practice:
+- Move to this line and press o to create a line below
+- Press O to create a line above
 
-Visual mode lets you select text for operations:
+Create three new lines below this one.
 
-  v - enter character-wise visual mode
-  V - enter line-wise visual mode
-  ESC - exit visual mode
-
-In visual mode, use motions to extend selection:
-  - Use h,j,k,l to expand selection
-  - Use w,b,e for word-wise selection
-  - Press v again to exit visual mode
+---
 
-** Practice: Select the word "SELECTION" below using visual mode **
+Lesson 3: DELETION COMMANDS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Use visual mode to select: SELECTION TARGET
+Exercise 3.1: Character Deletion
+x - delete character under cursor
+X - delete character before cursor
 
-Try line visual mode (V) to select entire lines.
-
-===============================================================================
-=                      Lesson 6: DELETE AND CHANGE                         =
-===============================================================================
-
-Delete operations:
-  x - delete character under cursor
-  dd - delete entire line
-  d + motion - delete from cursor to motion target
-
-Examples:
-  dw - delete word
-  d$ - delete to end of line
-  3dd - delete 3 lines
-  2x - delete 2 characters
-
-** Practice deleting words from this line: **
-Delete these extra unnecessary words from this sentence.
+Practice on this text:
+Delete these characters
 
-Change operations (delete and enter insert mode):
-  cc - change entire line
-  c + motion - change from cursor to motion target
-  
-Examples:
-  cw - change word
-  c$ - change to end of line
+- Move to "D" and press x repeatedly
+- Move to "s" and press X to delete backwards
 
-===============================================================================
-=                         Lesson 7: COPY (YANK)                            =
-===============================================================================
+Try to delete the word "these" using x and X.
 
-Copying in Vim is called "yanking":
-  yy - yank entire line
-  y + motion - yank from cursor to motion target
+---
 
-Examples:
-  yw - yank word
-  y$ - yank to end of line
-  3yy - yank 3 lines
+Exercise 3.2: Word and Line Deletion
+dw - delete word
+dd - delete line
+D - delete to end of line
 
-Pasting:
-  p - paste after cursor
+Practice on these lines:
+Line one to delete
+Line two for practice  
+Line three for deletion
+Line four to remove
 
-** Practice: Copy the line below and paste it **
-This line should be copied and pasted.
+- Use dw to delete "one" from first line
+- Use dd to delete the entire second line
+- Use D to delete from cursor to end on third line
 
-===============================================================================
-=                        Lesson 8: TEXT OBJECTS                            =
-===============================================================================
+Delete all four lines using these commands.
 
-Text objects work with operators (d, y, c):
-  
-  iw - inner word
-  aw - around word (includes spaces)
-  ib - inner brackets/parentheses  
-  ab - around brackets (includes brackets)
-  ip - inner paragraph
-  ap - around paragraph
+---
 
-Examples:
-  diw - delete inner word
-  yaw - yank around word
-  cib - change inside brackets
+Lesson 4: COPY AND PASTE
+~~~~~~~~~~~~~~~~~~~~~~~~~
 
-** Practice with the examples below: **
+Exercise 4.1: Yanking (Copying)
+yw - yank word
+yy - yank line
+y$ - yank to end of line
 
-Delete this word using diw
-Change (these words) using cib  
-Yank around word using yaw
+Practice on this text:
+Copy this sentence for practice.
 
-This is a paragraph that you can practice with.
-Use text objects to manipulate it efficiently.
-
-===============================================================================
-=                         Lesson 9: REPEAT AND UNDO                        =
-===============================================================================
-
-Essential commands for editing:
-  u - undo last change
-  . - repeat last operation
-
-The dot command is powerful - it repeats your last edit.
+- Use yw to copy "Copy"
+- Use yy to copy the entire line
+- Use y$ to copy from cursor to end
 
-** Practice: **
-1. Delete a word with dw
-2. Move to another word  
-3. Press . to repeat the deletion
+---
 
-Try it on these words: apple banana cherry grape orange
+Exercise 4.2: Pasting
+p - paste after cursor
+P - paste before cursor
 
-Undo with u if you make mistakes.
+Practice:
+- Yank a word with yw and paste it with p
+- Yank a line with yy and paste it with P
+- Create multiple copies with 3p
 
-===============================================================================
-=                        Lesson 10: SEARCH                                 =
-===============================================================================
+Try copying this word: [Hello] and pasting it multiple times.
 
-Search for text in the document:
-  /text - search forward for "text"
-  n - go to next search result
-  N - go to previous search result
+---
 
-** Practice: **
-1. Type /SEARCH to find the word SEARCH below
-2. Press n to find the next occurrence
-3. Press N to go back to previous
+Lesson 5: VISUAL MODE
+~~~~~~~~~~~~~~~~~~~~~
 
-SEARCH target one
-Some text here
-SEARCH target two  
-More text
-SEARCH target three
+Exercise 5.1: Character Visual Mode
+v - enter visual mode (character-wise)
 
-===============================================================================
-=                       Lesson 11: COMMAND MODE                            =
-===============================================================================
+Practice on this text:
+Select parts of this sentence visually.
 
-Access command mode with :
+- Press v and move with h,j,k,l to select text
+- Try selecting the word "sentence"
+- Select "parts of this" 
 
-Available commands:
-  :e filename - create new file/tab
-  :tutor - open this tutorial
+Now try these operations in visual mode:
+- d to delete selection
+- y to yank selection
+- c to change selection
 
-** Try typing :vimtutor and press Enter to reload this tutorial **
+---
 
-===============================================================================
-=                       Lesson 12: REPLACE MODE                            =
-===============================================================================
+Exercise 5.2: Line Visual Mode
+V - enter visual line mode
 
-Replace single characters:
-  r + character - replace character under cursor
+Practice on these lines:
+Select entire lines
+Using visual line mode
+For block operations
 
-** Practice: Replace the X's below with the correct letters **
+- Press V and select multiple lines
+- Delete the selection with d
+- Yank the selection with y
+- Change the selection with c
 
-The quXck brown foX jumps over the laXy dog.
-(Should be: "The quick brown fox jumps over the lazy dog.")
+Select all three lines and delete them.
 
-Position cursor over X and type r followed by the correct letter.
+---
 
-===============================================================================
-=                         LESSON SUMMARY                                    =
-===============================================================================
+Lesson 6: SEARCH AND REPLACE
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-You've learned the essential NppVim commands:
+Exercise 6.1: Basic Search
+/pattern - search forward
+n - repeat search forward
+N - repeat search backward
 
-MOTIONS:
-  h,j,k,l - basic movements
-  w,b,e,E - word movements  
-  0,$ - line movements
-  gg,G - document movements
-  Ctrl-D, Ctrl-U - half page down/up
+Practice searching for these words in the text below:
+cat, dog, bird
 
-MODES:
-  i,a,A,I,o,O - enter insert mode
-  v,V - enter visual mode
-  ESC - return to normal mode
+The cat chased the dog while the bird watched.
+Another cat played near the dog house.
+The bird flew away from the cat.
 
-OPERATIONS:
-  x,dd,d+motion - delete
-  cc,c+motion - change  
-  yy,y+motion - yank (copy)
-  p - paste
-  r - replace character
+- Use /cat to find "cat"
+- Use n to find next occurrence
+- Use N to find previous occurrence
 
-TEXT OBJECTS:
-  iw,aw - word objects
-  ib,ab - bracket objects  
-  ip,ap - paragraph objects
+Search for all three animals.
 
-OTHER:
-  u - undo
-  . - repeat last operation
-  /,n,N - search
-  : - command mode
+---
 
-===============================================================================
-=                            PRACTICE AREA                                  =
-===============================================================================
+Exercise 6.2: Word Search and Replace
+* - search word under cursor forward
+# - search word under cursor backward  
+r - replace single character
 
-Use this area to practice what you've learned. Try combining motions with
-operations and using text objects efficiently.
+Practice on this text:
+Replace the m in mouse with h to make house.
+Change the c in cat to b to make bat.
+Fix the d in dog to f to make fog.
 
-This is a sample paragraph for practicing. You can delete words, change
-sentences, and copy text. Remember that the key to Vim efficiency is
-combining motions with operations.
+- Move to "m" in "mouse" and press r then h
+- Move to "c" in "cat" and press r then b
+- Move to "d" in "dog" and press r then f
 
-Practice deleting words, changing text inside parentheses (like this),
-and using visual mode to select and manipulate text.
+Now try using * on "house" to search for it.
 
-The more you practice these motions, the more natural they will become.
-Eventually, you'll find yourself editing text much faster than before.
+---
 
-===============================================================================
-=                            CONGRATULATIONS!                               =
-===============================================================================
+Lesson 7: ADVANCED OPERATIONS
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-You have completed the NppVim tutorial! You now know the basic commands
-to start editing efficiently with Vim-style motions in Notepad++.
+Exercise 7.1: Joining Lines
+J - join current line with next line
 
-Remember:
-- Practice regularly to build muscle memory
-- Combine motions with operations for efficiency  
-- Use text objects to work with logical text units
-- The dot command is your friend for repetitive tasks
+Practice on these lines:
+Join these
+multiple lines
+together into
+single lines
 
-Keep this tutorial open as a reference while you practice. Happy editing!
+- Move to first line and press J
+- Press J twice more to join all lines
 
-===============================================================================
+Now you should have one continuous line.
+
+---
+
+Exercise 7.2: Undo and Repeat
+u - undo last change
+. - repeat last change
+
+Practice:
+- Delete a word with dw
+- Press u to undo the deletion
+- Press . to redo the deletion
+
+Try changing a word with cw, then use u and ..
+
+---
+
+Lesson 8: REPEAT COUNTS
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+Exercise 8.1: Movement with Counts
+[count]motion - repeat motion count times
+
+Practice on this text:
+Move 3 words forward, then 2 words back.
+Jump 5 lines down, then 4 lines up.
+Delete 2 words ahead, then 3 characters.
+
+- Use 3w to move 3 words forward
+- Use 2b to move 2 words back
+- Use 5j to move 5 lines down
+- Use 4k to move 4 lines up
+
+---
+
+Exercise 8.2: Editing with Counts
+[count]command - repeat command count times
+
+Practice on these lines:
+Line one for deletion
+Line two for deletion  
+Line three for deletion
+Line four for deletion
+Line five for deletion
+
+- Use 3dd to delete 3 lines
+- Use 2p to paste 2 copies
+- Use 5x to delete 5 characters
+
+Delete lines 2-4 using counts.
+
+---
+
+Lesson 9: TEXT OBJECTS
+~~~~~~~~~~~~~~~~~~~~~~
+
+Exercise 9.1: Word Text Objects
+diw - delete inner word
+ciw - change inner word
+
+Practice on this text:
+Change the word middle using ciw.
+Delete the word remove using diw.
+
+- Move to "middle" and press ciw then type "center"
+- Move to "remove" and press diw
+
+Try both commands on different words.
+
+---
+
+Exercise 9.2: Quote Text Objects
+yi" - yank inside quotes
+ci' - change inside single quotes
+da" - delete around quotes
+
+Practice on this text:
+"Change this quoted text" using ci"
+'Modify this single quoted text' using ci'
+"Delete these quotes completely" using da"
+
+- Move inside the double quotes and press ci"
+- Move inside the single quotes and press ci'
+- Move anywhere in the last quotes and press da"
+
+---
+
+Exercise 9.3: Bracket Text Objects
+ci( - change inside parentheses
+di[ - delete inside brackets
+ya{ - yank around braces
+
+Practice on this text:
+(change the content inside these parentheses)
+[delete everything inside these brackets]
+{yank everything including these braces}
+
+- Use ci( to change parenthetical content
+- Use di[ to delete bracket content  
+- Use ya{ to yank brace content including braces
+
+---
+
+Lesson 10: CHARACTER SEARCH
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Exercise 10.1: Find Characters
+f<char> - find next character on line
+F<char> - find previous character on line
+
+Practice on this line:
+Find all the letter 'e' characters in this sentence.
+
+- Press fe to find first 'e'
+- Press ; to find next 'e'
+- Press , to find previous 'e'
+
+Now try finding 't' with ft and navigating with ; and ,.
+
+---
+
+Exercise 10.2: Character Search with Counts
+3fa - find third occurrence of 'a'
+
+Practice on this line:
+Find the banana in Alabama with ana and ana.
+
+- Use 3fa to find the third 'a'
+- Use 2fna to find the second "na"
+
+Try finding specific occurrences of other letters.
+
+---
+
+Lesson 11: COMMAND MODE
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+Exercise 11.1: File Operations
+:w - save file
+:q - quit file
+:wq - save and quit
+
+Practice:
+- Try :w to save this file
+- Don't worry, this is a practice file
+- Use :q if you want to exit (come back!)
+
+---
+
+Exercise 11.2: Navigation and Search
+:15 - go to line 15
+:s/pattern - regex search
+
+Practice:
+- Use :5 to go to line 5
+- Use :20 to go to line 20
+- Use :s/cat to search for "cat" with regex
+
+Try going to different line numbers.
+
+---
+
+FINAL PRACTICE
+~~~~~~~~~~~~~~
+
+Exercise 12.1: Combined Skills
+
+Practice all your skills on this text block:
+
+"The quick (brown) fox jumps over the lazy dog," said the narrator.
+[This is] a {practice} sentence with 'multiple' elements.
+
+Tasks:
+1. Use diw to delete "quick"
+2. Use ci( to change "brown" to "red"
+3. Use da[ to delete "[This is]"
+4. Use yi{ to yank "{practice}"
+5. Use ci' to change 'multiple' to 'several'
+6. Use f, to find the comma, then r. to change it to period
+
+---
+
+CONGRATULATIONS!
+~~~~~~~~~~~~~~~~
+
+You've completed the interactive NppVim tutor!
+
+You now know:
+✓ Basic movement and navigation
+✓ Insertion and editing commands  
+✓ Deletion, copying, and pasting
+✓ Visual mode selection
+✓ Search and replace operations
+✓ Advanced operations like join, undo, repeat
+✓ Repeat counts for efficiency
+✓ Text objects for structured editing
+✓ Character search for line navigation
+✓ Command mode for file operations
+
+To review this tutor anytime, use :tutor
+
+Happy Vim editing!

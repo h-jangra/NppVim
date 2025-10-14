@@ -6,13 +6,15 @@ vs.proj/x64/
 vs.proj/ARM64
 vs.proj/Debug/
 vs.proj/Release/
-UpgradeLog.htm
 vs.proj/NppVim.vcxproj.user
 vs.proj/NppVim.exp
 vs.proj/NppVim.lib
 vs.proj/NppVim.log
 vs.proj/NppVim.sln
 vs.proj/NppVim
+vs.proj/NppVim.lib
+UpgradeLog.htm
+*.zip
 *.sdf
 *.suo
 *.filters
@@ -21,4 +23,3 @@ vs.proj/NppVim
 *.exp
 *.aps
 *.bak
-vs.proj/NppVim.lib
