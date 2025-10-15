@@ -15,7 +15,7 @@ const int nbFunc = 3;
 FuncItem funcItem[nbFunc];
 
 enum VimMode { NORMAL, INSERT, VISUAL };
-enum LastOpType { OP_NONE, OP_DELETE_LINE, OP_YANK_LINE, OP_PASTE_LINE, OP_MOTION };
+enum LastOpType { OP_NONE, OP_DELETE_LINE, OP_YANK_LINE, OP_PASTE_LINE, OP_MOTION, OP_REPLACE };
 
 enum TextObjectType {
     TEXT_OBJECT_WORD,
@@ -43,6 +43,7 @@ struct State {
     bool useRegex = false;
     std::string commandBuffer;
     std::string lastSearchTerm;
+    int lastSearchMatchCount = -1;
 
     char lastSearchChar = 0;
     bool lastSearchForward = true;
@@ -63,7 +64,6 @@ void enterNormalMode();
 void enterInsertMode();
 HWND getCurrentScintillaHandle();
 void setStatus(const TCHAR* msg);
-void recordLastOp(LastOpType type, int count = 1, char motion = 0);
 void clearSearchHighlights(HWND hwndEdit);
 void setVisualSelection(HWND hwndEdit);
 void enterVisualCharMode(HWND hwndEdit);
@@ -96,6 +96,8 @@ void repeatLastOp(HWND hwndEdit);
 void performSearch(HWND hwndEdit, const std::string& searchTerm, bool useRegex = false);
 void searchNext(HWND hwndEdit);
 void searchPrevious(HWND hwndEdit);
+void showCurrentMatchPosition(HWND hwndEdit);
+void updateSearchHighlight(HWND hwndEdit, const std::string& searchTerm, bool useRegex);
 void openTutor();
 void handleCommand(HWND hwndEdit);
 void handleNormalKey(HWND hwndEdit, char c);
@@ -119,10 +121,11 @@ void setStatus(const TCHAR* msg) {
     ::SendMessage(nppData._nppHandle, NPPM_SETSTATUSBAR, STATUSBAR_DOC_TYPE, (LPARAM)msg);
 }
 
-void recordLastOp(LastOpType type, int count, char motion) {
+void recordLastOp(LastOpType type, int count = 1, char motion = 0, char searchChar = 0) {
     state.lastOp.type = type;
     state.lastOp.count = count;
     state.lastOp.motion = motion;
+    state.lastOp.searchChar = searchChar;
 }
 
 void clearSearchHighlights(HWND hwndEdit) {
@@ -143,6 +146,7 @@ void enterNormalMode() {
     state.opPending = 0;
     state.textObjectPending = 0;
     state.replacePending = false;
+    state.lastSearchMatchCount = -1;
     setStatus(TEXT("-- NORMAL --"));
     ::SendMessage(hwndEdit, SCI_SETCARETSTYLE, CARETSTYLE_BLOCK, 0);
 
@@ -235,6 +239,30 @@ void exitCommandMode() {
 
 void updateCommandStatus() {
     std::wstring display(state.commandBuffer.begin(), state.commandBuffer.end());
+
+    if (state.lastSearchMatchCount >= 0) {
+        const int totalWidth = 80; // Approximate status bar width
+        int commandLength = display.length();
+        int availableSpace = totalWidth - commandLength - 20; // Reserve space for match info
+
+        // Add match info on the right
+        std::wstring matchInfo;
+        if (state.lastSearchMatchCount > 0) {
+            matchInfo = L"Found " + std::to_wstring(state.lastSearchMatchCount) + L" match";
+            if (state.lastSearchMatchCount > 1) matchInfo += L"es";
+        }
+        else {
+            matchInfo = L"Pattern not found";
+        }
+
+        // Add the match info with some spacing
+        int rightPadding = totalWidth - display.length() - matchInfo.length();
+        if (rightPadding > 0) {
+            display += std::wstring(rightPadding, L' ');
+        }
+        display += matchInfo;
+    }
+
     setStatus(display.c_str());
 }
 
@@ -275,6 +303,20 @@ void DoMotion_line_up(HWND hwndEdit, int count) {
 
     for (int i = 0; i < count; i++) {
         ::SendMessage(hwndEdit, SCI_LINEUP, 0, 0);
+    }
+
+    if (state.mode == VISUAL) {
+        int newCaret = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+        ::SendMessage(hwndEdit, SCI_SETSEL, anchor, newCaret);
+    }
+}
+
+void DoMotion_line_down(HWND hwndEdit, int count) {
+    int anchor = (int)::SendMessage(hwndEdit, SCI_GETANCHOR, 0, 0);
+    int caret = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+
+    for (int i = 0; i < count; i++) {
+        ::SendMessage(hwndEdit, SCI_LINEDOWN, 0, 0);
     }
 
     if (state.mode == VISUAL) {
@@ -344,18 +386,6 @@ void DoMotion_prev_char(HWND hwndEdit, int count, char searchChar) {
 
     if (state.mode == NORMAL) {
         ::SendMessage(hwndEdit, SCI_SETSEL, pos, pos);
-    }
-    else if (state.mode == VISUAL) {
-        setVisualSelection(hwndEdit);
-    }
-}
-
-void DoMotion_line_down(HWND hwndEdit, int count) {
-    for (int i = 0; i < count; i++) ::SendMessage(hwndEdit, SCI_LINEDOWN, 0, 0);
-
-    if (state.mode == NORMAL) {
-        int caret = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
-        ::SendMessage(hwndEdit, SCI_SETSEL, caret, caret);
     }
     else if (state.mode == VISUAL) {
         setVisualSelection(hwndEdit);
@@ -975,30 +1005,101 @@ void yankLineOnce(HWND hwndEdit) {
 }
 
 void repeatLastOp(HWND hwndEdit) {
+    if (state.lastOp.type == OP_NONE) return;
+
     ::SendMessage(hwndEdit, SCI_BEGINUNDOACTION, 0, 0);
+
     int count = state.repeatCount > 0 ? state.repeatCount : state.lastOp.count;
+
     switch (state.lastOp.type) {
     case OP_DELETE_LINE:
         for (int i = 0; i < count; ++i) deleteLineOnce(hwndEdit);
         break;
+
     case OP_YANK_LINE:
         for (int i = 0; i < count; ++i) yankLineOnce(hwndEdit);
         break;
+
     case OP_PASTE_LINE:
         for (int i = 0; i < count; ++i) ::SendMessage(hwndEdit, SCI_PASTE, 0, 0);
         break;
+
     case OP_MOTION:
-        applyOperatorToMotion(hwndEdit, 'd', state.lastOp.motion, count);
+        // Handle character search repetition
+        if (state.lastOp.motion == 'f' || state.lastOp.motion == 'F') {
+            if (state.lastOp.searchChar != 0) {
+                if (state.lastOp.motion == 'f') {
+                    DoMotion_next_char(hwndEdit, count, state.lastOp.searchChar);
+                }
+                else {
+                    DoMotion_prev_char(hwndEdit, count, state.lastOp.searchChar);
+                }
+            }
+        }
+        // Handle search repetition
+        else if (state.lastOp.motion == 'n' || state.lastOp.motion == 'N') {
+            if (state.lastOp.motion == 'n') {
+                searchNext(hwndEdit);
+            }
+            else {
+                searchPrevious(hwndEdit);
+            }
+        }
+        // Handle word search repetition
+        else if (state.lastOp.motion == '*' || state.lastOp.motion == '#') {
+            if (!state.lastSearchTerm.empty()) {
+                if (state.lastOp.motion == '*') {
+                    searchNext(hwndEdit);
+                }
+                else {
+                    searchPrevious(hwndEdit);
+                }
+            }
+        }
+        // Handle delete character operations
+        else if (state.lastOp.motion == 'x' || state.lastOp.motion == 'X') {
+            for (int i = 0; i < count; ++i) {
+                if (state.lastOp.motion == 'x') {
+                    int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+                    int nextPos = pos + 1;
+                    int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
+                    if (nextPos <= docLen) {
+                        ::SendMessage(hwndEdit, SCI_SETSEL, pos, nextPos);
+                        ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0);
+                    }
+                }
+                else {
+                    int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+                    if (pos > 0) {
+                        ::SendMessage(hwndEdit, SCI_SETSEL, pos - 1, pos);
+                        ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0);
+                    }
+                }
+            }
+        }
+
+        else {
+            applyOperatorToMotion(hwndEdit, 'd', state.lastOp.motion, count);
+        }
+        break;
+
+    case OP_REPLACE:
+        state.replacePending = true;
         break;
     }
+
     ::SendMessage(hwndEdit, SCI_ENDUNDOACTION, 0, 0);
+    state.repeatCount = 0; // Reset repeat count after repetition
 }
 
-void performSearch(HWND hwndEdit, const std::string& searchTerm, bool useRegex) {
-    if (searchTerm.empty()) return;
-
-    state.lastSearchTerm = searchTerm;
-    state.useRegex = useRegex;
+void updateSearchHighlight(HWND hwndEdit, const std::string& searchTerm, bool useRegex) {
+    if (searchTerm.empty()) {
+        // Clear highlights if search term is empty
+        int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
+        ::SendMessage(hwndEdit, SCI_SETINDICATORCURRENT, 0, 0);
+        ::SendMessage(hwndEdit, SCI_INDICATORCLEARRANGE, 0, docLen);
+        return;
+    }
 
     int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
 
@@ -1046,22 +1147,34 @@ void performSearch(HWND hwndEdit, const std::string& searchTerm, bool useRegex) 
         }
     }
 
-    if (firstMatch != -1) {
-        int firstEnd = firstMatch + (int)searchTerm.length();
-        ::SendMessage(hwndEdit, SCI_SETSEL, firstMatch, firstEnd);
+    state.lastSearchMatchCount = matchCount;
+}
+
+void performSearch(HWND hwndEdit, const std::string& searchTerm, bool useRegex) {
+    if (searchTerm.empty()) return;
+
+    state.lastSearchTerm = searchTerm;
+    state.useRegex = useRegex;
+
+    updateSearchHighlight(hwndEdit, searchTerm, useRegex);
+
+    // Move to first match if found
+    int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
+    int flags = (useRegex ? SCFIND_REGEXP : 0);
+    ::SendMessage(hwndEdit, SCI_SETSEARCHFLAGS, flags, 0);
+
+    ::SendMessage(hwndEdit, SCI_SETTARGETSTART, 0, 0);
+    ::SendMessage(hwndEdit, SCI_SETTARGETEND, docLen, 0);
+
+    int found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
+        (WPARAM)searchTerm.length(), (LPARAM)searchTerm.c_str());
+
+    if (found != -1) {
+        int s = (int)::SendMessage(hwndEdit, SCI_GETTARGETSTART, 0, 0);
+        int e = (int)::SendMessage(hwndEdit, SCI_GETTARGETEND, 0, 0);
+        ::SendMessage(hwndEdit, SCI_SETSEL, s, e);
         ::SendMessage(hwndEdit, SCI_SCROLLCARET, 0, 0);
     }
-
-    std::string status;
-    if (matchCount > 0) {
-        status = "Found " + std::to_string(matchCount) + " match";
-        if (matchCount > 1) status += "es";
-    }
-    else {
-        status = "Pattern not found: " + searchTerm;
-    }
-    std::wstring wstatus(status.begin(), status.end());
-    setStatus(wstatus.c_str());
 }
 
 void searchNext(HWND hwndEdit) {
@@ -1080,13 +1193,14 @@ void searchNext(HWND hwndEdit) {
         (WPARAM)state.lastSearchTerm.length(), (LPARAM)state.lastSearchTerm.c_str());
 
     if (found == -1) {
+        // Wrap around to beginning
         ::SendMessage(hwndEdit, SCI_SETTARGETSTART, 0, 0);
         ::SendMessage(hwndEdit, SCI_SETTARGETEND, startPos, 0);
         found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
             (WPARAM)state.lastSearchTerm.length(), (LPARAM)state.lastSearchTerm.c_str());
 
         if (found != -1) {
-            //setStatus(L"search hit BOTTOM, continuing at TOP");
+            setStatus(L"Search hit BOTTOM, continuing at TOP");
         }
     }
 
@@ -1095,6 +1209,12 @@ void searchNext(HWND hwndEdit) {
         int e = (int)::SendMessage(hwndEdit, SCI_GETTARGETEND, 0, 0);
         ::SendMessage(hwndEdit, SCI_SETSEL, s, e);
         ::SendMessage(hwndEdit, SCI_SCROLLCARET, 0, 0);
+
+        // Show current match position and total count
+        showCurrentMatchPosition(hwndEdit);
+    }
+    else {
+        setStatus(L"Pattern not found");
     }
 }
 
@@ -1108,6 +1228,7 @@ void searchPrevious(HWND hwndEdit) {
     int flags = (state.useRegex ? SCFIND_REGEXP : 0);
     ::SendMessage(hwndEdit, SCI_SETSEARCHFLAGS, flags, 0);
 
+    // Search backwards from current position to beginning
     ::SendMessage(hwndEdit, SCI_SETTARGETSTART, startPos, 0);
     ::SendMessage(hwndEdit, SCI_SETTARGETEND, 0, 0);
 
@@ -1115,13 +1236,14 @@ void searchPrevious(HWND hwndEdit) {
         (WPARAM)state.lastSearchTerm.length(), (LPARAM)state.lastSearchTerm.c_str());
 
     if (found == -1) {
+        // Wrap around to end
         ::SendMessage(hwndEdit, SCI_SETTARGETSTART, docLen, 0);
-        ::SendMessage(hwndEdit, SCI_SETTARGETEND, startPos + 1, 0);
+        ::SendMessage(hwndEdit, SCI_SETTARGETEND, startPos, 0);
         found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
             (WPARAM)state.lastSearchTerm.length(), (LPARAM)state.lastSearchTerm.c_str());
 
         if (found != -1) {
-            setStatus(L"search hit TOP, continuing at BOTTOM");
+            setStatus(L"Search hit TOP, continuing at BOTTOM");
         }
     }
 
@@ -1130,6 +1252,81 @@ void searchPrevious(HWND hwndEdit) {
         int e = (int)::SendMessage(hwndEdit, SCI_GETTARGETEND, 0, 0);
         ::SendMessage(hwndEdit, SCI_SETSEL, s, e);
         ::SendMessage(hwndEdit, SCI_SCROLLCARET, 0, 0);
+
+        // Show current match position and total count
+        showCurrentMatchPosition(hwndEdit);
+    }
+    else {
+        setStatus(L"Pattern not found");
+    }
+}
+
+void showCurrentMatchPosition(HWND hwndEdit) {
+    if (state.lastSearchTerm.empty()) return;
+
+    int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
+    int currentPos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+
+    int flags = (state.useRegex ? SCFIND_REGEXP : 0);
+    ::SendMessage(hwndEdit, SCI_SETSEARCHFLAGS, flags, 0);
+
+    // Count total matches
+    int totalMatches = 0;
+    int pos = 0;
+    while (pos < docLen) {
+        ::SendMessage(hwndEdit, SCI_SETTARGETSTART, pos, 0);
+        ::SendMessage(hwndEdit, SCI_SETTARGETEND, docLen, 0);
+
+        int found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
+            (WPARAM)state.lastSearchTerm.length(), (LPARAM)state.lastSearchTerm.c_str());
+
+        if (found == -1) break;
+
+        int start = (int)::SendMessage(hwndEdit, SCI_GETTARGETSTART, 0, 0);
+        int end = (int)::SendMessage(hwndEdit, SCI_GETTARGETEND, 0, 0);
+
+        totalMatches++;
+        pos = end;
+
+        if (end <= start) {
+            pos = start + 1;
+        }
+    }
+
+    // Find current match index
+    int currentMatchIndex = 0;
+    pos = 0;
+    int matchCount = 0;
+    while (pos < docLen) {
+        ::SendMessage(hwndEdit, SCI_SETTARGETSTART, pos, 0);
+        ::SendMessage(hwndEdit, SCI_SETTARGETEND, docLen, 0);
+
+        int found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
+            (WPARAM)state.lastSearchTerm.length(), (LPARAM)state.lastSearchTerm.c_str());
+
+        if (found == -1) break;
+
+        int start = (int)::SendMessage(hwndEdit, SCI_GETTARGETSTART, 0, 0);
+        int end = (int)::SendMessage(hwndEdit, SCI_GETTARGETEND, 0, 0);
+
+        matchCount++;
+
+        // Check if current position is within this match
+        if (currentPos >= start && currentPos <= end) {
+            currentMatchIndex = matchCount;
+            break;
+        }
+
+        pos = end;
+        if (end <= start) {
+            pos = start + 1;
+        }
+    }
+
+    if (totalMatches > 0 && currentMatchIndex > 0) {
+        std::string status = "Match " + std::to_string(currentMatchIndex) + " of " + std::to_string(totalMatches);
+        std::wstring wstatus(status.begin(), status.end());
+        setStatus(wstatus.c_str());
     }
 }
 
@@ -1228,15 +1425,13 @@ void handleNormalKey(HWND hwndEdit, char c) {
 
     int count = (state.repeatCount > 0) ? state.repeatCount : 1;
 
-    // Handle replace character - UPDATED: Now handles all characters including digits and 'r'
+    // Handle replace character
     if (state.replacePending) {
         int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
         int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
         if (pos < docLen) {
-            // Get the current character to check if we can replace it
             char currentChar = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, pos, 0);
 
-            // Only replace if we're not at the end of document and character is not a newline
             if (currentChar != '\r' && currentChar != '\n') {
                 ::SendMessage(hwndEdit, SCI_SETSEL, pos, pos + 1);
                 std::string repl(1, c);
@@ -1245,6 +1440,85 @@ void handleNormalKey(HWND hwndEdit, char c) {
             }
         }
         state.replacePending = false;
+        state.repeatCount = 0;
+
+        // Record for repetition
+        state.lastOp.type = OP_REPLACE;
+        state.lastOp.count = 1;
+        state.lastOp.motion = 'r';
+        return;
+    }
+
+    // Handle character search after 'f' or 'F' - THIS IS THE KEY FIX
+    if (state.textObjectPending == 'f' && (state.opPending == 'f' || state.opPending == 'F')) {
+        char searchChar = c;
+        int originalPos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+        bool found = false;
+
+        if (state.opPending == 'f') {
+            int newPos = originalPos;
+            for (int i = 0; i < count; i++) {
+                int tempPos = newPos + 1;
+                int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
+                while (tempPos < docLen) {
+                    char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, tempPos, 0);
+                    if (ch == searchChar) {
+                        newPos = tempPos;
+                        found = true;
+                        break;
+                    }
+                    tempPos++;
+                }
+                if (!found) break;
+            }
+            if (found) {
+                ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, newPos, 0);
+                if (state.mode == NORMAL) {
+                    ::SendMessage(hwndEdit, SCI_SETSEL, newPos, newPos);
+                }
+                else if (state.mode == VISUAL) {
+                    setVisualSelection(hwndEdit);
+                }
+            }
+        }
+        else if (state.opPending == 'F') {
+            int newPos = originalPos;
+            for (int i = 0; i < count; i++) {
+                int tempPos = newPos - 1;
+                while (tempPos >= 0) {
+                    char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, tempPos, 0);
+                    if (ch == searchChar) {
+                        newPos = tempPos;
+                        found = true;
+                        break;
+                    }
+                    tempPos--;
+                }
+                if (!found) break;
+            }
+            if (found) {
+                ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, newPos, 0);
+                if (state.mode == NORMAL) {
+                    ::SendMessage(hwndEdit, SCI_SETSEL, newPos, newPos);
+                }
+                else if (state.mode == VISUAL) {
+                    setVisualSelection(hwndEdit);
+                }
+            }
+        }
+
+        if (found) {
+            state.lastSearchChar = searchChar;
+            state.lastSearchForward = (state.opPending == 'f');
+            recordLastOp(OP_MOTION, count, state.opPending, searchChar);
+        }
+        else {
+            setStatus(TEXT("Character not found"));
+        }
+
+        // ALWAYS reset these states regardless of whether character was found
+        state.opPending = 0;
+        state.textObjectPending = 0;
         state.repeatCount = 0;
         return;
     }
@@ -1300,6 +1574,14 @@ void handleNormalKey(HWND hwndEdit, char c) {
             return;
         }
 
+        // Handle f/F character search motions - SEPARATE FROM OTHER OPERATIONS
+        if (c == 'f' || c == 'F') {
+            state.opPending = c;
+            state.textObjectPending = 'f';  // Use 'f' to indicate character search mode
+            state.repeatCount = 0;
+            return;
+        }
+
         // Handle g motions
         if (c == 'g') {
             if (state.opPending != 'g') {
@@ -1314,16 +1596,8 @@ void handleNormalKey(HWND hwndEdit, char c) {
             return;
         }
 
-        // Handle f/F character search motions
-        if (c == 'f' || c == 'F') {
-            state.opPending = c;
-            state.textObjectPending = 'f';
-            state.repeatCount = 0;
-            return;
-        }
-
-        // Handle motion with pending operator
-        if (state.opPending &&
+        // Handle motion with pending operator (EXCLUDE f/F since they're handled separately)
+        if (state.opPending && state.opPending != 'f' && state.opPending != 'F' &&
             (c == 'w' || c == 'W' || c == '$' || c == 'e' || c == 'E' || c == 'b' || c == 'B' ||
                 c == 'h' || c == 'l' || c == 'j' || c == 'k' || c == '^' || c == 'H' || c == 'L' ||
                 c == '{' || c == '}' || c == 'G' || c == '%' || c == 'g' || c == '0'))
@@ -1343,6 +1617,7 @@ void handleNormalKey(HWND hwndEdit, char c) {
         case 'd':
         case 'x':
             ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0);
+            recordLastOp(OP_MOTION, count, 'd'); // Record for repetition
             enterNormalMode();
             state.repeatCount = 0;
             return;
@@ -1350,12 +1625,14 @@ void handleNormalKey(HWND hwndEdit, char c) {
             int start = (int)::SendMessage(hwndEdit, SCI_GETSELECTIONSTART, 0, 0);
             int end = (int)::SendMessage(hwndEdit, SCI_GETSELECTIONEND, 0, 0);
             ::SendMessage(hwndEdit, SCI_COPYRANGE, start, end);
+            recordLastOp(OP_MOTION, count, 'y'); // Record for repetition
             enterNormalMode();
             state.repeatCount = 0;
             return;
         }
         case 'c':
             ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0);
+            recordLastOp(OP_MOTION, count, 'c'); // Record for repetition
             enterInsertMode();
             state.repeatCount = 0;
             return;
@@ -1380,35 +1657,12 @@ void handleNormalKey(HWND hwndEdit, char c) {
         }
     }
 
-    // Handle character search after 'f' or 'F'
-    if (state.textObjectPending == 'f' && state.opPending && (c != 'f' && c != 'F')) {
-        char searchChar = c;
-
-        if (state.opPending == 'f') {
-            DoMotion_next_char(hwndEdit, count, searchChar);
-        }
-        else if (state.opPending == 'F') {
-            DoMotion_prev_char(hwndEdit, count, searchChar);
-        }
-
-        state.lastSearchChar = searchChar;
-        state.lastSearchForward = (state.opPending == 'f');
-
-        recordLastOp(OP_MOTION, count, state.opPending);
-        state.lastOp.searchChar = searchChar;
-
-        state.opPending = 0;
-        state.textObjectPending = 0;
-        state.repeatCount = 0;
-        return;
-    }
-
     // Reset state for new command ONLY if no pending operations
     if (!state.opPending && !state.textObjectPending) {
         state.repeatCount = 0;
     }
 
-    // Normal single-key commands (only if no pending operations)
+    // Normal single-key commands
     if (!state.opPending && !state.textObjectPending) {
         switch (c) {
         case 'h': case 'l': case 'j': case 'k':
@@ -1455,10 +1709,13 @@ void handleNormalKey(HWND hwndEdit, char c) {
 
         case 'u':
             ::SendMessage(hwndEdit, SCI_UNDO, 0, 0);
+            recordLastOp(OP_MOTION, 1, 'u'); // Record undo for repetition
             break;
 
         case 'r':
             state.replacePending = true;
+            // Pre-record for repetition (will be updated with actual char)
+            recordLastOp(OP_REPLACE, count, 'r');
             break;
 
         case 'R':
@@ -1473,6 +1730,7 @@ void handleNormalKey(HWND hwndEdit, char c) {
             setStatus(TEXT("-- REPLACE --"));
             ::SendMessage(hwndEdit, SCI_SETOVERTYPE, true, 0);
             ::SendMessage(hwndEdit, SCI_SETCARETSTYLE, CARETSTYLE_BLOCK, 0);
+            recordLastOp(OP_MOTION, count, 'R'); // Record replace mode
             break;
 
         case '.':
@@ -1550,6 +1808,7 @@ void handleNormalKey(HWND hwndEdit, char c) {
                 }
             }
             ::SendMessage(hwndEdit, SCI_ENDUNDOACTION, 0, 0);
+            recordLastOp(OP_MOTION, count, 'x'); // Record for repetition
             break;
 
         case 'X':
@@ -1562,6 +1821,7 @@ void handleNormalKey(HWND hwndEdit, char c) {
                 }
             }
             ::SendMessage(hwndEdit, SCI_ENDUNDOACTION, 0, 0);
+            recordLastOp(OP_MOTION, count, 'X'); // Record for repetition
             break;
 
         case 'D':
@@ -1587,6 +1847,7 @@ void handleNormalKey(HWND hwndEdit, char c) {
                 else {
                     DoMotion_prev_char(hwndEdit, count, state.lastSearchChar);
                 }
+                recordLastOp(OP_MOTION, count, state.lastSearchForward ? 'f' : 'F', state.lastSearchChar);
             }
             break;
 
@@ -1598,6 +1859,7 @@ void handleNormalKey(HWND hwndEdit, char c) {
                 else {
                     DoMotion_next_char(hwndEdit, count, state.lastSearchChar);
                 }
+                recordLastOp(OP_MOTION, count, state.lastSearchForward ? 'F' : 'f', state.lastSearchChar);
             }
             break;
 
@@ -1611,10 +1873,12 @@ void handleNormalKey(HWND hwndEdit, char c) {
 
         case 'n':
             searchNext(hwndEdit);
+            recordLastOp(OP_MOTION, count, 'n'); // Record search for repetition
             break;
 
         case 'N':
             searchPrevious(hwndEdit);
+            recordLastOp(OP_MOTION, count, 'N'); // Record search for repetition
             break;
 
         case '*':
@@ -1629,7 +1893,10 @@ void handleNormalKey(HWND hwndEdit, char c) {
                 textRange.chrg.cpMax = bounds.second;
                 textRange.lpstrText = word.data();
                 ::SendMessage(hwndEdit, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&textRange);
+
                 performSearch(hwndEdit, word.data(), false);
+                searchNext(hwndEdit);
+                recordLastOp(OP_MOTION, count, '*'); // Record word search for repetition
             }
         }
         break;
@@ -1646,8 +1913,10 @@ void handleNormalKey(HWND hwndEdit, char c) {
                 textRange.chrg.cpMax = bounds.second;
                 textRange.lpstrText = word.data();
                 ::SendMessage(hwndEdit, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&textRange);
-                state.lastSearchTerm = word.data();
+
+                performSearch(hwndEdit, word.data(), false);
                 searchPrevious(hwndEdit);
+                recordLastOp(OP_MOTION, count, '#'); // Record word search for repetition
             }
         }
         break;
@@ -1677,6 +1946,8 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
                 return 0;
             }
             else if (wParam == VK_ESCAPE) {
+                clearSearchHighlights(hwndEdit);
+                state.lastSearchMatchCount = -1;  // Reset match count
                 exitCommandMode();
                 return 0;
             }
@@ -1684,8 +1955,29 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
                 if (state.commandBuffer.size() > 1) {
                     state.commandBuffer.pop_back();
                     updateCommandStatus();
+
+                    // Update search highlights in real-time for backspace
+                    if (state.commandBuffer[0] == '/' && state.commandBuffer.size() > 1) {
+                        // Regular search
+                        std::string currentSearch = state.commandBuffer.substr(1);
+                        updateSearchHighlight(hwndEdit, currentSearch, false);
+                    }
+                    else if (state.commandBuffer[0] == ':' && state.commandBuffer.size() > 3 &&
+                        state.commandBuffer[1] == 's' && state.commandBuffer[2] == ' ') {
+                        // Regex search
+                        std::string currentPattern = state.commandBuffer.substr(3);
+                        updateSearchHighlight(hwndEdit, currentPattern, true);
+                    }
+                    else if (state.commandBuffer.size() == 1) {
+                        // Clear highlights when back to just prompt character
+                        clearSearchHighlights(hwndEdit);
+                        state.lastSearchMatchCount = -1;  // Reset match count
+                    }
                 }
                 else {
+                    // Clear search highlights when backspacing to just prompt
+                    clearSearchHighlights(hwndEdit);
+                    state.lastSearchMatchCount = -1;  // Reset match count
                     exitCommandMode();
                 }
                 return 0;
@@ -1697,6 +1989,21 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
             if (c >= 32 && c != 10 && c != 13) {
                 state.commandBuffer.push_back(c);
                 updateCommandStatus();
+
+                // Update search highlights in real-time
+                if (state.commandBuffer[0] == '/' && state.commandBuffer.size() > 1) {
+                    // Regular search
+                    std::string currentSearch = state.commandBuffer.substr(1);
+                    updateSearchHighlight(hwndEdit, currentSearch, false);
+                }
+                else if (state.commandBuffer[0] == ':' && state.commandBuffer.size() > 3) {
+                    // Check if it's a regex search command
+                    if (state.commandBuffer[1] == 's' && state.commandBuffer[2] == ' ') {
+                        // Regex search
+                        std::string currentPattern = state.commandBuffer.substr(3);
+                        updateSearchHighlight(hwndEdit, currentPattern, true);
+                    }
+                }
             }
             return 0;
         }

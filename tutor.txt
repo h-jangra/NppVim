@@ -1,16 +1,11 @@
-==================================================================================
-															NppVim Tutor v1.1.0.0
+===>70G===========================================================================
+															NppVim Tutor v1.2.0
 ==================================================================================
 
-Welcome to NppVim! This interactive tutor will guide you through Vim-style editing.
-Complete each exercise before moving to the next one.
-
-IMPORTANT: Press ESC to ensure you're in NORMAL mode before each exercise.
-Use :q to close this file when done.
+Welcome to NppVim! This interactive tutor will guide you through Vim editing.
 
 Lesson 1: BASIC MOVEMENT
 ~~~~~~~~~~~~~~~~~~~~~~~~
-
 The cursor is moved using the h,j,k,l keys.
 
    k
@@ -29,26 +24,24 @@ Line 2 - continue practicing
 Line 3 - almost done
 Line 4 - great job!
 
+When comfortable, move to the next section.
+
 ---
 
 Exercise 1.2: Word Movement
-w - move to next word
-b - move to previous word
-e - move to end of word
+w/W - move to next word
+b/B - move to previous word
+e/E - move to end of word
 
 Practice on this line:
-The quick brown fox jumps over the lazy dog
+The quick brown fox jumps over the lazy dog.
 
-Move to the beginning of this line and use:
-- w to move forward by words
-- b to move backward by words  
-- e to move to word ends
+When ready, continue to the next exercise.
 
 ---
 
 Exercise 1.3: Line Movement
-0 - move to beginning of line
-^ - move to first non-blank character  
+0/^ - move to beginning of line
 $ - move to end of line
 
 Practice on these lines:
@@ -63,13 +56,13 @@ Use 0, ^, and $ to navigate these lines.
 Exercise 1.4: File Movement
 gg - move to top of file
 G - move to bottom of file
+{ - move to previous paragraph
+} - move to next paragraph
 
 Practice:
 - Use gg to jump to the top
 - Use G to jump to the bottom
 - Use 10G to jump to line 10
-
-Now try: gg to top, then 5G to line 5, then G to bottom.
 
 ---
 
@@ -127,6 +120,7 @@ Exercise 3.2: Word and Line Deletion
 dw - delete word
 dd - delete line
 D - delete to end of line
+C - change to end of line
 
 Practice on these lines:
 Line one to delete
@@ -213,7 +207,7 @@ Lesson 6: SEARCH AND REPLACE
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Exercise 6.1: Basic Search
-/pattern - search forward
+/pattern - search forward with real-time highlighting
 n - repeat search forward
 N - repeat search backward
 
@@ -224,7 +218,7 @@ The cat chased the dog while the bird watched.
 Another cat played near the dog house.
 The bird flew away from the cat.
 
-- Use /cat to find "cat"
+- Use /cat to find "cat" - notice real-time highlighting!
 - Use n to find next occurrence
 - Use N to find previous occurrence
 
@@ -236,15 +230,17 @@ Exercise 6.2: Word Search and Replace
 * - search word under cursor forward
 # - search word under cursor backward  
 r - replace single character
+R - enter replace mode (overwrite)
 
 Practice on this text:
 Replace the m in mouse with h to make house.
 Change the c in cat to b to make bat.
 Fix the d in dog to f to make fog.
 
-- Move to "m" in "mouse" and press r then h
+- Move to "m" in "house" and press r then h
 - Move to "c" in "cat" and press r then b
 - Move to "d" in "dog" and press r then f
+- Press R to enter replace mode and overwrite text
 
 Now try using * on "house" to search for it.
 
@@ -271,7 +267,7 @@ Now you should have one continuous line.
 
 Exercise 7.2: Undo and Repeat
 u - undo last change
-. - repeat last change
+. - repeat single last change
 
 Practice:
 - Delete a word with dw
@@ -310,7 +306,7 @@ Line three for deletion
 Line four for deletion
 Line five for deletion
 
-- Use 3dd to delete 3 lines
+- Use d3d to delete 3 lines
 - Use 2p to paste 2 copies
 - Use 5x to delete 5 characters
 
@@ -324,6 +320,7 @@ Lesson 9: TEXT OBJECTS
 Exercise 9.1: Word Text Objects
 diw - delete inner word
 ciw - change inner word
+daw - delete a word (with surrounding space)
 
 Practice on this text:
 Change the word middle using ciw.
@@ -408,7 +405,7 @@ Exercise 11.1: File Operations
 :wq - save and quit
 
 Practice:
-- Try :w to save this file
+- Try :w to save a file
 - Don't worry, this is a practice file
 - Use :q if you want to exit (come back!)
 
@@ -416,21 +413,49 @@ Practice:
 
 Exercise 11.2: Navigation and Search
 :15 - go to line 15
-:s/pattern - regex search
+:s <pattern> - regex search with real-time highlighting
+:tutor - open this tutor
 
 Practice:
 - Use :5 to go to line 5
 - Use :20 to go to line 20
-- Use :s/cat to search for "cat" with regex
+- Use :s cat to search for "cat" with regex - see real-time highlights!
+- Use :tutor to reopen this file
 
 Try going to different line numbers.
+
+---
+
+Lesson 12: ADVANCED FEATURES
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Exercise 12.1: Replace Mode
+R - enter replace/overwrite mode
+
+Practice on this text:
+Overwrite this text in replace mode.
+
+- Move to beginning and press R
+- Type new text to overwrite existing text
+- Press ESC to return to normal mode
+
+---
+
+Exercise 12.2: Search Match Counter
+Real-time match counting in status bar
+
+Practice:
+- Search for any word with /word
+- See the "Found X matches" in status bar
+- Use n and N to navigate - see "Match X of Y" counter
+- Try :s <regex> for regex search with counters
 
 ---
 
 FINAL PRACTICE
 ~~~~~~~~~~~~~~
 
-Exercise 12.1: Combined Skills
+Exercise 13.1: Combined Skills
 
 Practice all your skills on this text block:
 
@@ -444,26 +469,18 @@ Tasks:
 4. Use yi{ to yank "{practice}"
 5. Use ci' to change 'multiple' to 'several'
 6. Use f, to find the comma, then r. to change it to period
+7. Use V to select the entire first line and yank it
+8. Use p to paste it below
+9. Use R to overwrite the pasted line with new content
+10. Search for "fox" with /fox and navigate with n/N
+
+Complete all tasks of NppVim!
 
 ---
 
 CONGRATULATIONS!
 ~~~~~~~~~~~~~~~~
 
-You've completed the interactive NppVim tutor!
-
-You now know:
-✓ Basic movement and navigation
-✓ Insertion and editing commands  
-✓ Deletion, copying, and pasting
-✓ Visual mode selection
-✓ Search and replace operations
-✓ Advanced operations like join, undo, repeat
-✓ Repeat counts for efficiency
-✓ Text objects for structured editing
-✓ Character search for line navigation
-✓ Command mode for file operations
-
 To review this tutor anytime, use :tutor
 
-Happy Vim editing!
+--->56G
