@@ -1410,6 +1410,18 @@ std::string getClipboardText(HWND hwnd) {
     return text;
 }
 
+void process_g_key(HWND hwndEdit, int count) {
+    if (state.opPending != 'g') {
+        state.opPending = 'g';
+        state.repeatCount = 0;
+    }
+    else {
+        doMotion(hwndEdit, 'g', count);
+        state.opPending = 0;
+        state.repeatCount = 0;
+    }
+}
+
 void handleNormalKey(HWND hwndEdit, char c) {
     // Handle digits for repeat counts
     if (std::isdigit(static_cast<unsigned char>(c))) {
@@ -1584,15 +1596,7 @@ void handleNormalKey(HWND hwndEdit, char c) {
 
         // Handle g motions
         if (c == 'g') {
-            if (state.opPending != 'g') {
-                state.opPending = 'g';
-                state.repeatCount = 0;
-            }
-            else {
-                doMotion(hwndEdit, 'g', count);
-                state.opPending = 0;
-                state.repeatCount = 0;
-            }
+            process_g_key(hwndEdit, count);
             return;
         }
 
@@ -1635,6 +1639,9 @@ void handleNormalKey(HWND hwndEdit, char c) {
             recordLastOp(OP_MOTION, count, 'c'); // Record for repetition
             enterInsertMode();
             state.repeatCount = 0;
+            return;
+        case 'g':
+            process_g_key(hwndEdit, count);
             return;
         case 'v':
             if (!state.isLineVisual) {
