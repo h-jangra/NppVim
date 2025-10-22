@@ -1,12 +1,115 @@
-﻿#include "NppVim.h"
+﻿#include "plugin/PluginInterface.h"
+#include "plugin/Scintilla.h"
+#include "plugin/Notepad_plus_msgs.h"
+#include "plugin/menuCmdID.h"
+#include <algorithm>
+#include <map>
+#include <string>
+#include <windows.h>
+#include <cctype>
 
 HINSTANCE g_hInstance = nullptr;
 NppData nppData;
 const TCHAR PLUGIN_NAME[] = TEXT("NppVim");
 const int nbFunc = 3;
 FuncItem funcItem[nbFunc];
+
+enum VimMode { NORMAL, INSERT, VISUAL };
+enum LastOpType { OP_NONE, OP_DELETE_LINE, OP_YANK_LINE, OP_PASTE_LINE, OP_MOTION, OP_REPLACE };
+
+enum TextObjectType {
+    TEXT_OBJECT_WORD,
+    TEXT_OBJECT_BIG_WORD,
+    TEXT_OBJECT_QUOTE,
+    TEXT_OBJECT_BRACKET,
+    TEXT_OBJECT_PAREN,
+    TEXT_OBJECT_ANGLE,
+    TEXT_OBJECT_BRACE,
+    TEXT_OBJECT_SENTENCE,
+    TEXT_OBJECT_PARAGRAPH
+};
+
+struct State {
+    VimMode mode = NORMAL;
+    bool isLineVisual = false;
+    int visualAnchor = -1;
+    int visualAnchorLine = -1;
+    int repeatCount = 0;
+    char opPending = 0;
+    char textObjectPending = 0;
+    bool replacePending = false;
+    bool vimEnabled = false;
+    bool commandMode = false;
+    bool useRegex = false;
+    std::string commandBuffer;
+    std::string lastSearchTerm;
+    int lastSearchMatchCount = -1;
+
+    char lastSearchChar = 0;
+    bool lastSearchForward = true;
+
+    struct {
+        LastOpType type = OP_NONE;
+        int count = 1;
+        char motion = 0;
+        char searchChar = 0;
+    } lastOp;
+} state;
+
 static std::map<HWND, WNDPROC> origProcMap;
-State state;
+
+// Declarations
+LRESULT CALLBACK ScintillaHookProc(HWND, UINT, WPARAM, LPARAM);
+void enterNormalMode();
+void enterInsertMode();
+HWND getCurrentScintillaHandle();
+void setStatus(const TCHAR* msg);
+void clearSearchHighlights(HWND hwndEdit);
+void setVisualSelection(HWND hwndEdit);
+void enterVisualCharMode(HWND hwndEdit);
+void enterVisualLineMode(HWND hwndEdit);
+void enterCommandMode(char prompt);
+void exitCommandMode();
+void updateCommandStatus();
+void DoMotion_char_left(HWND hwndEdit, int count);
+void DoMotion_char_right(HWND hwndEdit, int count);
+void DoMotion_line_up(HWND hwndEdit, int count);
+void DoMotion_end_word_prev(HWND hwndEdit, int count);
+void DoMotion_next_char(HWND hwndEdit, int count, char searchChar);
+void DoMotion_prev_char(HWND hwndEdit, int count, char searchChar);
+void DoMotion_line_down(HWND hwndEdit, int count);
+void DoMotion_word_right(HWND hwndEdit, int count);
+void DoMotion_word_left(HWND hwndEdit, int count);
+void DoMotion_end_word(HWND hwndEdit, int count);
+void DoMotion_end_line(HWND hwndEdit, int count);
+void DoMotion_line_start(HWND hwndEdit, int count);
+void deleteToEndOfLine(HWND hwndEdit, int count);
+void joinLines(HWND hwndEdit, int count);
+void changeToEndOfLine(HWND hwndEdit, int count);
+void applyOperatorToMotion(HWND hwndEdit, char op, char motion, int count);
+void doMotion(HWND hwndEdit, char motion, int count);
+std::pair<int, int> findWordBounds(HWND hwndEdit, int pos);
+void applyTextObject(HWND hwndEdit, char op, char modifier, char object);
+void deleteLineOnce(HWND hwndEdit);
+void yankLineOnce(HWND hwndEdit);
+void repeatLastOp(HWND hwndEdit);
+void performSearch(HWND hwndEdit, const std::string& searchTerm, bool useRegex = false);
+void searchNext(HWND hwndEdit);
+void searchPrevious(HWND hwndEdit);
+void showCurrentMatchPosition(HWND hwndEdit);
+void updateSearchHighlight(HWND hwndEdit, const std::string& searchTerm, bool useRegex);
+void openTutor();
+void handleCommand(HWND hwndEdit);
+void handleNormalKey(HWND hwndEdit, char c);
+
+// Text object functions
+int findMatchingBracket(HWND hwndEdit, int pos, char openChar, char closeChar);
+std::pair<int, int> findQuoteBounds(HWND hwndEdit, int pos, char quoteChar);
+std::pair<int, int> getTextObjectBounds(HWND hwndEdit, TextObjectType objType, bool inner);
+void applyTextObjectOperation(HWND hwndEdit, char op, bool inner, char object);
+void performTextObjectOperation(HWND hwndEdit, char op, int start, int end);
+void handleTextObjectCommand(HWND hwndEdit, char op, char modifier, char object);
+void handleWordTextObject(HWND hwndEdit, char op, bool inner);
 
 HWND getCurrentScintillaHandle() {
     int which = 0;
@@ -18,11 +121,19 @@ void setStatus(const TCHAR* msg) {
     ::SendMessage(nppData._nppHandle, NPPM_SETSTATUSBAR, STATUSBAR_DOC_TYPE, (LPARAM)msg);
 }
 
-void recordLastOp(LastOpType type, int count, char motion, char searchChar) {
+void recordLastOp(LastOpType type, int count = 1, char motion = 0, char searchChar = 0) {
     state.lastOp.type = type;
     state.lastOp.count = count;
     state.lastOp.motion = motion;
     state.lastOp.searchChar = searchChar;
+}
+
+void clearSearchHighlights(HWND hwndEdit) {
+    if (!hwndEdit) return;
+
+    int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
+    ::SendMessage(hwndEdit, SCI_SETINDICATORCURRENT, 0, 0);
+    ::SendMessage(hwndEdit, SCI_INDICATORCLEARRANGE, 0, docLen);
 }
 
 void enterNormalMode() {
@@ -153,6 +264,1094 @@ void updateCommandStatus() {
     }
 
     setStatus(display.c_str());
+}
+
+void Tab_next(HWND hwndEdit, int count) {
+    // Get current tab index
+    int currentIndex = (int)::SendMessage(nppData._nppHandle, NPPM_GETCURRENTDOCINDEX, 0, 0);
+    // Get total number of tabs
+    int totalTabs = (int)::SendMessage(nppData._nppHandle, NPPM_GETNBOPENFILES, 0, 0);
+
+    // Calculate target index
+    int targetIndex = (currentIndex + count) % totalTabs;
+    if (targetIndex < 0) targetIndex += totalTabs;
+
+    // Switch to target tab
+    ::SendMessage(nppData._nppHandle, NPPM_ACTIVATEDOC, 0, targetIndex);
+}
+
+void Tab_previous(HWND hwndEdit, int count) {
+    int currentIndex = (int)::SendMessage(nppData._nppHandle, NPPM_GETCURRENTDOCINDEX, 0, 0);
+    int totalTabs = (int)::SendMessage(nppData._nppHandle, NPPM_GETNBOPENFILES, 0, 0);
+
+    int targetIndex = (currentIndex - count) % totalTabs;
+    if (targetIndex < 0) targetIndex += totalTabs;
+
+    ::SendMessage(nppData._nppHandle, NPPM_ACTIVATEDOC, 0, targetIndex);
+}
+
+void DoMotion_char_left(HWND hwndEdit, int count) {
+    int caret = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+    for (int i = 0; i < count; i++) {
+        if (caret > 0) caret--;
+    }
+    ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, caret, 0);
+
+    if (state.mode == NORMAL) {
+        ::SendMessage(hwndEdit, SCI_SETSEL, caret, caret);
+    }
+    else if (state.mode == VISUAL) {
+        setVisualSelection(hwndEdit);
+    }
+}
+
+void DoMotion_char_right(HWND hwndEdit, int count) {
+    int caret = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+    int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
+    for (int i = 0; i < count; i++) {
+        if (caret < docLen) caret++;
+    }
+    ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, caret, 0);
+
+    if (state.mode == NORMAL) {
+        ::SendMessage(hwndEdit, SCI_SETSEL, caret, caret);
+    }
+    else if (state.mode == VISUAL) {
+        setVisualSelection(hwndEdit);
+    }
+}
+
+void DoMotion_line_up(HWND hwndEdit, int count) {
+    int anchor = (int)::SendMessage(hwndEdit, SCI_GETANCHOR, 0, 0);
+    int caret = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+
+    for (int i = 0; i < count; i++) {
+        ::SendMessage(hwndEdit, SCI_LINEUP, 0, 0);
+    }
+
+    if (state.mode == VISUAL) {
+        int newCaret = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+        ::SendMessage(hwndEdit, SCI_SETSEL, anchor, newCaret);
+    }
+}
+
+void DoMotion_line_down(HWND hwndEdit, int count) {
+    int anchor = (int)::SendMessage(hwndEdit, SCI_GETANCHOR, 0, 0);
+    int caret = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+
+    for (int i = 0; i < count; i++) {
+        ::SendMessage(hwndEdit, SCI_LINEDOWN, 0, 0);
+    }
+
+    if (state.mode == VISUAL) {
+        int newCaret = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+        ::SendMessage(hwndEdit, SCI_SETSEL, anchor, newCaret);
+    }
+}
+
+void DoMotion_end_word_prev(HWND hwndEdit, int count) {
+    for (int i = 0; i < count; i++) {
+        ::SendMessage(hwndEdit, SCI_WORDLEFTEND, 0, 0);
+    }
+
+    if (state.mode == NORMAL) {
+        int caret = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+        ::SendMessage(hwndEdit, SCI_SETSEL, caret, caret);
+    }
+    else if (state.mode == VISUAL) {
+        setVisualSelection(hwndEdit);
+    }
+}
+
+void DoMotion_next_char(HWND hwndEdit, int count, char searchChar) {
+    int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+    int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
+
+    for (int i = 0; i < count; i++) {
+        int newPos = pos + 1;
+        while (newPos < docLen) {
+            char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, newPos, 0);
+            if (ch == searchChar) {
+                pos = newPos;
+                break;
+            }
+            newPos++;
+        }
+        if (newPos >= docLen) break;
+    }
+
+    ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, pos, 0);
+
+    if (state.mode == NORMAL) {
+        ::SendMessage(hwndEdit, SCI_SETSEL, pos, pos);
+    }
+    else if (state.mode == VISUAL) {
+        setVisualSelection(hwndEdit);
+    }
+}
+
+void DoMotion_prev_char(HWND hwndEdit, int count, char searchChar) {
+    int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+
+    for (int i = 0; i < count; i++) {
+        int newPos = pos - 1;
+        while (newPos >= 0) {
+            char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, newPos, 0);
+            if (ch == searchChar) {
+                pos = newPos;
+                break;
+            }
+            newPos--;
+        }
+        if (newPos < 0) break;
+    }
+
+    ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, pos, 0);
+
+    if (state.mode == NORMAL) {
+        ::SendMessage(hwndEdit, SCI_SETSEL, pos, pos);
+    }
+    else if (state.mode == VISUAL) {
+        setVisualSelection(hwndEdit);
+    }
+}
+
+void DoMotion_word_right(HWND hwndEdit, int count) {
+    for (int i = 0; i < count; i++) {
+        ::SendMessage(hwndEdit, SCI_WORDRIGHT, 0, 0);
+    }
+
+    if (state.mode == NORMAL) {
+        int caret = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+        ::SendMessage(hwndEdit, SCI_SETSEL, caret, caret);
+    }
+    else if (state.mode == VISUAL) {
+        setVisualSelection(hwndEdit);
+    }
+}
+
+void DoMotion_word_left(HWND hwndEdit, int count) {
+    for (int i = 0; i < count; i++) {
+        ::SendMessage(hwndEdit, SCI_WORDLEFT, 0, 0);
+    }
+
+    if (state.mode == NORMAL) {
+        int caret = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+        ::SendMessage(hwndEdit, SCI_SETSEL, caret, caret);
+    }
+    else if (state.mode == VISUAL) {
+        setVisualSelection(hwndEdit);
+    }
+}
+
+void DoMotion_end_word(HWND hwndEdit, int count) {
+    for (int i = 0; i < count; i++) {
+        ::SendMessage(hwndEdit, SCI_WORDRIGHTEND, 0, 0);
+    }
+
+    if (state.mode == NORMAL) {
+        int caret = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+        ::SendMessage(hwndEdit, SCI_SETSEL, caret, caret);
+    }
+    else if (state.mode == VISUAL) {
+        setVisualSelection(hwndEdit);
+    }
+}
+
+void DoMotion_end_line(HWND hwndEdit, int count) {
+    for (int i = 0; i < count; i++) {
+        ::SendMessage(hwndEdit, SCI_LINEEND, 0, 0);
+    }
+
+    if (state.mode == NORMAL) {
+        int caret = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+        ::SendMessage(hwndEdit, SCI_SETSEL, caret, caret);
+    }
+    else if (state.mode == VISUAL) {
+        setVisualSelection(hwndEdit);
+    }
+}
+
+void DoMotion_line_start(HWND hwndEdit, int count) {
+    for (int i = 0; i < count; i++) {
+        ::SendMessage(hwndEdit, SCI_VCHOME, 0, 0);
+    }
+
+    if (state.mode == NORMAL) {
+        int caret = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+        ::SendMessage(hwndEdit, SCI_SETSEL, caret, caret);
+    }
+    else if (state.mode == VISUAL) {
+        setVisualSelection(hwndEdit);
+    }
+}
+
+void deleteToEndOfLine(HWND hwndEdit, int count) {
+    ::SendMessage(hwndEdit, SCI_BEGINUNDOACTION, 0, 0);
+
+    for (int i = 0; i < count; i++) {
+        int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+        int line = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, pos, 0);
+        int endPos = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, line, 0);
+
+        if (pos < endPos) {
+            ::SendMessage(hwndEdit, SCI_SETSEL, pos, endPos);
+            ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0);
+        }
+    }
+
+    ::SendMessage(hwndEdit, SCI_ENDUNDOACTION, 0, 0);
+    recordLastOp(OP_MOTION, count, 'D');
+}
+
+void joinLines(HWND hwndEdit, int count) {
+    ::SendMessage(hwndEdit, SCI_BEGINUNDOACTION, 0, 0);
+
+    int startLine = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION,
+        (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0), 0);
+    int endLine = (std::min)(startLine + count - 1,
+        (int)::SendMessage(hwndEdit, SCI_GETLINECOUNT, 0, 0) - 1);
+
+    for (int line = startLine; line <= endLine; line++) {
+        int lineEnd = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, line, 0);
+        int nextLineStart = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, line + 1, 0);
+
+        if (line + 1 < (int)::SendMessage(hwndEdit, SCI_GETLINECOUNT, 0, 0)) {
+            ::SendMessage(hwndEdit, SCI_SETSEL, lineEnd, nextLineStart);
+            ::SendMessage(hwndEdit, SCI_REPLACESEL, 0, (LPARAM)" ");
+        }
+    }
+
+    ::SendMessage(hwndEdit, SCI_ENDUNDOACTION, 0, 0);
+}
+
+void changeToEndOfLine(HWND hwndEdit, int count) {
+    ::SendMessage(hwndEdit, SCI_BEGINUNDOACTION, 0, 0);
+
+    for (int i = 0; i < count; i++) {
+        int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+        int line = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, pos, 0);
+        int endPos = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, line, 0);
+
+        if (pos < endPos) {
+            ::SendMessage(hwndEdit, SCI_SETSEL, pos, endPos);
+            ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0);
+        }
+    }
+
+    ::SendMessage(hwndEdit, SCI_ENDUNDOACTION, 0, 0);
+    enterInsertMode();
+}
+
+void applyOperatorToMotion(HWND hwndEdit, char op, char motion, int count) {
+    int start = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+
+    switch (motion) {
+    case 'h': DoMotion_char_left(hwndEdit, count); break;
+    case 'l': DoMotion_char_right(hwndEdit, count); break;
+    case 'j': DoMotion_line_down(hwndEdit, count); break;
+    case 'k': DoMotion_line_up(hwndEdit, count); break;
+    case 'w': case 'W': DoMotion_word_right(hwndEdit, count); break;
+    case 'b': case 'B': DoMotion_word_left(hwndEdit, count); break;
+    case 'e': case 'E': DoMotion_end_word(hwndEdit, count); break;
+    case 'g': case 'G': DoMotion_end_word_prev(hwndEdit, count); break;
+    case '$': DoMotion_end_line(hwndEdit, count); break;
+    case '^': DoMotion_line_start(hwndEdit, count); break;
+    default: break;
+    }
+
+    int end = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+    if (start > end) std::swap(start, end);
+
+    if (motion == 'e' || motion == 'E') {
+        int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
+        if (end < docLen) end++;
+    }
+
+    ::SendMessage(hwndEdit, SCI_SETSEL, start, end);
+    switch (op) {
+    case 'd':
+        ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0);
+        ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, start, 0);
+        recordLastOp(OP_MOTION, count, motion);
+        break;
+    case 'y':
+        ::SendMessage(hwndEdit, SCI_COPYRANGE, start, end);
+        ::SendMessage(hwndEdit, SCI_SETSEL, start, start);
+        recordLastOp(OP_MOTION, count, motion);
+        break;
+    case 'c':
+        ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0);
+        enterInsertMode();
+        recordLastOp(OP_MOTION, count, motion);
+        break;
+    }
+}
+
+void doMotion(HWND hwndEdit, char motion, int count) {
+    if (count <= 0) count = 1;
+
+    switch (motion) {
+    case 'h': DoMotion_char_left(hwndEdit, count); break;
+    case 'l': DoMotion_char_right(hwndEdit, count); break;
+    case 'j': DoMotion_line_down(hwndEdit, count); break;
+    case 'k': DoMotion_line_up(hwndEdit, count); break;
+    case 'w': case 'W': DoMotion_word_right(hwndEdit, count); break;
+    case 'b': case 'B': DoMotion_word_left(hwndEdit, count); break;
+    case 'e': case 'E': DoMotion_end_word(hwndEdit, count); break;
+    case '$': DoMotion_end_line(hwndEdit, count); break;
+    case '^': DoMotion_line_start(hwndEdit, count); break;
+    case 'H':
+        for (int i = 0; i < count; i++) ::SendMessage(hwndEdit, SCI_LINESCROLL, 0, 0);
+        if (state.mode == VISUAL) setVisualSelection(hwndEdit);
+        break;
+    case 'L':
+        for (int i = 0; i < count; i++) ::SendMessage(hwndEdit, SCI_LINESCROLL, 0,
+            ::SendMessage(hwndEdit, SCI_LINESONSCREEN, 0, 0) - 1);
+        if (state.mode == VISUAL) setVisualSelection(hwndEdit);
+        break;
+    case '{':
+        for (int i = 0; i < count; i++) ::SendMessage(hwndEdit, SCI_PARAUP, 0, 0);
+        if (state.mode == VISUAL) setVisualSelection(hwndEdit);
+        break;
+    case '}':
+        for (int i = 0; i < count; i++) ::SendMessage(hwndEdit, SCI_PARADOWN, 0, 0);
+        if (state.mode == VISUAL) setVisualSelection(hwndEdit);
+        break;
+    case '%':
+        ::SendMessage(hwndEdit, SCI_BRACEMATCH, 0, 0);
+        if (state.mode == VISUAL) setVisualSelection(hwndEdit);
+        break;
+    case 'G':
+        if (count == 1) {
+            ::SendMessage(hwndEdit, SCI_DOCUMENTEND, 0, 0);
+        }
+        else {
+            ::SendMessage(hwndEdit, SCI_GOTOLINE, count - 1, 0);
+        }
+        if (state.mode == VISUAL) setVisualSelection(hwndEdit);
+        break;
+    case 'g':
+        if (state.opPending == 'g') {
+            if (count == 1) {
+                ::SendMessage(hwndEdit, SCI_DOCUMENTSTART, 0, 0);
+            }
+            else {
+                ::SendMessage(hwndEdit, SCI_GOTOLINE, count - 1, 0);
+            }
+            state.opPending = 0;
+            if (state.mode == VISUAL) setVisualSelection(hwndEdit);
+        }
+        break;
+    case 'J':
+        ::SendMessage(hwndEdit, SCI_BEGINUNDOACTION, 0, 0);
+        for (int i = 0; i < count; ++i) {
+            int caret = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+            int line = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, caret, 0);
+            int totalLines = (int)::SendMessage(hwndEdit, SCI_GETLINECOUNT, 0, 0);
+            if (line >= totalLines - 1) break;
+
+            int endOfCurrentLine = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, line, 0);
+            int startOfNextLine = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, line + 1, 0);
+
+            ::SendMessage(hwndEdit, SCI_SETSEL, endOfCurrentLine, startOfNextLine);
+            ::SendMessage(hwndEdit, SCI_REPLACESEL, 0, (LPARAM)" ");
+        }
+        ::SendMessage(hwndEdit, SCI_ENDUNDOACTION, 0, 0);
+        break;
+    default:
+        break;
+    }
+}
+
+std::pair<int, int> findWordBounds(HWND hwndEdit, int pos) {
+    int start = (int)::SendMessage(hwndEdit, SCI_WORDSTARTPOSITION, pos, 1);
+    int end = (int)::SendMessage(hwndEdit, SCI_WORDENDPOSITION, pos, 1);
+    return { start, end };
+}
+// Text Object Functions implementation
+int findMatchingBracket(HWND hwndEdit, int pos, char openChar, char closeChar) {
+    int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
+    if (pos >= docLen) return -1;
+
+    char currentChar = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, pos, 0);
+
+    // If on closing bracket, search backwards
+    if (currentChar == closeChar) {
+        int depth = 1;
+        for (int i = pos - 1; i >= 0; i--) {
+            char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, i, 0);
+            if (ch == closeChar) depth++;
+            else if (ch == openChar) {
+                depth--;
+                if (depth == 0) return i;
+            }
+        }
+    }
+    // If on opening bracket
+    else {
+        int depth = 1;
+        for (int i = pos + 1; i < docLen; i++) {
+            char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, i, 0);
+            if (ch == openChar) depth++;
+            else if (ch == closeChar) {
+                depth--;
+                if (depth == 0) return i;
+            }
+        }
+    }
+    return -1;
+}
+
+std::pair<int, int> findQuoteBounds(HWND hwndEdit, int pos, char quoteChar) {
+    int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
+    int start = -1, end = -1;
+
+    // Search backwards for opening quote
+    for (int i = pos; i >= 0; i--) {
+        char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, i, 0);
+        if (ch == quoteChar) {
+            start = i;
+            break;
+        }
+    }
+
+    // Search forwards for closing quote
+    if (start != -1) {
+        for (int i = start + 1; i < docLen; i++) {
+            char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, i, 0);
+            if (ch == quoteChar) {
+                end = i;
+                break;
+            }
+        }
+    }
+
+    return { start, end };
+}
+
+void handleWordTextObject(HWND hwndEdit, char op, bool inner) {
+    int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+    auto bounds = findWordBounds(hwndEdit, pos);
+
+    if (bounds.first == bounds.second) {
+        int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
+        if (pos < docLen) {
+            bounds = findWordBounds(hwndEdit, pos + 1);
+        }
+    }
+
+    if (bounds.first == bounds.second) return;
+
+    int start = bounds.first;
+    int end = bounds.second;
+    int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
+
+    if (!inner) {
+        while (start > 0) {
+            char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, start - 1, 0);
+            if (!std::isspace(static_cast<unsigned char>(ch))) break;
+            start--;
+        }
+
+        while (end < docLen) {
+            char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, end, 0);
+            if (!std::isspace(static_cast<unsigned char>(ch))) {
+                if (end > bounds.second) {
+                    break;
+                }
+            }
+            end++;
+        }
+    }
+    else {
+        start = bounds.first;
+        end = bounds.second;
+    }
+
+    if (start < end) {
+        ::SendMessage(hwndEdit, SCI_SETSEL, start, end);
+        performTextObjectOperation(hwndEdit, op, start, end);
+    }
+}
+std::pair<int, int> getTextObjectBounds(HWND hwndEdit, TextObjectType objType, bool inner) {
+    int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+    int start = pos, end = pos;
+
+    switch (objType) {
+    case TEXT_OBJECT_WORD: {
+        auto bounds = findWordBounds(hwndEdit, pos);
+        start = bounds.first;
+        end = bounds.second;
+        if (inner && start < end) {
+            // For inner word, exclude surrounding whitespace
+            int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
+
+            // Trim left whitespace
+            while (start < end) {
+                char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, start, 0);
+                if (!std::isspace(static_cast<unsigned char>(ch))) break;
+                start++;
+            }
+
+            // Trim right whitespace
+            while (end > start) {
+                char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, end - 1, 0);
+                if (!std::isspace(static_cast<unsigned char>(ch))) break;
+                end--;
+            }
+        }
+        break;
+    }
+
+    case TEXT_OBJECT_BIG_WORD: {
+        start = (int)::SendMessage(hwndEdit, SCI_WORDSTARTPOSITION, pos, 1);
+        end = (int)::SendMessage(hwndEdit, SCI_WORDENDPOSITION, pos, 1);
+        break;
+    }
+
+    case TEXT_OBJECT_PAREN: {
+        int match = findMatchingBracket(hwndEdit, pos, '(', ')');
+        if (match != -1) {
+            if (match < pos) {
+                start = match;
+                end = pos;
+                // Find the closing paren
+                int closeMatch = findMatchingBracket(hwndEdit, start, '(', ')');
+                if (closeMatch != -1) end = closeMatch + 1;
+            }
+            else {
+                start = pos;
+                end = match + 1;
+                // Find the opening paren
+                int openMatch = findMatchingBracket(hwndEdit, end - 1, '(', ')');
+                if (openMatch != -1) start = openMatch;
+            }
+
+            if (inner && start < end) {
+                start++;
+                end--;
+            }
+        }
+        break;
+    }
+
+    case TEXT_OBJECT_BRACE: {
+        int match = findMatchingBracket(hwndEdit, pos, '{', '}');
+        if (match != -1) {
+            if (match < pos) {
+                start = match;
+                end = pos;
+                int closeMatch = findMatchingBracket(hwndEdit, start, '{', '}');
+                if (closeMatch != -1) end = closeMatch + 1;
+            }
+            else {
+                start = pos;
+                end = match + 1;
+                int openMatch = findMatchingBracket(hwndEdit, end - 1, '{', '}');
+                if (openMatch != -1) start = openMatch;
+            }
+
+            if (inner && start < end) {
+                start++;
+                end--;
+            }
+        }
+        break;
+    }
+
+    case TEXT_OBJECT_BRACKET: {
+        int match = findMatchingBracket(hwndEdit, pos, '[', ']');
+        if (match != -1) {
+            if (match < pos) {
+                start = match;
+                end = pos;
+                int closeMatch = findMatchingBracket(hwndEdit, start, '[', ']');
+                if (closeMatch != -1) end = closeMatch + 1;
+            }
+            else {
+                start = pos;
+                end = match + 1;
+                int openMatch = findMatchingBracket(hwndEdit, end - 1, '[', ']');
+                if (openMatch != -1) start = openMatch;
+            }
+
+            if (inner && start < end) {
+                start++;
+                end--;
+            }
+        }
+        break;
+    }
+
+    case TEXT_OBJECT_ANGLE: {
+        int match = findMatchingBracket(hwndEdit, pos, '<', '>');
+        if (match != -1) {
+            if (match < pos) {
+                start = match;
+                end = pos;
+                int closeMatch = findMatchingBracket(hwndEdit, start, '<', '>');
+                if (closeMatch != -1) end = closeMatch + 1;
+            }
+            else {
+                start = pos;
+                end = match + 1;
+                int openMatch = findMatchingBracket(hwndEdit, end - 1, '<', '>');
+                if (openMatch != -1) start = openMatch;
+            }
+
+            if (inner && start < end) {
+                start++;
+                end--;
+            }
+        }
+        break;
+    }
+
+    default:
+        break;
+    }
+
+    return { start, end };
+}
+
+void performTextObjectOperation(HWND hwndEdit, char op, int start, int end) {
+    switch (op) {
+    case 'd':
+        ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0);
+        ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, start, 0);
+        recordLastOp(OP_MOTION, state.repeatCount, 'd');
+        break;
+
+    case 'c':
+        ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0);
+        enterInsertMode();
+        recordLastOp(OP_MOTION, state.repeatCount, 'c');
+        break;
+
+    case 'y':
+        ::SendMessage(hwndEdit, SCI_COPYRANGE, start, end);
+        ::SendMessage(hwndEdit, SCI_SETSEL, start, start);
+        recordLastOp(OP_MOTION, state.repeatCount, 'y');
+        break;
+    }
+}
+
+void applyTextObjectOperation(HWND hwndEdit, char op, bool inner, char object) {
+    TextObjectType objType;
+    char quoteChar = 0;
+
+    // Map character to text object type
+    switch (object) {
+    case 'w':
+        handleWordTextObject(hwndEdit, op, inner);
+        return;
+    case 'W': objType = TEXT_OBJECT_BIG_WORD; break;
+    case '\'':
+        quoteChar = '\'';
+        break;
+    case '"':
+        quoteChar = '"';
+        break;
+    case '`':
+        quoteChar = '`';
+        break;
+    case '(': case ')': objType = TEXT_OBJECT_PAREN; break;
+    case '[': case ']': objType = TEXT_OBJECT_BRACKET; break;
+    case '{': case '}': objType = TEXT_OBJECT_BRACE; break;
+    case '<': case '>': objType = TEXT_OBJECT_ANGLE; break;
+    default: return;
+    }
+
+    // Special handling for quotes
+    if (quoteChar != 0) {
+        auto bounds = findQuoteBounds(hwndEdit,
+            (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0), quoteChar);
+        if (bounds.first == -1 || bounds.second == -1) return;
+
+        int start = bounds.first;
+        int end = bounds.second + 1;
+
+        if (inner) {
+            start++;
+            end--;
+        }
+
+        if (start < end) {
+            ::SendMessage(hwndEdit, SCI_SETSEL, start, end);
+            performTextObjectOperation(hwndEdit, op, start, end);
+        }
+        return;
+    }
+
+    // For other text objects
+    auto bounds = getTextObjectBounds(hwndEdit, objType, inner);
+    if (bounds.first < bounds.second) {
+        ::SendMessage(hwndEdit, SCI_SETSEL, bounds.first, bounds.second);
+        performTextObjectOperation(hwndEdit, op, bounds.first, bounds.second);
+    }
+}
+
+void handleTextObjectCommand(HWND hwndEdit, char op, char modifier, char object) {
+    bool inner = (modifier == 'i');
+    applyTextObjectOperation(hwndEdit, op, inner, object);
+}
+
+void applyTextObject(HWND hwndEdit, char op, char modifier, char object) {
+    handleTextObjectCommand(hwndEdit, op, modifier, object);
+}
+
+void deleteLineOnce(HWND hwndEdit) {
+    int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+    int line = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, pos, 0);
+    int start = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, line, 0);
+    int totalLines = (int)::SendMessage(hwndEdit, SCI_GETLINECOUNT, 0, 0);
+    int end = (line < totalLines - 1)
+        ? (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, line + 1, 0)
+        : (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, line, 0);
+
+    ::SendMessage(hwndEdit, SCI_SETSEL, start, end);
+    ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0);
+    ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, start, 0);
+}
+
+void yankLineOnce(HWND hwndEdit) {
+    int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+    int line = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, pos, 0);
+    int start = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, line, 0);
+    int totalLines = (int)::SendMessage(hwndEdit, SCI_GETLINECOUNT, 0, 0);
+    int end = (line < totalLines - 1)
+        ? (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, line + 1, 0)
+        : (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, line, 0);
+
+    ::SendMessage(hwndEdit, SCI_COPYRANGE, start, end);
+    ::SendMessage(hwndEdit, SCI_SETSEL, pos, pos);
+}
+
+void repeatLastOp(HWND hwndEdit) {
+    if (state.lastOp.type == OP_NONE) return;
+
+    ::SendMessage(hwndEdit, SCI_BEGINUNDOACTION, 0, 0);
+
+    int count = state.repeatCount > 0 ? state.repeatCount : state.lastOp.count;
+
+    switch (state.lastOp.type) {
+    case OP_DELETE_LINE:
+        for (int i = 0; i < count; ++i) deleteLineOnce(hwndEdit);
+        break;
+
+    case OP_YANK_LINE:
+        for (int i = 0; i < count; ++i) yankLineOnce(hwndEdit);
+        break;
+
+    case OP_PASTE_LINE:
+        for (int i = 0; i < count; ++i) ::SendMessage(hwndEdit, SCI_PASTE, 0, 0);
+        break;
+
+    case OP_MOTION:
+        // Handle character search repetition
+        if (state.lastOp.motion == 'f' || state.lastOp.motion == 'F') {
+            if (state.lastOp.searchChar != 0) {
+                if (state.lastOp.motion == 'f') {
+                    DoMotion_next_char(hwndEdit, count, state.lastOp.searchChar);
+                }
+                else {
+                    DoMotion_prev_char(hwndEdit, count, state.lastOp.searchChar);
+                }
+            }
+        }
+        // Handle search repetition
+        else if (state.lastOp.motion == 'n' || state.lastOp.motion == 'N') {
+            if (state.lastOp.motion == 'n') {
+                searchNext(hwndEdit);
+            }
+            else {
+                searchPrevious(hwndEdit);
+            }
+        }
+        // Handle word search repetition
+        else if (state.lastOp.motion == '*' || state.lastOp.motion == '#') {
+            if (!state.lastSearchTerm.empty()) {
+                if (state.lastOp.motion == '*') {
+                    searchNext(hwndEdit);
+                }
+                else {
+                    searchPrevious(hwndEdit);
+                }
+            }
+        }
+        // Handle delete character operations
+        else if (state.lastOp.motion == 'x' || state.lastOp.motion == 'X') {
+            for (int i = 0; i < count; ++i) {
+                if (state.lastOp.motion == 'x') {
+                    int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+                    int nextPos = pos + 1;
+                    int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
+                    if (nextPos <= docLen) {
+                        ::SendMessage(hwndEdit, SCI_SETSEL, pos, nextPos);
+                        ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0);
+                    }
+                }
+                else {
+                    int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+                    if (pos > 0) {
+                        ::SendMessage(hwndEdit, SCI_SETSEL, pos - 1, pos);
+                        ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0);
+                    }
+                }
+            }
+        }
+
+        else {
+            applyOperatorToMotion(hwndEdit, 'd', state.lastOp.motion, count);
+        }
+        break;
+
+    case OP_REPLACE:
+        state.replacePending = true;
+        break;
+    }
+
+    ::SendMessage(hwndEdit, SCI_ENDUNDOACTION, 0, 0);
+    state.repeatCount = 0; // Reset repeat count after repetition
+}
+
+void updateSearchHighlight(HWND hwndEdit, const std::string& searchTerm, bool useRegex) {
+    if (searchTerm.empty()) {
+        // Clear highlights if search term is empty
+        int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
+        ::SendMessage(hwndEdit, SCI_SETINDICATORCURRENT, 0, 0);
+        ::SendMessage(hwndEdit, SCI_INDICATORCLEARRANGE, 0, docLen);
+        return;
+    }
+
+    int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
+
+    // Clear all indicators first
+    ::SendMessage(hwndEdit, SCI_SETINDICATORCURRENT, 0, 0);
+    ::SendMessage(hwndEdit, SCI_INDICATORCLEARRANGE, 0, docLen);
+
+    // Setup indicator for highlighting
+    ::SendMessage(hwndEdit, SCI_INDICSETSTYLE, 0, INDIC_ROUNDBOX);
+    ::SendMessage(hwndEdit, SCI_INDICSETFORE, 0, RGB(255, 255, 0));
+    ::SendMessage(hwndEdit, SCI_INDICSETALPHA, 0, 100);
+    ::SendMessage(hwndEdit, SCI_INDICSETOUTLINEALPHA, 0, 255);
+
+    int flags = (useRegex ? SCFIND_REGEXP : 0);
+    ::SendMessage(hwndEdit, SCI_SETSEARCHFLAGS, flags, 0);
+
+    int pos = 0;
+    int matchCount = 0;
+    int firstMatch = -1;
+
+    while (pos < docLen) {
+        ::SendMessage(hwndEdit, SCI_SETTARGETSTART, pos, 0);
+        ::SendMessage(hwndEdit, SCI_SETTARGETEND, docLen, 0);
+
+        int found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
+            (WPARAM)searchTerm.length(), (LPARAM)searchTerm.c_str());
+
+        if (found == -1) break;
+
+        int start = (int)::SendMessage(hwndEdit, SCI_GETTARGETSTART, 0, 0);
+        int end = (int)::SendMessage(hwndEdit, SCI_GETTARGETEND, 0, 0);
+
+        ::SendMessage(hwndEdit, SCI_SETINDICATORCURRENT, 0, 0);
+        ::SendMessage(hwndEdit, SCI_INDICATORFILLRANGE, start, end - start);
+
+        if (firstMatch == -1) {
+            firstMatch = start;
+        }
+
+        matchCount++;
+        pos = end;
+
+        if (end <= start) {
+            pos = start + 1;
+        }
+    }
+
+    state.lastSearchMatchCount = matchCount;
+}
+
+void performSearch(HWND hwndEdit, const std::string& searchTerm, bool useRegex) {
+    if (searchTerm.empty()) return;
+
+    state.lastSearchTerm = searchTerm;
+    state.useRegex = useRegex;
+
+    updateSearchHighlight(hwndEdit, searchTerm, useRegex);
+
+    // Move to first match if found
+    int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
+    int flags = (useRegex ? SCFIND_REGEXP : 0);
+    ::SendMessage(hwndEdit, SCI_SETSEARCHFLAGS, flags, 0);
+
+    ::SendMessage(hwndEdit, SCI_SETTARGETSTART, 0, 0);
+    ::SendMessage(hwndEdit, SCI_SETTARGETEND, docLen, 0);
+
+    int found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
+        (WPARAM)searchTerm.length(), (LPARAM)searchTerm.c_str());
+
+    if (found != -1) {
+        int s = (int)::SendMessage(hwndEdit, SCI_GETTARGETSTART, 0, 0);
+        int e = (int)::SendMessage(hwndEdit, SCI_GETTARGETEND, 0, 0);
+        ::SendMessage(hwndEdit, SCI_SETSEL, s, e);
+        ::SendMessage(hwndEdit, SCI_SCROLLCARET, 0, 0);
+    }
+}
+
+void searchNext(HWND hwndEdit) {
+    if (state.lastSearchTerm.empty()) return;
+
+    int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
+    int startPos = (int)::SendMessage(hwndEdit, SCI_GETSELECTIONEND, 0, 0);
+
+    int flags = (state.useRegex ? SCFIND_REGEXP : 0);
+    ::SendMessage(hwndEdit, SCI_SETSEARCHFLAGS, flags, 0);
+
+    ::SendMessage(hwndEdit, SCI_SETTARGETSTART, startPos, 0);
+    ::SendMessage(hwndEdit, SCI_SETTARGETEND, docLen, 0);
+
+    int found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
+        (WPARAM)state.lastSearchTerm.length(), (LPARAM)state.lastSearchTerm.c_str());
+
+    if (found == -1) {
+        // Wrap around to beginning
+        ::SendMessage(hwndEdit, SCI_SETTARGETSTART, 0, 0);
+        ::SendMessage(hwndEdit, SCI_SETTARGETEND, startPos, 0);
+        found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
+            (WPARAM)state.lastSearchTerm.length(), (LPARAM)state.lastSearchTerm.c_str());
+
+        if (found != -1) {
+            setStatus(L"Search hit BOTTOM, continuing at TOP");
+        }
+    }
+
+    if (found != -1) {
+        int s = (int)::SendMessage(hwndEdit, SCI_GETTARGETSTART, 0, 0);
+        int e = (int)::SendMessage(hwndEdit, SCI_GETTARGETEND, 0, 0);
+        ::SendMessage(hwndEdit, SCI_SETSEL, s, e);
+        ::SendMessage(hwndEdit, SCI_SCROLLCARET, 0, 0);
+
+        // Show current match position and total count
+        showCurrentMatchPosition(hwndEdit);
+    }
+    else {
+        setStatus(L"Pattern not found");
+    }
+}
+
+void searchPrevious(HWND hwndEdit) {
+    if (state.lastSearchTerm.empty()) return;
+
+    int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
+    int startPos = (int)::SendMessage(hwndEdit, SCI_GETSELECTIONSTART, 0, 0);
+    if (startPos > 0) startPos--;
+
+    int flags = (state.useRegex ? SCFIND_REGEXP : 0);
+    ::SendMessage(hwndEdit, SCI_SETSEARCHFLAGS, flags, 0);
+
+    // Search backwards from current position to beginning
+    ::SendMessage(hwndEdit, SCI_SETTARGETSTART, startPos, 0);
+    ::SendMessage(hwndEdit, SCI_SETTARGETEND, 0, 0);
+
+    int found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
+        (WPARAM)state.lastSearchTerm.length(), (LPARAM)state.lastSearchTerm.c_str());
+
+    if (found == -1) {
+        // Wrap around to end
+        ::SendMessage(hwndEdit, SCI_SETTARGETSTART, docLen, 0);
+        ::SendMessage(hwndEdit, SCI_SETTARGETEND, startPos, 0);
+        found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
+            (WPARAM)state.lastSearchTerm.length(), (LPARAM)state.lastSearchTerm.c_str());
+
+        if (found != -1) {
+            setStatus(L"Search hit TOP, continuing at BOTTOM");
+        }
+    }
+
+    if (found != -1) {
+        int s = (int)::SendMessage(hwndEdit, SCI_GETTARGETSTART, 0, 0);
+        int e = (int)::SendMessage(hwndEdit, SCI_GETTARGETEND, 0, 0);
+        ::SendMessage(hwndEdit, SCI_SETSEL, s, e);
+        ::SendMessage(hwndEdit, SCI_SCROLLCARET, 0, 0);
+
+        // Show current match position and total count
+        showCurrentMatchPosition(hwndEdit);
+    }
+    else {
+        setStatus(L"Pattern not found");
+    }
+}
+
+void showCurrentMatchPosition(HWND hwndEdit) {
+    if (state.lastSearchTerm.empty()) return;
+
+    int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
+    int currentPos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+
+    int flags = (state.useRegex ? SCFIND_REGEXP : 0);
+    ::SendMessage(hwndEdit, SCI_SETSEARCHFLAGS, flags, 0);
+
+    // Count total matches
+    int totalMatches = 0;
+    int pos = 0;
+    while (pos < docLen) {
+        ::SendMessage(hwndEdit, SCI_SETTARGETSTART, pos, 0);
+        ::SendMessage(hwndEdit, SCI_SETTARGETEND, docLen, 0);
+
+        int found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
+            (WPARAM)state.lastSearchTerm.length(), (LPARAM)state.lastSearchTerm.c_str());
+
+        if (found == -1) break;
+
+        int start = (int)::SendMessage(hwndEdit, SCI_GETTARGETSTART, 0, 0);
+        int end = (int)::SendMessage(hwndEdit, SCI_GETTARGETEND, 0, 0);
+
+        totalMatches++;
+        pos = end;
+
+        if (end <= start) {
+            pos = start + 1;
+        }
+    }
+
+    // Find current match index
+    int currentMatchIndex = 0;
+    pos = 0;
+    int matchCount = 0;
+    while (pos < docLen) {
+        ::SendMessage(hwndEdit, SCI_SETTARGETSTART, pos, 0);
+        ::SendMessage(hwndEdit, SCI_SETTARGETEND, docLen, 0);
+
+        int found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
+            (WPARAM)state.lastSearchTerm.length(), (LPARAM)state.lastSearchTerm.c_str());
+
+        if (found == -1) break;
+
+        int start = (int)::SendMessage(hwndEdit, SCI_GETTARGETSTART, 0, 0);
+        int end = (int)::SendMessage(hwndEdit, SCI_GETTARGETEND, 0, 0);
+
+        matchCount++;
+
+        // Check if current position is within this match
+        if (currentPos >= start && currentPos <= end) {
+            currentMatchIndex = matchCount;
+            break;
+        }
+
+        pos = end;
+        if (end <= start) {
+            pos = start + 1;
+        }
+    }
+
+    if (totalMatches > 0 && currentMatchIndex > 0) {
+        std::string status = "Match " + std::to_string(currentMatchIndex) + " of " + std::to_string(totalMatches);
+        std::wstring wstatus(status.begin(), status.end());
+        setStatus(wstatus.c_str());
+    }
 }
 
 void openTutor() {
@@ -422,7 +1621,7 @@ void handleNormalKey(HWND hwndEdit, char c) {
             }
             return;
         }
-        
+
         // Handle gt and gT tab navigation
         if (state.opPending == 'g') {
             if (c == 't') {

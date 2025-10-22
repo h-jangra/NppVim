@@ -27,26 +27,15 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\src\Motion.cpp" />
     <ClCompile Include="..\src\NppVim.cpp" />
-    <ClCompile Include="..\src\Operation.cpp" />
-    <ClCompile Include="..\src\TextObjects.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\src\Core.h" />
-    <ClInclude Include="..\src\menuCmdID.h" />
-    <ClInclude Include="..\src\Motion.h" />
-    <ClInclude Include="..\src\Operation.h" />
     <ClInclude Include="..\src\plugin\menuCmdID.h" />
     <ClInclude Include="..\src\plugin\Notepad_plus_msgs.h" />
     <ClInclude Include="..\src\plugin\PluginInterface.h" />
     <ClInclude Include="..\src\plugin\resource.h" />
     <ClInclude Include="..\src\plugin\Scintilla.h" />
     <ClInclude Include="..\src\plugin\Sci_Position.h" />
-    <ClInclude Include="..\src\TextObjects.h" />
-  </ItemGroup>
-  <ItemGroup>
-    <ResourceCompile Include="..\src\NppVim.rc" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{9D04DBD5-E12E-44E0-A683-6F43F21D533B}</ProjectGuid>
