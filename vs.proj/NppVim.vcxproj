@@ -27,15 +27,31 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\src\CommandMode.cpp" />
+    <ClCompile Include="..\src\Motion.cpp" />
+    <ClCompile Include="..\src\NormalMode.cpp" />
     <ClCompile Include="..\src\NppVim.cpp" />
+    <ClCompile Include="..\src\TextObject.cpp" />
+    <ClCompile Include="..\src\Utils.cpp" />
+    <ClCompile Include="..\src\VisualMode.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\src\plugin\menuCmdID.h" />
-    <ClInclude Include="..\src\plugin\Notepad_plus_msgs.h" />
-    <ClInclude Include="..\src\plugin\PluginInterface.h" />
-    <ClInclude Include="..\src\plugin\resource.h" />
-    <ClInclude Include="..\src\plugin\Scintilla.h" />
-    <ClInclude Include="..\src\plugin\Sci_Position.h" />
+    <ClInclude Include="..\include\CommandMode.h" />
+    <ClInclude Include="..\include\Motion.h" />
+    <ClInclude Include="..\include\NormalMode.h" />
+    <ClInclude Include="..\include\NppVim.h" />
+    <ClInclude Include="..\include\TextObject.h" />
+    <ClInclude Include="..\include\Utils.h" />
+    <ClInclude Include="..\include\VisualMode.h" />
+    <ClInclude Include="..\plugin\menuCmdID.h" />
+    <ClInclude Include="..\plugin\Notepad_plus_msgs.h" />
+    <ClInclude Include="..\plugin\PluginInterface.h" />
+    <ClInclude Include="..\plugin\resource.h" />
+    <ClInclude Include="..\plugin\Scintilla.h" />
+    <ClInclude Include="..\plugin\Sci_Position.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="..\plugin\NppVim.rc" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{9D04DBD5-E12E-44E0-A683-6F43F21D533B}</ProjectGuid>
