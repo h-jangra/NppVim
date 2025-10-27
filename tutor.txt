@@ -457,13 +457,17 @@ Exercise 12.3: Goto last position
 
 Practice:
 - Press gg and then `` to come back here.
+=======
+` - Press backtick to goto last position
+
+Practice:
+- Press gg and then ` to come back here.
 - Press G or search to go back to previous position.
 
 ---
 
 Exercise 12.4: Marks
-Note: Characters i.e. a,i,o,u which are already mapped for motions
-		does not work.
+Note: Characters i.e. a,i,o,u which are already mapped for motions does not work.
 
 Local marks
 m<b-z> - Press m and any small letter
@@ -475,6 +479,7 @@ m<B-Z> - Press m and any capital letter
 
 ---
 
+=======
 To review this tutor anytime, use :tutor
 
 --->56G
