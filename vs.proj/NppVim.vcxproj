@@ -28,6 +28,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\src\CommandMode.cpp" />
+    <ClCompile Include="..\src\Marks.cpp" />
     <ClCompile Include="..\src\Motion.cpp" />
     <ClCompile Include="..\src\NormalMode.cpp" />
     <ClCompile Include="..\src\NppVim.cpp" />
@@ -37,6 +38,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\include\CommandMode.h" />
+    <ClInclude Include="..\include\Marks.h" />
     <ClInclude Include="..\include\Motion.h" />
     <ClInclude Include="..\include\NormalMode.h" />
     <ClInclude Include="..\include\NppVim.h" />

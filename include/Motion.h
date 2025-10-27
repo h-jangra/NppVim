@@ -20,4 +20,9 @@ public:
     static void gotoLine(HWND hwndEdit, int lineNum);
     static void documentStart(HWND hwndEdit);
     static void documentEnd(HWND hwndEdit);
+    static void pageUp(HWND hwndEdit);
+    static void pageDown(HWND hwndEdit);
+    void matchPair(HWND hwndEdit);
+    void toggleCase(HWND hwndEdit, int count);
 };
+extern Motion motion;

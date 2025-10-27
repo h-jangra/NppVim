@@ -1,5 +1,5 @@
 ===>70G===========================================================================
-															NppVim Tutor v1.2.0
+															NppVim Tutor v1.4.0.0
 ==================================================================================
 
 Welcome to NppVim! This interactive tutor will guide you through Vim editing.
@@ -452,34 +452,28 @@ Practice:
 
 ---
 
-FINAL PRACTICE
-~~~~~~~~~~~~~~
+Exercise 12.3: Goto last position
+`` - Press backtick to goto last position
 
-Exercise 13.1: Combined Skills
-
-Practice all your skills on this text block:
-
-"The quick (brown) fox jumps over the lazy dog," said the narrator.
-[This is] a {practice} sentence with 'multiple' elements.
-
-Tasks:
-1. Use diw to delete "quick"
-2. Use ci( to change "brown" to "red"
-3. Use da[ to delete "[This is]"
-4. Use yi{ to yank "{practice}"
-5. Use ci' to change 'multiple' to 'several'
-6. Use f, to find the comma, then r. to change it to period
-7. Use V to select the entire first line and yank it
-8. Use p to paste it below
-9. Use R to overwrite the pasted line with new content
-10. Search for "fox" with /fox and navigate with n/N
-
-Complete all tasks of NppVim!
+Practice:
+- Press gg and then `` to come back here.
+- Press G or search to go back to previous position.
 
 ---
 
-CONGRATULATIONS!
-~~~~~~~~~~~~~~~~
+Exercise 12.4: Marks
+Note: Characters i.e. a,i,o,u which are already mapped for motions
+		does not work.
+
+Local marks
+m<b-z> - Press m and any small letter
+`<b-z> - go back to that line where you set mark
+
+Global Marks
+m<B-Z> - Press m and any capital letter
+`<B-Z> - go back to that file and line where you set mark even from different file
+
+---
 
 To review this tutor anytime, use :tutor
 

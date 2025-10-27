@@ -18,6 +18,7 @@ public:
     void performSearch(HWND hwndEdit, const std::string& searchTerm, bool useRegex = false);
     void searchNext(HWND hwndEdit);
     void searchPrevious(HWND hwndEdit);
+    void handleMarksCommand(HWND hwndEdit, const std::string& commandLine);
 
 private:
     VimState& state;

@@ -180,3 +180,29 @@ void Utils::showCurrentMatchPosition(HWND hwndEdit, const std::string& searchTer
         setStatus(wstatus.c_str());
     }
 }
+
+int Utils::countSearchMatches(HWND hwndEdit, const std::string& searchTerm, bool useRegex) {
+    if (!hwndEdit || searchTerm.empty()) return 0;
+
+    int flags = (useRegex ? SCFIND_REGEXP : 0);
+    ::SendMessage(hwndEdit, SCI_SETSEARCHFLAGS, flags, 0);
+
+    int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
+    int count = 0;
+    int pos = 0;
+
+    while (pos < docLen) {
+        ::SendMessage(hwndEdit, SCI_SETTARGETSTART, pos, 0);
+        ::SendMessage(hwndEdit, SCI_SETTARGETEND, docLen, 0);
+
+        int found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
+            (WPARAM)searchTerm.length(), (LPARAM)searchTerm.c_str());
+
+        if (found == -1) break;
+
+        count++;
+        pos = (int)::SendMessage(hwndEdit, SCI_GETTARGETEND, 0, 0);
+    }
+
+    return count;
+}

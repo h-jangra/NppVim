@@ -2,6 +2,11 @@
 // Microsoft Visual C++ generated include file.
 // Used by NppVim.rc
 //
+#define IDD_CONFIG                    101
+#define IDC_ESCAPE_KEY                1001
+#define IDC_TIMEOUT                 1002
+#define IDC_TIMEOUT_LABEL           1003
+
 #define SW_HIDE                         0
 #define HIDE_WINDOW                     0
 #define WM_NULL                         0x0000

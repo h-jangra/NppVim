@@ -1,18 +1,22 @@
 #pragma once
 #include "NppVim.h"
+#include "Marks.h"
 #include <windows.h>
 #include <functional>
 #include <map>
 
+class Marks;
+
 class NormalMode {
-public:
+    public:
     NormalMode(VimState& state);
 
     void handleKey(HWND hwndEdit, char c);
     void enter();
     void enterInsertMode();
 
-private:
+    private:
+
     VimState& state;
 
     using KeyHandler = std::function<void(HWND, int)>;
@@ -48,7 +52,6 @@ private:
 
     // Search
     void handleSearchForward(HWND hwndEdit, int count);
-    void handleSearchBackward(HWND hwndEdit, int count);
     void handleSearchNext(HWND hwndEdit, int count);
     void handleSearchPrevious(HWND hwndEdit, int count);
     void handleSearchWordForward(HWND hwndEdit, int count);

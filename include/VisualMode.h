@@ -1,8 +1,10 @@
 #pragma once
-#include "NppVim.h"
+
 #include <windows.h>
 #include <map>
 #include <functional>
+
+class VimState;
 
 class VisualMode {
 public:
@@ -33,5 +35,6 @@ private:
 
     // Motions
     void handleMotion(HWND hwndEdit, char motion, int count);
+    void updateVisualAnchor(HWND hwndEdit);
     void handleGCommand(HWND hwndEdit, int count);
 };

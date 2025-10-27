@@ -18,6 +18,8 @@ public:
     static void updateSearchHighlight(HWND hwndEdit, const std::string& searchTerm, bool useRegex);
     static void showCurrentMatchPosition(HWND hwndEdit, const std::string& searchTerm, bool useRegex);
 
+    static int countSearchMatches(HWND hwndEdit, const std::string& searchTerm, bool useRegex);
+
 private:
     static NppData nppData;
     friend void setNppData(NppData data);
