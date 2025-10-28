@@ -270,12 +270,17 @@ void NormalMode::handleDeleteChar(HWND hwndEdit, int count) {
     ::SendMessage(hwndEdit, SCI_BEGINUNDOACTION, 0, 0);
     for (int i = 0; i < count; ++i) {
         int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
-        int nextPos = pos + 1;
         int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
-        if (nextPos <= docLen) {
-            ::SendMessage(hwndEdit, SCI_SETSEL, pos, nextPos);
-            ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0);
+
+        if (pos >= docLen) {
+            break;
         }
+
+        // Use Scintilla's position after one character
+        int nextPos = (int)::SendMessage(hwndEdit, SCI_POSITIONAFTER, pos, 0);
+
+        ::SendMessage(hwndEdit, SCI_SETSEL, pos, nextPos);
+        ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0);
     }
     ::SendMessage(hwndEdit, SCI_ENDUNDOACTION, 0, 0);
     state.recordLastOp(OP_MOTION, count, 'x');
@@ -285,10 +290,14 @@ void NormalMode::handleDeleteCharBack(HWND hwndEdit, int count) {
     ::SendMessage(hwndEdit, SCI_BEGINUNDOACTION, 0, 0);
     for (int i = 0; i < count; ++i) {
         int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
-        if (pos > 0) {
-            ::SendMessage(hwndEdit, SCI_SETSEL, pos - 1, pos);
-            ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0);
+        if (pos <= 0) {
+            break;
         }
+
+        int prevPos = (int)::SendMessage(hwndEdit, SCI_POSITIONBEFORE, pos, 0);
+
+        ::SendMessage(hwndEdit, SCI_SETSEL, prevPos, pos);
+        ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0);
     }
     ::SendMessage(hwndEdit, SCI_ENDUNDOACTION, 0, 0);
     state.recordLastOp(OP_MOTION, count, 'X');

@@ -233,9 +233,9 @@
       <ImportLibrary>$(TargetName).lib</ImportLibrary>
     </Link>
     <PostBuildEvent>
-      <Command>copy ..\LICENSE ..\bin\LICENSE
-copy ..\Readme.md ..\bin\Readme.md
-copy ..\tutor.txt ..\bin\tutor.txt
+      <Command>copy ..\LICENSE ..\NppVim\LICENSE
+copy ..\Readme.md ..\NppVim\Readme.md
+copy ..\tutor.txt ..\NppVim\tutor.txt
 </Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
@@ -265,9 +265,9 @@ copy ..\tutor.txt ..\bin\tutor.txt
       <ImportLibrary>$(TargetName).lib</ImportLibrary>
     </Link>
     <PostBuildEvent>
-      <Command>copy ..\LICENSE ..\bin64\LICENSE
-copy ..\Readme.md ..\bin64\Readme.md
-copy ..\tutor.txt ..\bin64\tutor.txt</Command>
+      <Command>copy ..\LICENSE ..\NppVim.x64\LICENSE
+copy ..\Readme.md ..\NppVim.x64\Readme.md
+copy ..\tutor.txt ..\NppVim.x64\tutor.txt</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
@@ -296,9 +296,9 @@ copy ..\tutor.txt ..\bin64\tutor.txt</Command>
       <ImportLibrary>$(TargetName).lib</ImportLibrary>
     </Link>
     <PostBuildEvent>
-      <Command>copy ..\LICENSE ..\arm64\LICENSE
-copy ..\Readme.md ..\arm64\Readme.md
-copy ..\tutor.txt ..\arm64\tutor.txt</Command>
+      <Command>copy ..\LICENSE ..\NppVim.arm64\LICENSE
+copy ..\Readme.md ..\NppVim.arm64\Readme.md
+copy ..\tutor.txt ..\NppVim.arm64\tutor.txt</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
