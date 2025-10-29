@@ -79,7 +79,7 @@ Practice on this text:
 Start with this text
 
 - Move to "with" and press i to insert before it
-- Move to "text" and press a to append after it  
+- Move to "text" and press a to append after it
 - Press I to insert at line beginning
 - Press A to append at line end
 
@@ -124,7 +124,7 @@ C - change to end of line
 
 Practice on these lines:
 Line one to delete
-Line two for practice  
+Line two for practice
 Line three for deletion
 Line four to remove
 
@@ -177,7 +177,7 @@ Select parts of this sentence visually.
 
 - Press v and move with h,j,k,l to select text
 - Try selecting the word "sentence"
-- Select "parts of this" 
+- Select "parts of this"
 
 Now try these operations in visual mode:
 - d to delete selection
@@ -228,7 +228,7 @@ Search for all three animals.
 
 Exercise 6.2: Word Search and Replace
 * - search word under cursor forward
-# - search word under cursor backward  
+# - search word under cursor backward
 r - replace single character
 R - enter replace mode (overwrite)
 
@@ -301,7 +301,7 @@ Exercise 8.2: Editing with Counts
 
 Practice on these lines:
 Line one for deletion
-Line two for deletion  
+Line two for deletion
 Line three for deletion
 Line four for deletion
 Line five for deletion
@@ -360,7 +360,7 @@ Practice on this text:
 {yank everything including these braces}
 
 - Use ci( to change parenthetical content
-- Use di[ to delete bracket content  
+- Use di[ to delete bracket content
 - Use ya{ to yank brace content including braces
 
 ---
@@ -477,6 +477,9 @@ Global Marks
 m<B-Z> - Press m and any capital letter
 `<B-Z> - go back to that file and line where you set mark even from different file
 
+:marks - list all marks
+:delm! or delmarks! - delete all marks
+:delm a or delmarks a - will delete mark a
 ---
 
 =======
