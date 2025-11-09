@@ -1,3 +1,4 @@
+// VisualMode.cpp
 #include "../include/NppVim.h"
 #include "../include/TextObject.h"
 #include "../include/VisualMode.h"
@@ -49,6 +50,15 @@ void VisualMode::setupKeyHandlers() {
     keyHandlers['<'] = [this](HWND hwnd, int c) { TextObject::apply(hwnd, state, '<', 0, 0); };
     keyHandlers['>'] = [this](HWND hwnd, int c) { TextObject::apply(hwnd, state, '>', 0, 0); };
     keyHandlers['='] = [this](HWND hwnd, int c) { TextObject::apply(hwnd, state, '=', 0, 0); };
+
+    // find / till motions support in visual mode
+    keyHandlers['f'] = [this](HWND hwnd, int c) { handleFindChar(hwnd, c); };
+    keyHandlers['F'] = [this](HWND hwnd, int c) { handleFindCharBack(hwnd, c); };
+    keyHandlers['t'] = [this](HWND hwnd, int c) { handleTillChar(hwnd, c); };
+    keyHandlers['T'] = [this](HWND hwnd, int c) { handleTillCharBack(hwnd, c); };
+
+    keyHandlers[';'] = [this](HWND hwnd, int c) { handleRepeatFind(hwnd, c); };
+    keyHandlers[','] = [this](HWND hwnd, int c) { handleRepeatFindReverse(hwnd, c); };
 }
 
 void VisualMode::enterChar(HWND hwndEdit) {
@@ -130,6 +140,74 @@ void VisualMode::handleKey(HWND hwndEdit, char c) {
             state.opPending = 0;
             state.repeatCount = 0;
         }
+        return;
+    }
+
+    // Handle entering a text-object modifier (i or a) in visual mode:
+    if (c == 'i' || c == 'a') {
+        state.textObjectPending = c; // wait for object key next
+        Utils::setStatus(c == 'i' ? TEXT("-- inner text object --") : TEXT("-- around text object --"));
+        return;
+    }
+
+    if (state.textObjectPending && (c == 'w' || c == 'W' || c == 'p' || c == 's' ||
+        c == '"' || c == '\'' || c == '`' ||
+        c == '(' || c == ')' || c == '[' || c == ']' ||
+        c == '{' || c == '}' || c == '<' || c == '>' || c == 't' /* tag */)) {
+
+        // Use 'v' as the operation so TextObject selects visually
+        TextObject::apply(hwndEdit, state, 'v', state.textObjectPending, c == 't' ? 't' : c);
+        state.textObjectPending = 0;
+        state.repeatCount = 0;
+        Utils::setStatus(TEXT("-- VISUAL --"));
+        return;
+    }
+
+    // Handle f/F second character input
+    if (state.textObjectPending == 'f' && (state.opPending == 'f' || state.opPending == 'F')) {
+        char searchChar = c;
+
+        // Store the search state BEFORE performing the motion
+        state.lastSearchChar = searchChar;
+        state.lastSearchForward = (state.opPending == 'f');
+        state.lastSearchTill = false;
+
+        if (state.opPending == 'f')
+            Motion::nextChar(hwndEdit, count, searchChar);
+        else
+            Motion::prevChar(hwndEdit, count, searchChar);
+
+        state.recordLastOp(OP_MOTION, count, state.opPending, searchChar);
+
+        state.opPending = 0;
+        state.textObjectPending = 0;
+        state.repeatCount = 0;
+
+        Utils::setStatus(TEXT("-- VISUAL --"));
+        return;
+    }
+
+    // Handle t/T second character input
+    if (state.textObjectPending == 't' && (state.opPending == 't' || state.opPending == 'T')) {
+        char searchChar = c;
+
+        // Store the search state BEFORE performing the motion
+        state.lastSearchChar = searchChar;
+        state.lastSearchForward = (state.opPending == 't');
+        state.lastSearchTill = true;
+
+        if (state.opPending == 't')
+            Motion::tillChar(hwndEdit, count, searchChar);
+        else
+            Motion::tillCharBack(hwndEdit, count, searchChar);
+
+        state.recordLastOp(OP_MOTION, count, state.opPending, searchChar);
+
+        state.opPending = 0;
+        state.textObjectPending = 0;
+        state.repeatCount = 0;
+
+        Utils::setStatus(TEXT("-- VISUAL --"));
         return;
     }
 
@@ -264,8 +342,8 @@ void VisualMode::handleMotion(HWND hwndEdit, char motionChar, int count) {
             ::SendMessage(hwndEdit, SCI_PARADOWNEXTEND, 0, 0);
         }
         break;
-    case 'H': Motion::pageUp(hwndEdit); break;
-    case 'L': Motion::pageDown(hwndEdit); break;
+    case 'H': case 21 /* Ctrl+U */:  Motion::pageUp(hwndEdit); break;
+    case 'L': case 4 /* Ctrl+D */:  Motion::pageDown(hwndEdit); break;
     case 'G':
         if (count == 1) {
             ::SendMessage(hwndEdit, SCI_DOCUMENTENDEXTEND, 0, 0);
@@ -278,7 +356,7 @@ void VisualMode::handleMotion(HWND hwndEdit, char motionChar, int count) {
         }
         break;
     case '~':
-        motion.toggleCase(hwndEdit,1);
+        motion.toggleCase(hwndEdit, 1);
         g_normalMode->enter();
         break;
     default:
@@ -315,4 +393,67 @@ void VisualMode::handleGCommand(HWND hwndEdit, int count) {
     if (state.isLineVisual) {
         setSelection(hwndEdit);
     }
+}
+
+// Visual-mode handlers for find/till
+void VisualMode::handleFindChar(HWND hwndEdit, int count) {
+    state.opPending = 'f';
+    state.textObjectPending = 'f';
+    Utils::setStatus(TEXT("-- find char --"));
+}
+
+void VisualMode::handleFindCharBack(HWND hwndEdit, int count) {
+    state.opPending = 'F';
+    state.textObjectPending = 'f';
+    Utils::setStatus(TEXT("-- find char backward --"));
+}
+
+void VisualMode::handleTillChar(HWND hwndEdit, int count) {
+    state.opPending = 't';
+    state.textObjectPending = 't';
+    Utils::setStatus(TEXT("-- till char --"));
+}
+
+void VisualMode::handleTillCharBack(HWND hwndEdit, int count) {
+    state.opPending = 'T';
+    state.textObjectPending = 't';
+    Utils::setStatus(TEXT("-- till char backward --"));
+}
+
+void VisualMode::handleRepeatFind(HWND hwndEdit, int count) {
+    if (state.lastSearchChar == 0) return;
+
+    if (state.lastSearchTill) {
+        if (state.lastSearchForward)
+            Motion::tillChar(hwndEdit, count, state.lastSearchChar);
+        else
+            Motion::tillCharBack(hwndEdit, count, state.lastSearchChar);
+    }
+    else {
+        if (state.lastSearchForward)
+            Motion::nextChar(hwndEdit, count, state.lastSearchChar);
+        else
+            Motion::prevChar(hwndEdit, count, state.lastSearchChar);
+    }
+
+    Utils::setStatus(TEXT("-- VISUAL --"));
+}
+
+void VisualMode::handleRepeatFindReverse(HWND hwndEdit, int count) {
+    if (state.lastSearchChar == 0) return;
+
+    if (state.lastSearchTill) {
+        if (state.lastSearchForward)
+            Motion::tillCharBack(hwndEdit, count, state.lastSearchChar);
+        else
+            Motion::tillChar(hwndEdit, count, state.lastSearchChar);
+    }
+    else {
+        if (state.lastSearchForward)
+            Motion::prevChar(hwndEdit, count, state.lastSearchChar);
+        else
+            Motion::nextChar(hwndEdit, count, state.lastSearchChar);
+    }
+
+    Utils::setStatus(TEXT("-- VISUAL --"));
 }

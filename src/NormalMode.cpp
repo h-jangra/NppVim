@@ -1,4 +1,5 @@
-﻿#include "../include/NormalMode.h"
+﻿//NormalMode.cpp
+#include "../include/NormalMode.h"
 #include "../include/Motion.h"
 #include "../include/Utils.h"
 #include "../include/VisualMode.h"
@@ -16,6 +17,12 @@ extern NppData nppData;
 
 NormalMode::NormalMode(VimState& state) : state(state) {
     setupKeyHandlers();
+}
+
+static void updateLastSearchState(VimState& state, bool isForward, bool isTill, char searchChar) {
+    state.lastSearchChar = searchChar;
+    state.lastSearchForward = isForward;
+    state.lastSearchTill = isTill;
 }
 
 void NormalMode::setupKeyHandlers() {
@@ -39,8 +46,19 @@ void NormalMode::setupKeyHandlers() {
     keyHandlers['L'] = [this](HWND hwnd, int c) { handleMotion(hwnd, 'L', c); };
     keyHandlers['~'] = [this](HWND hwnd, int c) { handleMotion(hwnd, '~', c); };
     keyHandlers['g'] = [this](HWND hwnd, int c) { handleGCommand(hwnd, c); };
-    keyHandlers['t'] = [this](HWND hwnd, int c) { handleTabCommand(hwnd, c); };
-    keyHandlers['T'] = [this](HWND hwnd, int c) { handleTabReverseCommand(hwnd, c); };
+    keyHandlers['t'] = [this](HWND hwnd, int c) {
+        if (state.opPending == 'g')
+            handleTabCommand(hwnd, c);
+        else
+            handleTCommand(hwnd, c);
+        };
+
+    keyHandlers['T'] = [this](HWND hwnd, int c) {
+        if (state.opPending == 'g')
+            handleTabReverseCommand(hwnd, c);
+        else
+            handleTReverseCommand(hwnd, c);
+        };
 
     keyHandlers['i'] = [this](HWND hwnd, int c) { handleInsert(hwnd, c); };
     keyHandlers['a'] = [this](HWND hwnd, int c) { handleAppend(hwnd, c); };
@@ -61,9 +79,6 @@ void NormalMode::setupKeyHandlers() {
     keyHandlers['R'] = [this](HWND hwnd, int c) { handleReplaceMode(hwnd, c); };
     keyHandlers['p'] = [this](HWND hwnd, int c) { handlePaste(hwnd, c); };
     keyHandlers['P'] = [this](HWND hwnd, int c) { handlePasteBefore(hwnd, c); };
-    keyHandlers['<'] = [this](HWND hwnd, int c) { TextObject::apply(hwnd, state, '<', 0, 0); };
-    keyHandlers['>'] = [this](HWND hwnd, int c) { TextObject::apply(hwnd, state, '>', 0, 0); };
-    keyHandlers['='] = [this](HWND hwnd, int c) { TextObject::apply(hwnd, state, '=', 0, 0); };
 
     keyHandlers['/'] = [this](HWND hwnd, int c) { handleSearchForward(hwnd, c); };
     keyHandlers['n'] = [this](HWND hwnd, int c) { handleSearchNext(hwnd, c); };
@@ -95,7 +110,6 @@ void NormalMode::setupKeyHandlers() {
         if (currentTime - lastBacktickTime < 500 && backtickCount == 1) {
             backtickCount = 0;
             handleJumpBack(hwnd, count);
-
             enter();
         }
         else {
@@ -133,6 +147,18 @@ void NormalMode::enterInsertMode() {
     ::SendMessage(hwndEdit, SCI_SETCARETSTYLE, CARETSTYLE_LINE, 0);
 }
 
+void NormalMode::handleTCommand(HWND hwndEdit, int count) {
+    state.opPending = 't';
+    state.textObjectPending = 't';
+    Utils::setStatus(TEXT("-- till char (forward) --"));
+}
+
+void NormalMode::handleTReverseCommand(HWND hwndEdit, int count) {
+    state.opPending = 'T';
+    state.textObjectPending = 't';
+    Utils::setStatus(TEXT("-- till char (backward) --"));
+}
+
 void NormalMode::handleKey(HWND hwndEdit, char c) {
     if (std::isdigit(static_cast<unsigned char>(c))) {
         int digit = c - '0';
@@ -164,27 +190,33 @@ void NormalMode::handleKey(HWND hwndEdit, char c) {
         return;
     }
 
-    if (state.textObjectPending == 'f' && (state.opPending == 'f' || state.opPending == 'F')) {
+    if ((state.textObjectPending == 'f' && (state.opPending == 'f' || state.opPending == 'F')) ||
+        (state.textObjectPending == 't' && (state.opPending == 't' || state.opPending == 'T'))) {
+
         char searchChar = c;
-        bool found = false;
+        bool isTill = (state.textObjectPending == 't');
+        bool isForward = (state.opPending == 'f' || state.opPending == 't');
 
-        if (state.opPending == 'f') {
-            Motion::nextChar(hwndEdit, count, searchChar);
-            found = true;
-        }
-        else if (state.opPending == 'F') {
-            Motion::prevChar(hwndEdit, count, searchChar);
-            found = true;
-        }
+        updateLastSearchState(state, isForward, isTill, searchChar);
 
-        if (found) {
-            state.lastSearchChar = searchChar;
-            state.lastSearchForward = (state.opPending == 'f');
-            state.recordLastOp(OP_MOTION, count, state.opPending, searchChar);
+        // Perform the motion
+        if (isTill) {
+            if (isForward)
+                Motion::tillChar(hwndEdit, count, searchChar);
+            else
+                Motion::tillCharBack(hwndEdit, count, searchChar);
         }
         else {
-            Utils::setStatus(TEXT("Character not found"));
+            if (isForward)
+                Motion::nextChar(hwndEdit, count, searchChar);
+            else
+                Motion::prevChar(hwndEdit, count, searchChar);
         }
+
+        // Record last operation for . repeat
+        state.recordLastOp(OP_MOTION, count,
+            isForward ? (isTill ? 't' : 'f') : (isTill ? 'T' : 'F'),
+            searchChar);
 
         state.opPending = 0;
         state.textObjectPending = 0;
@@ -192,17 +224,19 @@ void NormalMode::handleKey(HWND hwndEdit, char c) {
         return;
     }
 
-    if (state.textObjectPending && state.opPending) {
-        if (c == 'w' || c == 'W' || c == '"' || c == '\'' || c == '`' ||
-            c == '(' || c == ')' || c == '[' || c == ']' ||
-            c == '{' || c == '}' || c == '<' || c == '>') {
+    if (state.opPending && (c == 'w' || c == 'W' || c == '$'
+        || c == 'e' || c == 'E' ||
+        c == 'b' || c == 'B' || c == 'h' || c == 'l' || c == 'j' ||
+        c == 'k' || c == '^' || c == 'G')) {
 
-            TextObject::apply(hwndEdit, state, state.opPending, state.textObjectPending, c);
-            state.opPending = 0;
-            state.textObjectPending = 0;
-            state.repeatCount = 0;
-            return;
-        }
+        ::SendMessage(hwndEdit, SCI_BEGINUNDOACTION, 0, 0);
+
+        applyOperatorToMotion(hwndEdit, state.opPending, c, count);
+        
+        ::SendMessage(hwndEdit, SCI_ENDUNDOACTION, 0, 0);
+        state.opPending = 0;
+        state.repeatCount = 0;
+        return;
     }
 
     if (state.opPending && (c == 'i' || c == 'a')) {
@@ -232,7 +266,8 @@ void NormalMode::handleKey(HWND hwndEdit, char c) {
         return;
     }
 
-    if (state.opPending && state.opPending != 'f' && state.opPending != 'F') {
+    if (state.opPending && state.opPending != 'f' && state.opPending != 'F' &&
+        state.opPending != 't' && state.opPending != 'T') {
         if (c == 'w' || c == 'W' || c == '$' || c == 'e' || c == 'E' ||
             c == 'b' || c == 'B' || c == 'h' || c == 'l' || c == 'j' ||
             c == 'k' || c == '^' || c == 'G') {
@@ -255,6 +290,26 @@ void NormalMode::handleKey(HWND hwndEdit, char c) {
     }
 }
 
+void NormalMode::handleTabCommand(HWND hwnd, int count) {
+    if (state.opPending == 'g') {
+        for (int i = 0; i < count; i++) {
+            ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_VIEW_TAB_NEXT);
+        }
+        state.opPending = 0;
+        state.recordLastOp(OP_MOTION, count, 't');
+    }
+}
+
+void NormalMode::handleTabReverseCommand(HWND hwnd, int count) {
+    if (state.opPending == 'g') {
+        for (int i = 0; i < count; i++) {
+            ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_VIEW_TAB_PREV);
+        }
+        state.opPending = 0;
+        state.recordLastOp(OP_MOTION, count, 'T');
+    }
+}
+
 void NormalMode::handleInsert(HWND hwndEdit, int count) { enterInsertMode(); }
 void NormalMode::handleAppend(HWND hwndEdit, int count) { Motion::charRight(hwndEdit, 1); enterInsertMode(); }
 void NormalMode::handleAppendEnd(HWND hwndEdit, int count) { ::SendMessage(hwndEdit, SCI_LINEEND, 0, 0); enterInsertMode(); }
@@ -272,13 +327,9 @@ void NormalMode::handleDeleteChar(HWND hwndEdit, int count) {
         int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
         int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
 
-        if (pos >= docLen) {
-            break;
-        }
+        if (pos >= docLen) break;
 
-        // Use Scintilla's position after one character
         int nextPos = (int)::SendMessage(hwndEdit, SCI_POSITIONAFTER, pos, 0);
-
         ::SendMessage(hwndEdit, SCI_SETSEL, pos, nextPos);
         ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0);
     }
@@ -290,12 +341,9 @@ void NormalMode::handleDeleteCharBack(HWND hwndEdit, int count) {
     ::SendMessage(hwndEdit, SCI_BEGINUNDOACTION, 0, 0);
     for (int i = 0; i < count; ++i) {
         int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
-        if (pos <= 0) {
-            break;
-        }
+        if (pos <= 0) break;
 
         int prevPos = (int)::SendMessage(hwndEdit, SCI_POSITIONBEFORE, pos, 0);
-
         ::SendMessage(hwndEdit, SCI_SETSEL, prevPos, pos);
         ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0);
     }
@@ -337,7 +385,10 @@ void NormalMode::handleJoinLines(HWND hwndEdit, int count) {
     state.recordLastOp(OP_MOTION, count, 'J');
 }
 
-void NormalMode::handleReplace(HWND hwndEdit, int count) { state.replacePending = true; state.recordLastOp(OP_REPLACE, count, 'r'); }
+void NormalMode::handleReplace(HWND hwndEdit, int count) {
+    state.replacePending = true;
+    state.recordLastOp(OP_REPLACE, count, 'r');
+}
 
 void NormalMode::handleReplaceMode(HWND hwndEdit, int count) {
     state.mode = INSERT;
@@ -449,18 +500,18 @@ void NormalMode::handleMotion(HWND hwndEdit, char motionChar, int count) {
     case 'w': case 'W': Motion::wordRight(hwndEdit, count); break;
     case 'b': case 'B': Motion::wordLeft(hwndEdit, count); break;
     case 'e': case 'E': Motion::wordEnd(hwndEdit, count); break;
-    case '$': Motion::lineEnd(hwndEdit, count); break;
-    case '^': Motion::lineStart(hwndEdit, count); break;
-    case '{': Motion::paragraphUp(hwndEdit, count); break;
-    case '}': Motion::paragraphDown(hwndEdit, count); break;
-    case 'H': Motion::pageUp(hwndEdit); break;
-    case 'L': Motion::pageDown(hwndEdit); break;
-    case '~': motion.toggleCase(hwndEdit, state.repeatCount > 0 ? state.repeatCount : 1); state.repeatCount = 0; break;
-    case 'G':
-        if (count == 1) Motion::documentEnd(hwndEdit);
-        else Motion::gotoLine(hwndEdit, count);
-        break;
-    case '%': ::SendMessage(hwndEdit, SCI_BRACEMATCHNEXT, 0, 0); break;
+        case '$': Motion::lineEnd(hwndEdit, count); break;
+        case '^': Motion::lineStart(hwndEdit, count); break;
+        case '{': Motion::paragraphUp(hwndEdit, count); break;
+        case '}': Motion::paragraphDown(hwndEdit, count); break;
+        case 'H': case 21 /* Ctrl+U */:  Motion::pageUp(hwndEdit); break;
+        case 'L': case 4 /* Ctrl+D */: Motion::pageDown(hwndEdit); break;
+        case '~': motion.toggleCase(hwndEdit, state.repeatCount > 0 ? state.repeatCount : 1); state.repeatCount = 0; break;
+        case 'G':
+            if (count == 1) Motion::documentEnd(hwndEdit);
+            else Motion::gotoLine(hwndEdit, count);
+            break;
+        case '%': ::SendMessage(hwndEdit, SCI_BRACEMATCHNEXT, 0, 0); break;
     }
 
     int caret = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
@@ -493,26 +544,6 @@ void NormalMode::handleGCommand(HWND hwnd, int count) {
     ::SendMessage(hwndEdit, SCI_SETSEL, caret, caret);
     state.opPending = 0;
     state.repeatCount = 0;
-}
-
-void NormalMode::handleTabCommand(HWND hwnd, int count) {
-    if (state.opPending == 'g') {
-        for (int i = 0; i < count; i++) {
-            ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_VIEW_TAB_NEXT);
-        }
-        state.opPending = 0;
-        state.recordLastOp(OP_MOTION, count, 't');
-    }
-}
-
-void NormalMode::handleTabReverseCommand(HWND hwnd, int count) {
-    if (state.opPending == 'g') {
-        for (int i = 0; i < count; i++) {
-            ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_VIEW_TAB_PREV);
-        }
-        state.opPending = 0;
-        state.recordLastOp(OP_MOTION, count, 'T');
-    }
 }
 
 void NormalMode::handleSearchForward(HWND hwndEdit, int count) { if (g_commandMode) g_commandMode->enter('/'); }
@@ -575,31 +606,84 @@ void NormalMode::handleSearchWordBackward(HWND hwndEdit, int count) {
     }
 }
 
-void NormalMode::handleFindChar(HWND hwndEdit, int count) { state.opPending = 'f'; state.textObjectPending = 'f'; }
-void NormalMode::handleFindCharBack(HWND hwndEdit, int count) { state.opPending = 'F'; state.textObjectPending = 'f'; }
+void NormalMode::handleFindChar(HWND hwndEdit, int count) {
+    state.opPending = 'f';
+    state.textObjectPending = 'f';
+    Utils::setStatus(TEXT("-- find char (forward) --"));
+}
+
+void NormalMode::handleFindCharBack(HWND hwndEdit, int count) {
+    state.opPending = 'F';
+    state.textObjectPending = 'f';
+    Utils::setStatus(TEXT("-- find char (backward) --"));
+}
 
 void NormalMode::handleRepeatFind(HWND hwndEdit, int count) {
-    if (state.lastSearchChar != 0) {
-        if (state.lastSearchForward) {
-            Motion::nextChar(hwndEdit, count, state.lastSearchChar);
-        }
-        else {
-            Motion::prevChar(hwndEdit, count, state.lastSearchChar);
-        }
-        state.recordLastOp(OP_MOTION, count, state.lastSearchForward ? 'f' : 'F', state.lastSearchChar);
+    if (state.lastSearchChar == 0) return;
+
+    bool isForward = state.lastSearchForward;
+    bool isTill = state.lastSearchTill;
+    char searchChar = state.lastSearchChar;
+
+    // Perform the same motion again
+    if (isTill) {
+        if (isForward)
+            Motion::tillChar(hwndEdit, count, searchChar);
+        else
+            Motion::tillCharBack(hwndEdit, count, searchChar);
     }
+    else {
+        if (isForward)
+            Motion::nextChar(hwndEdit, count, searchChar);
+        else
+            Motion::prevChar(hwndEdit, count, searchChar);
+    }
+
+    // Keep same repeat info
+    updateLastSearchState(state, isForward, isTill, searchChar);
+
+    // Record for . repeat
+    state.recordLastOp(OP_MOTION, count,
+        isForward ? (isTill ? 't' : 'f') : (isTill ? 'T' : 'F'),
+        searchChar);
+
+    // Move caret to new position
+    int caret = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+    ::SendMessage(hwndEdit, SCI_SETSEL, caret, caret);
 }
 
 void NormalMode::handleRepeatFindReverse(HWND hwndEdit, int count) {
-    if (state.lastSearchChar != 0) {
-        if (state.lastSearchForward) {
-            Motion::prevChar(hwndEdit, count, state.lastSearchChar);
-        }
-        else {
-            Motion::nextChar(hwndEdit, count, state.lastSearchChar);
-        }
-        state.recordLastOp(OP_MOTION, count, state.lastSearchForward ? 'F' : 'f', state.lastSearchChar);
+    if (state.lastSearchChar == 0) return;
+
+    bool isForward = state.lastSearchForward;
+    bool isTill = state.lastSearchTill;
+    char searchChar = state.lastSearchChar;
+
+    // Perform motion in opposite direction
+    if (isTill) {
+        if (isForward)
+            Motion::tillCharBack(hwndEdit, count, searchChar);
+        else
+            Motion::tillChar(hwndEdit, count, searchChar);
     }
+    else {
+        if (isForward)
+            Motion::prevChar(hwndEdit, count, searchChar);
+        else
+            Motion::nextChar(hwndEdit, count, searchChar);
+    }
+
+    // Keep repeat info but flip direction (like Vim)
+    updateLastSearchState(state, !isForward, isTill, searchChar);
+
+    // Record for . repeat
+    state.recordLastOp(OP_MOTION, count,
+        isForward ? (isTill ? 'T' : 'F') : (isTill ? 't' : 'f'),
+        searchChar);
+
+    // Move caret to new position
+    int caret = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+    ::SendMessage(hwndEdit, SCI_SETSEL, caret, caret);
 }
 
 void NormalMode::handleVisualChar(HWND hwndEdit, int count) { if (g_visualMode) g_visualMode->enterChar(hwndEdit); }
@@ -612,9 +696,15 @@ void NormalMode::handleRepeat(HWND hwndEdit, int count) {
     int repeatCount = (state.repeatCount > 0) ? state.repeatCount : state.lastOp.count;
 
     switch (state.lastOp.type) {
-    case OP_DELETE_LINE: for (int i = 0; i < repeatCount; ++i) deleteLineOnce(hwndEdit); break;
-    case OP_YANK_LINE: for (int i = 0; i < repeatCount; ++i) yankLineOnce(hwndEdit); break;
-    case OP_PASTE_LINE: for (int i = 0; i < repeatCount; ++i) ::SendMessage(hwndEdit, SCI_PASTE, 0, 0); break;
+    case OP_DELETE_LINE:
+        for (int i = 0; i < repeatCount; ++i) deleteLineOnce(hwndEdit);
+        break;
+    case OP_YANK_LINE:
+        for (int i = 0; i < repeatCount; ++i) yankLineOnce(hwndEdit);
+        break;
+    case OP_PASTE_LINE:
+        for (int i = 0; i < repeatCount; ++i) ::SendMessage(hwndEdit, SCI_PASTE, 0, 0);
+        break;
     case OP_MOTION:
         if (state.lastOp.motion == 'x' || state.lastOp.motion == 'X') {
             for (int i = 0; i < repeatCount; ++i) {
@@ -622,11 +712,32 @@ void NormalMode::handleRepeat(HWND hwndEdit, int count) {
                 else handleDeleteCharBack(hwndEdit, 1);
             }
         }
+        else if (state.lastOp.motion == 'f' || state.lastOp.motion == 'F' ||
+            state.lastOp.motion == 't' || state.lastOp.motion == 'T') {
+            // Handle repeat for character search motions (f/F/t/T)
+            if (state.lastOp.searchChar != 0) {
+                if (state.lastOp.motion == 'f') {
+                    Motion::nextChar(hwndEdit, repeatCount, state.lastOp.searchChar);
+                }
+                else if (state.lastOp.motion == 'F') {
+                    Motion::prevChar(hwndEdit, repeatCount, state.lastOp.searchChar);
+                }
+                else if (state.lastOp.motion == 't') {
+                    Motion::tillChar(hwndEdit, repeatCount, state.lastOp.searchChar);
+                }
+                else if (state.lastOp.motion == 'T') {
+                    Motion::tillCharBack(hwndEdit, repeatCount, state.lastOp.searchChar);
+                }
+            }
+        }
         else {
+            // For other motions, apply delete operator
             applyOperatorToMotion(hwndEdit, 'd', state.lastOp.motion, repeatCount);
         }
         break;
-    case OP_REPLACE: state.replacePending = true; break;
+    case OP_REPLACE:
+        state.replacePending = true;
+        break;
     }
     ::SendMessage(hwndEdit, SCI_ENDUNDOACTION, 0, 0);
     state.repeatCount = 0;
@@ -666,6 +777,9 @@ void NormalMode::yankLineOnce(HWND hwndEdit) {
 void NormalMode::applyOperatorToMotion(HWND hwndEdit, char op, char motion, int count) {
     int start = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
 
+    if (motion == 'f' || motion == 'F' || motion == 't' || motion == 'T') {
+        return;
+    }
     switch (motion) {
     case 'h': Motion::charLeft(hwndEdit, count); break;
     case 'l': Motion::charRight(hwndEdit, count); break;

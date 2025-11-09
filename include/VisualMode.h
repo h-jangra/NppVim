@@ -37,4 +37,10 @@ private:
     void handleMotion(HWND hwndEdit, char motion, int count);
     void updateVisualAnchor(HWND hwndEdit);
     void handleGCommand(HWND hwndEdit, int count);
+    void handleFindChar(HWND hwndEdit, int count);
+    void handleFindCharBack(HWND hwndEdit, int count);
+    void handleTillChar(HWND hwndEdit, int count);
+    void handleTillCharBack(HWND hwndEdit, int count);
+    void handleRepeatFind(HWND hwndEdit, int count);
+    void handleRepeatFindReverse(HWND hwndEdit, int count);
 };

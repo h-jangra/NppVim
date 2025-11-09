@@ -1,4 +1,5 @@
-﻿#include "../include/Motion.h"
+﻿//Motion.cpp
+#include "../include/Motion.h"
 #include "../plugin/Scintilla.h"
 #include "../include/NppVim.h"
 
@@ -141,46 +142,127 @@ void Motion::nextChar(HWND hwndEdit, int count, char target) {
     int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
     int lineEnd = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION,
         ::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, pos, 0), 0);
+
+    int foundPos = pos;
+
     for (int i = 0; i < count; ++i) {
-        int found = -1;
-        for (int j = pos + 1; j < lineEnd; ++j) {
-            char c = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, j, 0);
-            if (c == target) { found = j; break; }
+        int searchPos = foundPos + 1;
+        bool found = false;
+        while (searchPos <= lineEnd) {
+            char c = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, searchPos, 0);
+            if (c == target) {
+                foundPos = searchPos; // f moves TO the target character
+                found = true;
+                break;
+            }
+            searchPos++;
         }
-        if (found != -1) pos = found;
+        if (!found) return;
     }
 
-    if (state.mode == VISUAL) {
-        int anchor = (int)::SendMessage(hwndEdit, SCI_GETANCHOR, 0, 0);
-        ::SendMessage(hwndEdit, SCI_SETSEL, anchor, pos);
-    }
-    else {
-        ::SendMessage(hwndEdit, SCI_SETSEL, pos, pos);
-    }
-    ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, pos, 0);
+    setCursorPosition(hwndEdit, foundPos, false); // false for f motion
 }
 
 void Motion::prevChar(HWND hwndEdit, int count, char target) {
     int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
     int lineStart = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE,
         ::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, pos, 0), 0);
+
+    int foundPos = pos;
+
     for (int i = 0; i < count; ++i) {
-        int found = -1;
-        for (int j = pos - 1; j >= lineStart; --j) {
-            char c = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, j, 0);
-            if (c == target) { found = j; break; }
+        int searchPos = foundPos - 1;
+        bool found = false;
+        while (searchPos >= lineStart) {
+            char c = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, searchPos, 0);
+            if (c == target) {
+                foundPos = searchPos; // F moves TO the target character
+                found = true;
+                break;
+            }
+            searchPos--;
         }
-        if (found != -1) pos = found;
+        if (!found) return;
     }
 
+    setCursorPosition(hwndEdit, foundPos, false); // false for F motion
+}
+
+void Motion::tillChar(HWND hwndEdit, int count, char target) {
+    int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+    int lineEnd = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION,
+        ::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, pos, 0), 0);
+
+    int foundPos = pos;
+
+    for (int i = 0; i < count; ++i) {
+        int searchPos = foundPos + 1;
+        bool found = false;
+        while (searchPos <= lineEnd) {
+            char c = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, searchPos, 0);
+            if (c == target) {
+                foundPos = searchPos - 1; // t moves to one position BEFORE the target
+                found = true;
+                break;
+            }
+            searchPos++;
+        }
+        if (!found) return;
+    }
+
+    setCursorPosition(hwndEdit, foundPos, true); // true for t motion
+}
+
+void Motion::tillCharBack(HWND hwndEdit, int count, char target) {
+    int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+    int lineStart = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE,
+        ::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, pos, 0), 0);
+
+    int foundPos = pos;
+
+    for (int i = 0; i < count; ++i) {
+        int searchPos = foundPos - 1;
+        bool found = false;
+        while (searchPos >= lineStart) {
+            char c = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, searchPos, 0);
+            if (c == target) {
+                foundPos = searchPos + 1; // T moves to one position AFTER the target
+                found = true;
+                break;
+            }
+            searchPos--;
+        }
+        if (!found) return;
+    }
+
+    setCursorPosition(hwndEdit, foundPos, true); // true for T motion
+}
+
+void Motion::setCursorPosition(HWND hwndEdit, int pos, bool isTillMotion) {
     if (state.mode == VISUAL) {
         int anchor = (int)::SendMessage(hwndEdit, SCI_GETANCHOR, 0, 0);
-        ::SendMessage(hwndEdit, SCI_SETSEL, anchor, pos);
+        int selectionEnd = pos;
+
+        bool isForward = (pos > anchor);
+
+        if (isForward) {
+            if (isTillMotion) {
+                selectionEnd = pos + 1;
+            }
+            else {
+                selectionEnd = pos + 1;
+            }
+        }
+        else {
+        }
+
+        ::SendMessage(hwndEdit, SCI_SETSEL, anchor, selectionEnd);
+        ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, selectionEnd, 0);
     }
     else {
         ::SendMessage(hwndEdit, SCI_SETSEL, pos, pos);
+        ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, pos, 0);
     }
-    ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, pos, 0);
 }
 
 void Motion::paragraphUp(HWND hwndEdit, int count) {

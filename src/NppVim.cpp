@@ -1,3 +1,4 @@
+//NppVim.cpp
 #include <windows.h>
 #include <map>
 #include <string>
@@ -14,6 +15,7 @@
 #include "../include/CommandMode.h"
 #include "../include/Utils.h"
 #include "../plugin/resource.h"
+#include "../include/Motion.h"
 
 HINSTANCE g_hInstance = nullptr;
 NppData nppData;
@@ -32,7 +34,10 @@ static std::map<HWND, WNDPROC> origProcMap;
 // Configuration
 struct VimConfig {
     std::string escapeKey = "esc";
-    int escapeTimeout = 300; // milliseconds to wait for second key
+    int escapeTimeout = 300;
+    bool overrideCtrlD = false;
+    bool overrideCtrlU = false;
+    bool overrideCtrlR = false;
 };
 
 VimConfig g_config;
@@ -84,6 +89,9 @@ void loadConfig() {
     // Set defaults
     g_config.escapeKey = "esc";
     g_config.escapeTimeout = 300;
+    g_config.overrideCtrlD = false;
+    g_config.overrideCtrlU = false;
+    g_config.overrideCtrlR = false;
 
     std::ifstream file(configPath);
     if (!file.is_open()) {
@@ -92,13 +100,11 @@ void loadConfig() {
 
     std::string line;
     while (std::getline(file, line)) {
-        // Trim whitespace
         size_t start = line.find_first_not_of(" \t\r\n");
         size_t end = line.find_last_not_of(" \t\r\n");
         if (start == std::string::npos) continue;
         line = line.substr(start, end - start + 1);
 
-        // Skip comments
         if (line.empty() || line[0] == '#' || line[0] == ';') continue;
 
         size_t pos = line.find('=');
@@ -106,7 +112,6 @@ void loadConfig() {
             std::string key = line.substr(0, pos);
             std::string value = line.substr(pos + 1);
 
-            // Trim key and value
             start = key.find_first_not_of(" \t");
             end = key.find_last_not_of(" \t");
             if (start != std::string::npos) {
@@ -129,9 +134,16 @@ void loadConfig() {
                         g_config.escapeTimeout = timeout;
                     }
                 }
-                catch (...) {
-                    // Invalid value, keep default
-                }
+                catch (...) {}
+            }
+            else if (key == "override_ctrl_d") {
+                g_config.overrideCtrlD = (value == "1" || value == "true");
+            }
+            else if (key == "override_ctrl_u") {
+                g_config.overrideCtrlU = (value == "1" || value == "true");
+            }
+            else if (key == "override_ctrl_r") {
+                g_config.overrideCtrlR = (value == "1" || value == "true");
             }
         }
     }
@@ -151,6 +163,11 @@ void saveConfig() {
         file << "\n";
         file << "# Timeout for two-key escape sequences (100-1000ms)\n";
         file << "escape_timeout=" << g_config.escapeTimeout << "\n";
+        file << "\n";
+        file << "# Ctrl key overrides (0 or 1)\n";
+        file << "override_ctrl_d=" << (g_config.overrideCtrlD ? "1" : "0") << "\n";
+        file << "override_ctrl_u=" << (g_config.overrideCtrlU ? "1" : "0") << "\n";
+        file << "override_ctrl_r=" << (g_config.overrideCtrlR ? "1" : "0") << "\n";
         file.close();
     }
 }
@@ -172,15 +189,16 @@ INT_PTR CALLBACK ConfigDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM
 
         SendMessage(hEscapeCombo, CB_SETCURSEL, selIndex, 0);
 
-        // Set timeout value
-        HWND hTimeout = GetDlgItem(hwnd, IDC_TIMEOUT);
-        if (hTimeout) {
-            SetDlgItemInt(hwnd, IDC_TIMEOUT, g_config.escapeTimeout, FALSE);
-        }
+        SetDlgItemInt(hwnd, IDC_TIMEOUT, g_config.escapeTimeout, FALSE);
+
+        // Set checkboxes
+        CheckDlgButton(hwnd, IDC_CHECK_CTRL_D, g_config.overrideCtrlD ? BST_CHECKED : BST_UNCHECKED);
+        CheckDlgButton(hwnd, IDC_CHECK_CTRL_U, g_config.overrideCtrlU ? BST_CHECKED : BST_UNCHECKED);
+        CheckDlgButton(hwnd, IDC_CHECK_CTRL_R, g_config.overrideCtrlR ? BST_CHECKED : BST_UNCHECKED);
 
         return TRUE;
     }
-    
+
     case WM_COMMAND:
         switch (LOWORD(wParam)) {
         case IDOK: {
@@ -194,20 +212,21 @@ INT_PTR CALLBACK ConfigDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM
             default: g_config.escapeKey = "esc"; break;
             }
 
-            // Get timeout value
-            HWND hTimeout = GetDlgItem(hwnd, IDC_TIMEOUT);
-            if (hTimeout) {
-                BOOL success;
-                int timeout = GetDlgItemInt(hwnd, IDC_TIMEOUT, &success, FALSE);
-                if (success && timeout >= 100 && timeout <= 1000) {
-                    g_config.escapeTimeout = timeout;
-                }
-                else {
-                    MessageBox(hwnd, TEXT("Timeout must be between 100 and 1000 milliseconds."),
-                        TEXT("Invalid Input"), MB_OK | MB_ICONWARNING);
-                    return TRUE;
-                }
+            BOOL success;
+            int timeout = GetDlgItemInt(hwnd, IDC_TIMEOUT, &success, FALSE);
+            if (success && timeout >= 100 && timeout <= 1000) {
+                g_config.escapeTimeout = timeout;
             }
+            else {
+                MessageBox(hwnd, TEXT("Timeout must be between 100 and 1000 milliseconds."),
+                    TEXT("Invalid Input"), MB_OK | MB_ICONWARNING);
+                return TRUE;
+            }
+
+            // Get checkbox states
+            g_config.overrideCtrlD = (IsDlgButtonChecked(hwnd, IDC_CHECK_CTRL_D) == BST_CHECKED);
+            g_config.overrideCtrlU = (IsDlgButtonChecked(hwnd, IDC_CHECK_CTRL_U) == BST_CHECKED);
+            g_config.overrideCtrlR = (IsDlgButtonChecked(hwnd, IDC_CHECK_CTRL_R) == BST_CHECKED);
 
             saveConfig();
             EndDialog(hwnd, IDOK);
@@ -230,12 +249,10 @@ void showConfigDialog() {
 bool checkEscapeSequence(char c) {
     DWORD currentTime = GetTickCount64();
 
-    // If we have a first key and it's been too long, clear it
     if (g_firstKey != 0 && currentTime - g_firstKeyTime > g_config.escapeTimeout) {
         g_firstKey = 0;
     }
 
-    // If no first key, check if this could be the start of a sequence
     if (g_firstKey == 0) {
         if ((g_config.escapeKey == "jj" && c == 'j') ||
             (g_config.escapeKey == "jk" && c == 'j') ||
@@ -247,7 +264,6 @@ bool checkEscapeSequence(char c) {
         return false;
     }
 
-    // We have a first key, check if this completes the sequence
     if ((g_config.escapeKey == "jj" && g_firstKey == 'j' && c == 'j') ||
         (g_config.escapeKey == "jk" && g_firstKey == 'j' && c == 'k') ||
         (g_config.escapeKey == "kj" && g_firstKey == 'k' && c == 'j')) {
@@ -255,7 +271,6 @@ bool checkEscapeSequence(char c) {
         return true;
     }
 
-    // Sequence doesn't match, clear first key
     g_firstKey = 0;
     return false;
 }
@@ -265,13 +280,54 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
     auto it = origProcMap.find(hwnd);
     if (it != origProcMap.end()) orig = it->second;
 
-    if (!state.vimEnabled || !orig) {
-        return CallWindowProc(orig, hwnd, msg, wParam, lParam);
+    if (!state.vimEnabled) {
+        if (orig) {
+            return CallWindowProc(orig, hwnd, msg, wParam, lParam);
+        }
+        else {
+            return DefWindowProc(hwnd, msg, wParam, lParam);
+        }
+    }
+
+    if (!orig) {
+        return DefWindowProc(hwnd, msg, wParam, lParam);
     }
 
     HWND hwndEdit = hwnd;
 
-    // Handle command mode first
+    // Handle Ctrl key overrides in NORMAL and VISUAL modes
+    if ((state.mode == NORMAL || state.mode == VISUAL) && msg == WM_KEYDOWN) {
+        bool ctrlPressed = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+
+        if (ctrlPressed) {
+            if (wParam == 'D' && g_config.overrideCtrlD) {
+                // Ctrl+D: Page down
+                Motion::pageDown(hwndEdit);
+                if (state.mode == NORMAL) {
+                    state.recordLastOp(OP_MOTION, state.repeatCount > 0 ? state.repeatCount : 1, 4); // 4 represents Ctrl+D
+                }
+                state.repeatCount = 0;
+                return 0;
+            }
+            else if (wParam == 'U' && g_config.overrideCtrlU) {
+                // Ctrl+U: Page up
+                Motion::pageUp(hwndEdit);
+                if (state.mode == NORMAL) {
+                    state.recordLastOp(OP_MOTION, state.repeatCount > 0 ? state.repeatCount : 1, 21); // 21 represents Ctrl+U
+                }
+                state.repeatCount = 0;
+                return 0;
+            }
+            else if (wParam == 'R' && g_config.overrideCtrlR && state.mode == NORMAL) {
+                // Ctrl+R: Redo in normal mode
+                ::SendMessage(hwndEdit, SCI_REDO, 0, 0);
+                state.recordLastOp(OP_MOTION, 1, 'R');
+                return 0;
+            }
+        }
+    }
+
+    // Handle command mode
     if (state.commandMode) {
         if (msg == WM_KEYDOWN) {
             if (wParam == VK_RETURN) {
@@ -300,12 +356,11 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
         return CallWindowProc(orig, hwnd, msg, wParam, lParam);
     }
 
-    // CRITICAL FIX: In INSERT mode, forward ALL messages to Scintilla except escape handling
+    // Handle INSERT mode
     if (state.mode == INSERT) {
         if (msg == WM_CHAR) {
             char c = (char)wParam;
 
-            // Handle Escape key
             if ((int)wParam == VK_ESCAPE) {
                 ::SendMessage(hwndEdit, SCI_SETOVERTYPE, false, 0);
                 g_firstKey = 0;
@@ -313,11 +368,9 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
                 return 0;
             }
 
-            // Handle escape sequences (jj, jk, kj)
             if (g_config.escapeKey != "esc") {
                 bool isEscape = checkEscapeSequence(c);
                 if (isEscape) {
-                    // Delete the escape sequence characters
                     int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
                     if (pos >= 2) {
                         ::SendMessage(hwndEdit, SCI_SETSEL, pos - 2, pos);
@@ -334,22 +387,19 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
             }
         }
 
-        // FORWARD ALL MESSAGES to Scintilla in Insert mode (this is the key fix)
         return CallWindowProc(orig, hwnd, msg, wParam, lParam);
     }
 
-    // Handle regular key presses for NORMAL and VISUAL modes
+    // Handle NORMAL and VISUAL modes
     if (msg == WM_CHAR) {
         char c = (char)wParam;
 
-        // Handle Escape key
         if ((int)wParam == VK_ESCAPE) {
             g_firstKey = 0;
             g_normalMode->enter();
             return 0;
         }
 
-        // Handle replace pending in NORMAL mode
         if (state.replacePending && state.mode == NORMAL) {
             int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
             int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
@@ -367,7 +417,6 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
             return 0;
         }
 
-        // Handle NORMAL and VISUAL mode commands
         if (state.mode == NORMAL) {
             g_normalMode->handleKey(hwndEdit, c);
             return 0;
@@ -378,7 +427,6 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
         }
     }
 
-    // Clear sequence on other key events
     if (msg == WM_KEYDOWN) {
         switch (wParam) {
         case VK_LEFT:
@@ -400,7 +448,6 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
         }
     }
 
-    // Forward all other messages to the original window procedure
     return CallWindowProc(orig, hwnd, msg, wParam, lParam);
 }
 
@@ -440,7 +487,6 @@ void updateCursorForCurrentMode() {
         }
     }
     else {
-        // When Vim mode is disabled, always use line cursor
         ::SendMessage(hwndEdit, SCI_SETCARETSTYLE, CARETSTYLE_LINE, 0);
     }
 }
@@ -455,17 +501,14 @@ void toggleVimMode() {
     }
 
     if (state.vimEnabled) {
-        // Entering Vim mode
         ensureScintillaHooks();
         g_normalMode->enter();
         updateCursorForCurrentMode();
         Utils::setStatus(TEXT("-- NORMAL --"));
     }
     else {
-        // Exiting Vim mode
         Utils::setStatus(TEXT(" "));
 
-        // Force line cursor on all possible editor windows
         HWND editors[] = {
             nppData._scintillaMainHandle,
             nppData._scintillaSecondHandle,
@@ -477,11 +520,9 @@ void toggleVimMode() {
                 ::SendMessage(hwnd, SCI_SETCARETSTYLE, CARETSTYLE_LINE, 0);
                 ::SendMessage(hwnd, SCI_SETOVERTYPE, false, 0);
 
-                // Clear selection
                 int pos = (int)::SendMessage(hwnd, SCI_GETCURRENTPOS, 0, 0);
                 ::SendMessage(hwnd, SCI_SETSEL, pos, pos);
 
-                // Force redraw
                 ::InvalidateRect(hwnd, NULL, TRUE);
                 ::UpdateWindow(hwnd);
             }
@@ -506,11 +547,11 @@ void about() {
         TEXT("• Normal, Insert, Visual, and Command modes\n")
         TEXT("• Customizable escape key sequences (Esc, jj, jk, kj)\n")
         TEXT("• Common Vim motions and commands\n")
-        TEXT("• Search and navigation"),
+        TEXT("• Search and navigation\n")
+        TEXT("• Ctrl+D, Ctrl+U, Ctrl+R support"),
         TEXT("About NppVim"), MB_OK | MB_ICONINFORMATION);
 }
 
-// DLL Entry Point
 BOOL APIENTRY DllMain(HANDLE hModule, DWORD reasonForCall, LPVOID /*lpReserved*/) {
     if (reasonForCall == DLL_PROCESS_ATTACH) {
         g_hInstance = (HINSTANCE)hModule;
@@ -525,7 +566,6 @@ BOOL APIENTRY DllMain(HANDLE hModule, DWORD reasonForCall, LPVOID /*lpReserved*/
     return TRUE;
 }
 
-// Plugin Interface
 extern "C" __declspec(dllexport) void setInfo(NppData notpadPlusData) {
     nppData = notpadPlusData;
     setNppData(notpadPlusData);

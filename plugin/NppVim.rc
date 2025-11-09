@@ -1,0 +1,168 @@
+// Microsoft Visual C++ generated resource script.
+//
+#include <windows.h>
+#include "resource.h"
+
+// Version numbers
+#define VER_MAJOR    1
+#define VER_MINOR    5
+#define VER_PATCH    0
+#define VER_BUILD    0
+
+// Helper macro for version strings
+#define MAKE_VERSION_STR(maj,min,pat,bld) #maj "." #min "." #pat "." #bld
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// English (United States) resources
+//
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+#pragma code_page(1252)
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Version Information
+//
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION VER_MAJOR, VER_MINOR, VER_PATCH, VER_BUILD
+PRODUCTVERSION VER_MAJOR, VER_MINOR, VER_PATCH, VER_BUILD
+FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+FILEFLAGS 0x1L
+#else
+FILEFLAGS 0x0L
+#endif
+FILEOS 0x40004L
+FILETYPE 0x1L
+FILESUBTYPE 0x0L
+BEGIN
+BLOCK "StringFileInfo"
+BEGIN
+BLOCK "040904b0"
+BEGIN
+VALUE "FileDescription", "Vim mode plugin for Notepad++"
+VALUE "FileVersion", MAKE_VERSION_STR(VER_MAJOR, VER_MINOR, VER_PATCH, VER_BUILD)
+VALUE "InternalName", "NppVim.dll"
+VALUE "OriginalFilename", "NppVim.dll"
+VALUE "ProductName", "NppVim"
+VALUE "ProductVersion", MAKE_VERSION_STR(VER_MAJOR, VER_MINOR, VER_PATCH, VER_BUILD)
+END
+END
+BLOCK "VarFileInfo"
+BEGIN
+VALUE "Translation", 0x409, 1200
+END
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// About Dialog
+//
+
+IDD_ABOUTBOX DIALOGEX 0, 0, 223, 130
+STYLE DS_SETFONT | DS_FIXEDSYS | WS_POPUP | WS_BORDER | WS_SYSMENU
+CAPTION "About NppVim"
+FONT 8, "MS Shell Dlg", 0, 0, 0x1
+BEGIN
+GROUPBOX        "NppVim", IDC_STATIC, 10, 9, 201, 93, BS_CENTER
+LTEXT           "Author : h-jangra", IDC_STATIC, 30, 26, 120, 8
+LTEXT           "Version : 1.4.0", IDC_STATIC, 30, 43, 120, 8
+DEFPUSHBUTTON   "Close", IDCLOSE, 86, 109, 50, 14
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Configuration Dialog
+//
+
+IDD_CONFIG DIALOGEX 0, 0, 250, 200
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "NppVim Configuration"
+FONT 8, "MS Shell Dlg", 0, 0, 0x1
+BEGIN
+// Escape key and timeout
+LTEXT           "Escape &key:", -1, 10, 15, 60, 10
+COMBOBOX        IDC_ESCAPE_KEY, 75, 10, 100, 100, CBS_DROPDOWNLIST | WS_TABSTOP
+LTEXT           "&Timeout (ms):", -1, 10, 40, 60, 10
+EDITTEXT        IDC_TIMEOUT, 75, 35, 50, 14, ES_NUMBER | WS_TABSTOP
+LTEXT           "(100–1000 milliseconds)", -1, 130, 40, 110, 10
+
+// Ctrl key overrides
+GROUPBOX        "Override Ctrl Keys", IDC_STATIC, 10, 65, 230, 70
+CONTROL         "&Override Ctrl+D (Scroll Down)", IDC_CHECK_CTRL_D, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 20, 80, 200, 10
+CONTROL         "Override Ctrl+&U (Scroll Up)", IDC_CHECK_CTRL_U, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 20, 95, 200, 10
+CONTROL         "Override Ctrl+&R (Redo)", IDC_CHECK_CTRL_R, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 20, 110, 200, 10
+
+// Buttons
+DEFPUSHBUTTON   "OK", IDOK, 90, 160, 50, 14, WS_TABSTOP
+PUSHBUTTON      "Cancel", IDCANCEL, 150, 160, 50, 14, WS_TABSTOP
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO
+BEGIN
+"IDD_ABOUTBOX", DIALOG
+BEGIN
+END
+
+"IDD_CONFIG", DIALOG
+BEGIN
+LEFTMARGIN, 7
+RIGHTMARGIN, 243
+TOPMARGIN, 7
+BOTTOMMARGIN, 193
+END
+END
+#endif    // APSTUDIO_INVOKED
+
+#endif    // English (United States) resources
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// English (United Kingdom) resources
+//
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENG)
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_UK
+#pragma code_page(1252)
+
+#ifdef APSTUDIO_INVOKED
+1 TEXTINCLUDE
+BEGIN
+"resource.h\0"
+END
+
+2 TEXTINCLUDE
+BEGIN
+"\0"
+END
+
+3 TEXTINCLUDE
+BEGIN
+"\r\n"
+"\0"
+END
+#endif // APSTUDIO_INVOKED
+
+#endif // English (United Kingdom) resources
+
+/////////////////////////////////////////////////////////////////////////////
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+/////////////////////////////////////////////////////////////////////////////
+#endif // not APSTUDIO_INVOKED

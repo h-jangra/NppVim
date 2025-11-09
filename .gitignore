@@ -2,7 +2,9 @@ build/
 bin/
 bin64/
 arm64/
-NppVim*
+NppVim/
+NppVim.x64/
+NppVim.arm64/
 vs.proj/.vs/
 vs.proj/x64/
 vs.proj/ARM64

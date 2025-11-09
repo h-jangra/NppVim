@@ -1,30 +1,30 @@
-#pragma once
-#include "NppVim.h"
-#include "Marks.h"
-#include <windows.h>
-#include <functional>
-#include <map>
+//NormalMode.h
+#ifndef NORMALMODE_H
+#define NORMALMODE_H
 
-class Marks;
+#include <windows.h>
+#include <map>
+#include <functional>
+#include "NppVim.h"
 
 class NormalMode {
-    public:
-    NormalMode(VimState& state);
-
-    void handleKey(HWND hwndEdit, char c);
+public:
+    explicit NormalMode(VimState& state);
     void enter();
     void enterInsertMode();
+    void handleKey(HWND hwndEdit, char c);
 
-    private:
+    void handleTabCommand(HWND hwnd, int count);
 
+    void handleTabReverseCommand(HWND hwnd, int count);
+
+private:
     VimState& state;
-
-    using KeyHandler = std::function<void(HWND, int)>;
-    std::map<char, KeyHandler> keyHandlers;
+    std::map<char, std::function<void(HWND, int)>> keyHandlers;
 
     void setupKeyHandlers();
 
-    // Mode transitions
+    // Insert mode handlers
     void handleInsert(HWND hwndEdit, int count);
     void handleAppend(HWND hwndEdit, int count);
     void handleAppendEnd(HWND hwndEdit, int count);
@@ -32,7 +32,7 @@ class NormalMode {
     void handleOpenBelow(HWND hwndEdit, int count);
     void handleOpenAbove(HWND hwndEdit, int count);
 
-    // Edit operations
+    // Edit handlers
     void handleDelete(HWND hwndEdit, int count);
     void handleYank(HWND hwndEdit, int count);
     void handleChange(HWND hwndEdit, int count);
@@ -46,11 +46,13 @@ class NormalMode {
     void handlePaste(HWND hwndEdit, int count);
     void handlePasteBefore(HWND hwndEdit, int count);
 
-    // Motions
-    void handleMotion(HWND hwndEdit, char motion, int count);
+    // Motion handlers
+    void handleMotion(HWND hwndEdit, char motionChar, int count);
     void handleGCommand(HWND hwndEdit, int count);
+    void handleTCommand(HWND hwndEdit, int count);        // New: t motion
+    void handleTReverseCommand(HWND hwndEdit, int count);  // New: T motion
 
-    // Search
+    // Search handlers
     void handleSearchForward(HWND hwndEdit, int count);
     void handleSearchNext(HWND hwndEdit, int count);
     void handleSearchPrevious(HWND hwndEdit, int count);
@@ -61,22 +63,23 @@ class NormalMode {
     void handleRepeatFind(HWND hwndEdit, int count);
     void handleRepeatFindReverse(HWND hwndEdit, int count);
 
-    // Visual mode
+    // Visual mode handlers
     void handleVisualChar(HWND hwndEdit, int count);
     void handleVisualLine(HWND hwndEdit, int count);
 
-    // Other
+    // Undo/Repeat/Command handlers
     void handleUndo(HWND hwndEdit, int count);
     void handleRepeat(HWND hwndEdit, int count);
     void handleCommandMode(HWND hwndEdit, int count);
-    void handleTabCommand(HWND hwnd, int count);
-    void handleTabReverseCommand(HWND hwnd, int count);
+
+    // Jump handlers
     void handleJumpBack(HWND hwndEdit, int count);
     void handleJumpBackToLine(HWND hwndEdit, int count);
-
-    // Helper functions
+    
+    // Helper methods
     void deleteLineOnce(HWND hwndEdit);
     void yankLineOnce(HWND hwndEdit);
     void applyOperatorToMotion(HWND hwndEdit, char op, char motion, int count);
-
 };
+
+#endif // NORMALMODE_H

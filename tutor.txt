@@ -321,13 +321,19 @@ Exercise 9.1: Word Text Objects
 diw - delete inner word
 ciw - change inner word
 daw - delete a word (with surrounding space)
+diW - delete inner big word (ignores punctuation)
+ciW - change inner big word
+daW - delete a big word (with surrounding space)
 
 Practice on this text:
 Change the word middle using ciw.
 Delete the word remove using diw.
+Test big words: hello-world, test_file, and more!
 
 - Move to "middle" and press ciw then type "center"
 - Move to "remove" and press diw
+- Move to "hello-world" and use ciW to change the whole big word
+- Use diW to delete big words that include punctuation
 
 Try both commands on different words.
 
@@ -337,15 +343,19 @@ Exercise 9.2: Quote Text Objects
 yi" - yank inside quotes
 ci' - change inside single quotes
 da" - delete around quotes
+yi` - yank inside backticks
+ci` - change inside backticks
 
 Practice on this text:
 "Change this quoted text" using ci"
 'Modify this single quoted text' using ci'
 "Delete these quotes completely" using da"
+`Change this backtick text` using ci`
 
 - Move inside the double quotes and press ci"
 - Move inside the single quotes and press ci'
 - Move anywhere in the last quotes and press da"
+- Move inside backticks and press ci`
 
 ---
 
@@ -353,15 +363,68 @@ Exercise 9.3: Bracket Text Objects
 ci( - change inside parentheses
 di[ - delete inside brackets
 ya{ - yank around braces
+ci< - change inside angle brackets
+di( - delete inside parentheses
+ya[ - yank around brackets
 
 Practice on this text:
 (change the content inside these parentheses)
 [delete everything inside these brackets]
 {yank everything including these braces}
+<change content inside angle brackets>
 
 - Use ci( to change parenthetical content
 - Use di[ to delete bracket content
 - Use ya{ to yank brace content including braces
+- Use ci< to change angle bracket content
+
+---
+
+Exercise 9.4: Sentence and Paragraph Text Objects
+dis - delete inner sentence
+cis - change inner sentence
+dap - delete around paragraph
+cip - change inner paragraph
+
+Practice on this text:
+This is the first sentence. This is the second sentence!
+This is a third sentence? And here's a fourth.
+
+This is a new paragraph with multiple sentences. It has content.
+More content here in the same paragraph.
+
+- Use dis to delete a sentence
+- Use cis to change a sentence
+- Use dap to delete an entire paragraph
+- Use cip to change paragraph content
+
+---
+
+Exercise 9.5: Text Objects in Visual Mode
+All text objects work in Visual mode too!
+
+viw - select inner word in visual mode
+vaw - select a word (with space) in visual mode
+vi" - select inside quotes
+va( - select around parentheses
+vis - select inner sentence
+vap - select around paragraph
+
+Practice on this text:
+Select words using viw and vaw in visual mode.
+"Select quoted text" using vi" in visual mode.
+(Select parenthetical content) using vi( in visual mode.
+
+- Press v to enter visual mode, then press iw to select inner word
+- Press v then aw to select a word with surrounding space
+- Press v then i" to select inside quotes
+- Press v then a( to select around parentheses including the brackets
+- Try other text objects in visual mode: vis, vap, viW, etc.
+
+After selecting, you can:
+- Press d to delete the selection
+- Press y to yank (copy) the selection
+- Press c to change the selection
 
 ---
 
