@@ -399,47 +399,44 @@ void NormalMode::handleReplaceMode(HWND hwndEdit, int count) {
 }
 
 void NormalMode::handlePaste(HWND hwndEdit, int count) {
-    std::string clipText = Utils::getClipboardText(hwndEdit);
-    if (clipText.empty()) return;
-
     ::SendMessage(hwndEdit, SCI_BEGINUNDOACTION, 0, 0);
-    LRESULT currentPos = SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
-    LRESULT currentLine = SendMessage(hwndEdit, SCI_LINEFROMPOSITION, currentPos, 0);
-    LRESULT pastePos = SendMessage(hwndEdit, SCI_POSITIONFROMLINE, currentLine + 1, 0);
 
-    if (pastePos == 0) {
-        LRESULT lastPos = SendMessage(hwndEdit, SCI_GETLENGTH, 0, 0);
-        ::SendMessage(hwndEdit, SCI_INSERTTEXT, lastPos, (LPARAM)"\n");
-        pastePos = lastPos + 1;
-    }
+    int currentPos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+    int currentLine = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, currentPos, 0);
+
+    int lineEnd = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, currentLine, 0);
+    ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, lineEnd, 0);
+
+    ::SendMessage(hwndEdit, SCI_NEWLINE, 0, 0);
 
     for (int i = 0; i < count; ++i) {
-        ::SendMessage(hwndEdit, SCI_INSERTTEXT, pastePos, (LPARAM)clipText.c_str());
-        pastePos += static_cast<LRESULT>(clipText.length());
+        ::SendMessage(hwndEdit, SCI_PASTE, 0, 0);
     }
 
-    int newLine = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, pastePos - clipText.length(), 0);
-    int lineStart = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, newLine, 0);
-    ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, lineStart, 0);
+    int newLineStart = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, currentLine + 1, 0);
+    ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, newLineStart, 0);
+
     ::SendMessage(hwndEdit, SCI_ENDUNDOACTION, 0, 0);
     state.recordLastOp(OP_PASTE_LINE, count);
 }
 
 void NormalMode::handlePasteBefore(HWND hwndEdit, int count) {
-    std::string clipText = Utils::getClipboardText(hwndEdit);
-    if (clipText.empty()) return;
-
     ::SendMessage(hwndEdit, SCI_BEGINUNDOACTION, 0, 0);
-    int currentLine = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, ::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0), 0);
-    int pastePos = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, currentLine, 0);
 
-    for (int i = 0; i < count; ++i) {
-        ::SendMessage(hwndEdit, SCI_INSERTTEXT, pastePos, (LPARAM)clipText.c_str());
-        pastePos += clipText.length();
-    }
+    int currentLine = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION,
+        ::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0), 0);
 
     int lineStart = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, currentLine, 0);
     ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, lineStart, 0);
+    ::SendMessage(hwndEdit, SCI_NEWLINE, 0, 0);
+
+    for (int i = 0; i < count; ++i) {
+        ::SendMessage(hwndEdit, SCI_PASTE, 0, 0);
+    }
+
+    int newLineStart = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, currentLine, 0);
+    ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, newLineStart, 0);
+
     ::SendMessage(hwndEdit, SCI_ENDUNDOACTION, 0, 0);
     state.recordLastOp(OP_PASTE_LINE, count);
 }
@@ -754,9 +751,9 @@ void NormalMode::deleteLineOnce(HWND hwndEdit) {
         ? (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, line + 1, 0)
         : (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, line, 0) + 1;
 
-    ::SendMessage(hwndEdit, SCI_COPYRANGE, start, end);
     ::SendMessage(hwndEdit, SCI_SETSEL, start, end);
-    ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0);
+    ::SendMessage(hwndEdit, SCI_CUT, 0, 0);
+
     int newPos = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, line, 0);
     ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, newPos, 0);
 }
@@ -770,7 +767,8 @@ void NormalMode::yankLineOnce(HWND hwndEdit) {
         ? (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, line + 1, 0)
         : (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, line, 0);
 
-    ::SendMessage(hwndEdit, SCI_COPYRANGE, start, end);
+    ::SendMessage(hwndEdit, SCI_SETSEL, start, end);
+    ::SendMessage(hwndEdit, SCI_COPY, 0, 0);
     ::SendMessage(hwndEdit, SCI_SETSEL, pos, pos);
 }
 
@@ -804,17 +802,17 @@ void NormalMode::applyOperatorToMotion(HWND hwndEdit, char op, char motion, int 
     ::SendMessage(hwndEdit, SCI_SETSEL, start, end);
     switch (op) {
     case 'd':
-        ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0);
+        ::SendMessage(hwndEdit, SCI_CUT, 0, 0);
         ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, start, 0);
         state.recordLastOp(OP_MOTION, count, motion);
         break;
     case 'y':
-        ::SendMessage(hwndEdit, SCI_COPYRANGE, start, end);
+        ::SendMessage(hwndEdit, SCI_COPY, 0, 0);
         ::SendMessage(hwndEdit, SCI_SETSEL, start, start);
         state.recordLastOp(OP_MOTION, count, motion);
         break;
     case 'c':
-        ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0);
+        ::SendMessage(hwndEdit, SCI_CUT, 0, 0);
         enterInsertMode();
         state.recordLastOp(OP_MOTION, count, motion);
         break;

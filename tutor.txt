@@ -434,6 +434,8 @@ Lesson 10: CHARACTER SEARCH
 Exercise 10.1: Find Characters
 f<char> - find next character on line
 F<char> - find previous character on line
+t<char> - till next character on line
+T<char> - till previous character on line
 
 Practice on this line:
 Find all the letter 'e' characters in this sentence.
@@ -543,8 +545,15 @@ m<B-Z> - Press m and any capital letter
 :marks - list all marks
 :delm! or delmarks! - delete all marks
 :delm a or delmarks a - will delete mark a
+
 ---
 
+Exercise 12.5: Ctrl+d, Ctrl+u, Ctrl+r overwrite
+Ctrl+u - Move page up
+Ctrl+d - Move page down
+Ctrl+r - Redo
+
+---
 =======
 To review this tutor anytime, use :tutor
 
