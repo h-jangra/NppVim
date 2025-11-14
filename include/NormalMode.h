@@ -75,7 +75,9 @@ private:
     // Jump handlers
     void handleJumpBack(HWND hwndEdit, int count);
     void handleJumpBackToLine(HWND hwndEdit, int count);
-    
+
+    void handleZCommand(HWND hwndEdit, int count);
+
     // Helper methods
     void deleteLineOnce(HWND hwndEdit);
     void yankLineOnce(HWND hwndEdit);

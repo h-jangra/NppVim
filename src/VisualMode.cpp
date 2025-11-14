@@ -5,11 +5,13 @@
 #include "../include/Motion.h"
 #include "../include/Utils.h"
 #include "../include/NormalMode.h"
+#include "../include/CommandMode.h"
 #include "../plugin/Scintilla.h"
 #include <algorithm>
 #include <cctype>
 
 extern NormalMode* g_normalMode;
+extern CommandMode* g_commandMode;
 
 VisualMode::VisualMode(VimState& state) : state(state) {
     setupKeyHandlers();
@@ -59,6 +61,10 @@ void VisualMode::setupKeyHandlers() {
 
     keyHandlers[';'] = [this](HWND hwnd, int c) { handleRepeatFind(hwnd, c); };
     keyHandlers[','] = [this](HWND hwnd, int c) { handleRepeatFindReverse(hwnd, c); };
+
+    keyHandlers['/'] = [this](HWND hwnd, int c) { handleSearchForward(hwnd, c); };
+    keyHandlers['n'] = [this](HWND hwnd, int c) { handleSearchNext(hwnd, c); };
+    keyHandlers['N'] = [this](HWND hwnd, int c) { handleSearchPrevious(hwnd, c); };
 }
 
 void VisualMode::enterChar(HWND hwndEdit) {
@@ -71,6 +77,7 @@ void VisualMode::enterChar(HWND hwndEdit) {
 
     state.visualAnchor = caret;
     state.visualAnchorLine = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, caret, 0);
+    state.visualSearchAnchor = -1;  // Reset search anchor when entering visual mode
 
     Utils::setStatus(TEXT("-- VISUAL --"));
 }
@@ -456,4 +463,36 @@ void VisualMode::handleRepeatFindReverse(HWND hwndEdit, int count) {
     }
 
     Utils::setStatus(TEXT("-- VISUAL --"));
+}
+
+void VisualMode::handleSearchForward(HWND hwndEdit, int count) {
+    if (g_commandMode) {
+        // Store the current anchor before entering search
+        state.visualSearchAnchor = state.visualAnchor;
+        g_commandMode->enter('/');
+    }
+}
+
+void VisualMode::handleSearchNext(HWND hwndEdit, int count) {
+    if (g_commandMode && state.visualSearchAnchor != -1) {
+        g_commandMode->searchNext(hwndEdit);
+
+        // Extend selection from original anchor to match start
+        int matchStart = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+        ::SendMessage(hwndEdit, SCI_SETSEL, state.visualSearchAnchor, matchStart);
+
+        Utils::setStatus(TEXT("-- VISUAL --"));
+    }
+}
+
+void VisualMode::handleSearchPrevious(HWND hwndEdit, int count) {
+    if (g_commandMode && state.visualSearchAnchor != -1) {
+        g_commandMode->searchPrevious(hwndEdit);
+
+        // Extend selection from original anchor to match start
+        int matchStart = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+        ::SendMessage(hwndEdit, SCI_SETSEL, state.visualSearchAnchor, matchStart);
+
+        Utils::setStatus(TEXT("-- VISUAL --"));
+    }
 }

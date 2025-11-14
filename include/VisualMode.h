@@ -43,4 +43,8 @@ private:
     void handleTillCharBack(HWND hwndEdit, int count);
     void handleRepeatFind(HWND hwndEdit, int count);
     void handleRepeatFindReverse(HWND hwndEdit, int count);
+
+    void handleSearchForward(HWND hwndEdit, int count);
+    void handleSearchNext(HWND hwndEdit, int count);
+    void handleSearchPrevious(HWND hwndEdit, int count);
 };

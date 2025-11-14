@@ -45,46 +45,47 @@ struct JumpPosition {
 };
 
 struct VimState {
-    //  Core Mode State 
+    //  Core Mode State
     VimMode mode = NORMAL;
     bool vimEnabled = true;
     bool commandMode = false;
     bool isLineVisual = false;
 
-    //  Operator / Repeat Info 
+    //  Operator / Repeat Info
     int repeatCount = 0;
     char opPending = 0;
     char textObjectPending = 0;
     bool replacePending = false;
 
-    //  Visual Mode State 
+    //  Visual Mode State
     int visualAnchor = -1;
     int visualAnchorLine = -1;
 
-    //  Character Search State 
+    //  Character Search State
     char lastSearchChar = 0;
     bool lastSearchForward = true;
     bool lastSearchTill = false;
 
-    //  Operation History 
+    //  Operation History
     LastOperation lastOp;
 
-    //  Jump List 
+    //  Jump List
     std::vector<JumpPosition> jumpList;
     int jumpIndex = -1;
 
-    //  Command Mode State (added for CommandMode.cpp) 
+    //  Command Mode State (added for CommandMode.cpp)
     std::string commandBuffer;      // Stores ":" or "/" command text
     std::string lastSearchTerm;     // Last searched string
     bool useRegex = false;          // Whether last search used regex
     int lastSearchMatchCount = -1;  // Number of matches for last search
+    int visualSearchAnchor = -1;  // Stores anchor position for visual search
 
-    //  Mark Flags 
+    //  Mark Flags
     bool awaitingMarkSet = false;
     bool awaitingMarkJump = false;
     bool isBacktickJump = false;
 
-    //  Reset & Record Helpers 
+    //  Reset & Record Helpers
     void reset() {
         repeatCount = 0;
         opPending = 0;

@@ -97,6 +97,8 @@ void NormalMode::setupKeyHandlers() {
     keyHandlers['.'] = [this](HWND hwnd, int c) { handleRepeat(hwnd, c); };
     keyHandlers[':'] = [this](HWND hwnd, int c) { handleCommandMode(hwnd, c); };
 
+    keyHandlers['z'] = [this](HWND hwnd, int c) { handleZCommand(hwnd, c); };
+
     keyHandlers['m'] = [this](HWND hwnd, int count) {
         state.awaitingMarkSet = true;
         Utils::setStatus(TEXT("-- Set mark --"));
@@ -232,7 +234,7 @@ void NormalMode::handleKey(HWND hwndEdit, char c) {
         ::SendMessage(hwndEdit, SCI_BEGINUNDOACTION, 0, 0);
 
         applyOperatorToMotion(hwndEdit, state.opPending, c, count);
-        
+
         ::SendMessage(hwndEdit, SCI_ENDUNDOACTION, 0, 0);
         state.opPending = 0;
         state.repeatCount = 0;
@@ -840,4 +842,21 @@ void NormalMode::handleJumpBackToLine(HWND hwndEdit, int count) {
         SendMessage(hwndEdit, SCI_GOTOPOS, lineStart, 0);
         SendMessage(hwndEdit, SCI_SETSEL, lineStart, lineStart);
     }
+}
+
+void NormalMode::handleZCommand(HWND hwndEdit, int count) {
+    if (state.opPending != 'z') {
+        state.opPending = 'z';
+        return;
+    }
+
+    // zz - center view on current line
+    int currentPos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+    int currentLine = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, currentPos, 0);
+    ::SendMessage(hwndEdit, SCI_SETFIRSTVISIBLELINE,
+                  currentLine - (::SendMessage(hwndEdit, SCI_LINESONSCREEN, 0, 0) / 2), 0);
+
+    state.opPending = 0;
+    state.repeatCount = 0;
+    state.recordLastOp(OP_MOTION, count, 'z');
 }
