@@ -1,4 +1,4 @@
-﻿//NormalMode.cpp
+//NormalMode.cpp
 #include "../include/NormalMode.h"
 #include "../include/Motion.h"
 #include "../include/Utils.h"
@@ -498,21 +498,24 @@ void NormalMode::handleMotion(HWND hwndEdit, char motionChar, int count) {
     case 'l': Motion::charRight(hwndEdit, count); break;
     case 'j': Motion::lineDown(hwndEdit, count); break;
     case 'k': Motion::lineUp(hwndEdit, count); break;
-    case 'w': case 'W': Motion::wordRight(hwndEdit, count); break;
-    case 'b': case 'B': Motion::wordLeft(hwndEdit, count); break;
-    case 'e': case 'E': Motion::wordEnd(hwndEdit, count); break;
-        case '$': Motion::lineEnd(hwndEdit, count); break;
-        case '^': Motion::lineStart(hwndEdit, count); break;
-        case '{': Motion::paragraphUp(hwndEdit, count); break;
-        case '}': Motion::paragraphDown(hwndEdit, count); break;
-        case 'H': case 21 /* Ctrl+U */:  Motion::pageUp(hwndEdit); break;
-        case 'L': case 4 /* Ctrl+D */: Motion::pageDown(hwndEdit); break;
-        case '~': motion.toggleCase(hwndEdit, state.repeatCount > 0 ? state.repeatCount : 1); state.repeatCount = 0; break;
-        case 'G':
-            if (count == 1) Motion::documentEnd(hwndEdit);
-            else Motion::gotoLine(hwndEdit, count);
-            break;
-        case '%': ::SendMessage(hwndEdit, SCI_BRACEMATCHNEXT, 0, 0); break;
+    case 'w': Motion::wordRight(hwndEdit, count); break;
+    case 'W': Motion::wordRightBig(hwndEdit, count); break;
+    case 'b': Motion::wordLeft(hwndEdit, count); break;
+    case 'B': Motion::wordLeftBig(hwndEdit, count); break;
+    case 'e': Motion::wordEnd(hwndEdit, count); break;
+    case 'E': Motion::wordEndBig(hwndEdit, count); break;
+    case '$': Motion::lineEnd(hwndEdit, count); break;
+    case '^': Motion::lineStart(hwndEdit, count); break;
+    case '{': Motion::paragraphUp(hwndEdit, count); break;
+    case '}': Motion::paragraphDown(hwndEdit, count); break;
+    case 'H': case 21 /* Ctrl+U */:  Motion::pageUp(hwndEdit); break;
+    case 'L': case 4 /* Ctrl+D */: Motion::pageDown(hwndEdit); break;
+    case '~': motion.toggleCase(hwndEdit, state.repeatCount > 0 ? state.repeatCount : 1); state.repeatCount = 0; break;
+    case 'G':
+        if (count == 1) Motion::documentEnd(hwndEdit);
+        else Motion::gotoLine(hwndEdit, count);
+        break;
+    case '%': ::SendMessage(hwndEdit, SCI_BRACEMATCHNEXT, 0, 0); break;
     }
 
     int caret = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
@@ -787,9 +790,12 @@ void NormalMode::applyOperatorToMotion(HWND hwndEdit, char op, char motion, int 
     case 'l': Motion::charRight(hwndEdit, count); break;
     case 'j': Motion::lineDown(hwndEdit, count); break;
     case 'k': Motion::lineUp(hwndEdit, count); break;
-    case 'w': case 'W': Motion::wordRight(hwndEdit, count); break;
-    case 'b': case 'B': Motion::wordLeft(hwndEdit, count); break;
-    case 'e': case 'E': Motion::wordEnd(hwndEdit, count); break;
+    case 'w': Motion::wordRight(hwndEdit, count); break;
+    case 'W': Motion::wordRightBig(hwndEdit, count); break;
+    case 'b': Motion::wordLeft(hwndEdit, count); break;
+    case 'B': Motion::wordLeftBig(hwndEdit, count); break;
+    case 'e': Motion::wordEnd(hwndEdit, count); break;
+    case 'E': Motion::wordEndBig(hwndEdit, count); break;
     case '$': Motion::lineEnd(hwndEdit, count); break;
     case '^': Motion::lineStart(hwndEdit, count); break;
     default: break;

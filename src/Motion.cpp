@@ -1,4 +1,4 @@
-﻿//Motion.cpp
+//Motion.cpp
 #include "../include/Motion.h"
 #include "../plugin/Scintilla.h"
 #include "../include/NppVim.h"
@@ -73,6 +73,37 @@ void Motion::wordRight(HWND hwndEdit, int count) {
     }
 }
 
+void Motion::wordRightBig(HWND hwndEdit, int count) {
+    int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
+    int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+
+    for (int i = 0; i < count; i++) {
+        while (pos < docLen) {
+            char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, pos, 0);
+            if (ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n') {
+                break;
+            }
+            pos++;
+        }
+
+        while (pos < docLen) {
+            char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, pos, 0);
+            if (!(ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n')) {
+                break;
+            }
+            pos++;
+        }
+    }
+
+    if (state.mode == VISUAL) {
+        int anchor = (int)::SendMessage(hwndEdit, SCI_GETANCHOR, 0, 0);
+        ::SendMessage(hwndEdit, SCI_SETSEL, anchor, pos);
+    } else {
+        ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, pos, 0);
+        ::SendMessage(hwndEdit, SCI_SETSEL, pos, pos);
+    }
+}
+
 void Motion::wordLeft(HWND hwndEdit, int count) {
     if (state.mode == VISUAL) {
         for (int i = 0; i < count; i++) {
@@ -86,6 +117,40 @@ void Motion::wordLeft(HWND hwndEdit, int count) {
     }
 }
 
+void Motion::wordLeftBig(HWND hwndEdit, int count) {
+    int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+
+    for (int i = 0; i < count; i++) {
+        if (pos <= 0) break;
+
+        pos--;
+
+        while (pos > 0) {
+            char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, pos, 0);
+            if (!(ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n')) {
+                break;
+            }
+            pos--;
+        }
+
+        while (pos > 0) {
+            char prevCh = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, pos - 1, 0);
+            if (prevCh == ' ' || prevCh == '\t' || prevCh == '\r' || prevCh == '\n') {
+                break;
+            }
+            pos--;
+        }
+    }
+
+    if (state.mode == VISUAL) {
+        int anchor = (int)::SendMessage(hwndEdit, SCI_GETANCHOR, 0, 0);
+        ::SendMessage(hwndEdit, SCI_SETSEL, anchor, pos);
+    } else {
+        ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, pos, 0);
+        ::SendMessage(hwndEdit, SCI_SETSEL, pos, pos);
+    }
+}
+
 void Motion::wordEnd(HWND hwndEdit, int count) {
     if (state.mode == VISUAL) {
         for (int i = 0; i < count; i++) {
@@ -96,6 +161,44 @@ void Motion::wordEnd(HWND hwndEdit, int count) {
         for (int i = 0; i < count; i++) {
             ::SendMessage(hwndEdit, SCI_WORDRIGHTEND, 0, 0);
         }
+    }
+}
+
+void Motion::wordEndBig(HWND hwndEdit, int count) {
+    int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
+    int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+
+    for (int i = 0; i < count; i++) {
+        if (pos < docLen) pos++;
+
+        while (pos < docLen) {
+            char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, pos, 0);
+            if (!(ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n')) {
+                break;
+            }
+            pos++;
+        }
+
+        while (pos < docLen) {
+            char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, pos, 0);
+            if (ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n') {
+                pos--;
+                break;
+            }
+            pos++;
+        }
+
+        if (pos >= docLen) {
+            pos = docLen - 1;
+        }
+    }
+
+    if (state.mode == VISUAL) {
+        int anchor = (int)::SendMessage(hwndEdit, SCI_GETANCHOR, 0, 0);
+        ::SendMessage(hwndEdit, SCI_SETSEL, anchor, pos + 1);
+    } else {
+        ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, pos, 0);
+        ::SendMessage(hwndEdit, SCI_SETSEL, pos, pos);
     }
 }
 

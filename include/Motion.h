@@ -10,8 +10,11 @@ public:
     static void lineUp(HWND hwndEdit, int count);
     static void lineDown(HWND hwndEdit, int count);
     static void wordRight(HWND hwndEdit, int count);
+    static void wordRightBig(HWND hwndEdit, int count);
     static void wordLeft(HWND hwndEdit, int count);
+    static void wordLeftBig(HWND hwndEdit, int count);
     static void wordEnd(HWND hwndEdit, int count);
+    static void wordEndBig(HWND hwndEdit, int count);
     static void wordEndPrev(HWND hwndEdit, int count);
     static void lineEnd(HWND hwndEdit, int count);
     static void lineStart(HWND hwndEdit, int count);
