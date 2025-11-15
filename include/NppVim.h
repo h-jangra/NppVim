@@ -57,6 +57,10 @@ struct VimState {
     char textObjectPending = 0;
     bool replacePending = false;
 
+	// [ & ] Bracket Motions
+    bool awaitingBracketAbove = false;
+    bool awaitingBracketBelow = false;
+
     //  Visual Mode State
     int visualAnchor = -1;
     int visualAnchorLine = -1;

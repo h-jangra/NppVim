@@ -122,6 +122,16 @@ void NormalMode::setupKeyHandlers() {
         }
         lastBacktickTime = currentTime;
         };
+
+    keyHandlers['['] = [this](HWND hwnd, int c) {
+        state.awaitingBracketAbove = true;
+        state.awaitingBracketBelow = false;
+        };
+
+    keyHandlers[']'] = [this](HWND hwnd, int c) {
+        state.awaitingBracketBelow = true;
+        state.awaitingBracketAbove = false;
+        };
 }
 
 void NormalMode::enter() {
@@ -281,6 +291,25 @@ void NormalMode::handleKey(HWND hwndEdit, char c) {
             ::SendMessage(hwndEdit, SCI_ENDUNDOACTION, 0, 0);
             state.opPending = 0;
             state.repeatCount = 0;
+            return;
+        }
+    }
+
+    // Handle [ + space  and ] + space
+    if (c == ' ') {
+        if (state.awaitingBracketAbove) {
+            HWND hwndEdit = Utils::getCurrentScintillaHandle();
+            ::SendMessage(hwndEdit, SCI_HOME, 0, 0);
+            ::SendMessage(hwndEdit, SCI_NEWLINE, 0, 0);
+            Motion::lineUp(hwndEdit, 1);
+            state.awaitingBracketAbove = false;
+            return;
+        }
+        if (state.awaitingBracketBelow) {
+            HWND hwndEdit = Utils::getCurrentScintillaHandle();
+            ::SendMessage(hwndEdit, SCI_LINEEND, 0, 0);
+            ::SendMessage(hwndEdit, SCI_NEWLINE, 0, 0);
+            state.awaitingBracketBelow = false;
             return;
         }
     }
