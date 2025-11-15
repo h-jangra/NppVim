@@ -17,8 +17,11 @@ void TextObject::apply(HWND hwndEdit, VimState& state, char op, char modifier, c
     char quoteChar = 0;
 
     switch (object) {
-    case 'w': case 'W':
-        handleWordTextObject(hwndEdit, state, op, inner, count);
+    case 'w':
+        handleWordTextObject(hwndEdit, state, op, inner, count, false);
+        return;
+    case 'W':
+        handleWordTextObject(hwndEdit, state, op, inner, count, true);
         return;
 
     case 's': objType = TEXT_OBJECT_SENTENCE; break;
@@ -55,40 +58,70 @@ void TextObject::apply(HWND hwndEdit, VimState& state, char op, char modifier, c
     if (bounds.first < bounds.second) executeTextObjectOperation(hwndEdit, state, op, bounds.first, bounds.second);
 }
 
-void TextObject::handleWordTextObject(HWND hwndEdit, VimState& state, char op, bool inner, int count) {
+void TextObject::handleWordTextObject(HWND hwndEdit, VimState& state, char op, bool inner, int count, bool bigWord) {
     int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
     int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
 
-    int start = pos, end = pos;
-    for (int i = 0; i < count; i++) {
-        auto bounds = Utils::findWordBounds(hwndEdit, end);
-        if (bounds.first == bounds.second && end < docLen)
-            bounds = Utils::findWordBounds(hwndEdit, end + 1);
+    if (pos >= docLen) return;
 
-        if (bounds.first == bounds.second) break;
-        if (i == 0) start = bounds.first;
-        end = bounds.second;
-
-        if (i < count - 1) {
-            int nextPos = end;
-            while (nextPos < docLen) {
-                char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, nextPos, 0);
-                if (!std::isspace(static_cast<unsigned char>(ch))) break;
-                nextPos++;
-            }
-            end = nextPos;
+    char charAtPos = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, pos, 0);
+    while (pos < docLen && (charAtPos == ' ' || charAtPos == '\t' || charAtPos == '\r' || charAtPos == '\n')) {
+        pos++;
+        if (pos < docLen) {
+            charAtPos = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, pos, 0);
         }
     }
 
-    if (start == end) return;
+    if (pos >= docLen) return;
 
-    if (!inner) {
-        auto expanded = expandToWordBoundaries(hwndEdit, { start, end });
-        start = expanded.first;
-        end = expanded.second;
+    auto bounds = Utils::findWordBoundsEx(hwndEdit, pos, bigWord);
+    int start = bounds.first;
+    int end = bounds.second;
+
+    if (start >= end) return;
+
+    for (int i = 1; i < count; i++) {
+        int nextPos = end;
+        while (nextPos < docLen) {
+            char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, nextPos, 0);
+            if (!(ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n')) {
+                break;
+            }
+            nextPos++;
+        }
+
+        if (nextPos >= docLen) break;
+
+        auto nextBounds = Utils::findWordBoundsEx(hwndEdit, nextPos, bigWord);
+        if (nextBounds.first >= nextBounds.second) break;
+        end = nextBounds.second;
     }
 
-    if (start < end) executeTextObjectOperation(hwndEdit, state, op, start, end);
+    if (!inner) {
+        int originalEnd = end;
+
+        while (end < docLen) {
+            char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, end, 0);
+            if (!(ch == ' ' || ch == '\t')) {
+                break;
+            }
+            end++;
+        }
+
+        if (end == originalEnd && start > 0) {
+            while (start > 0) {
+                char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, start - 1, 0);
+                if (!(ch == ' ' || ch == '\t')) {
+                    break;
+                }
+                start--;
+            }
+        }
+    }
+
+    if (start < end) {
+        executeTextObjectOperation(hwndEdit, state, op, start, end);
+    }
 }
 
 std::pair<int, int> TextObject::getTextObjectBounds(HWND hwndEdit, TextObjectType objType, bool inner, int count) {

@@ -140,8 +140,8 @@ void Motion::lineStart(HWND hwndEdit, int count) {
 
 void Motion::nextChar(HWND hwndEdit, int count, char target) {
     int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
-    int lineEnd = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION,
-        ::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, pos, 0), 0);
+    int line = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, pos, 0);
+    int lineEnd = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, line, 0);
 
     int foundPos = pos;
 
@@ -151,7 +151,7 @@ void Motion::nextChar(HWND hwndEdit, int count, char target) {
         while (searchPos <= lineEnd) {
             char c = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, searchPos, 0);
             if (c == target) {
-                foundPos = searchPos; // f moves TO the target character
+                foundPos = searchPos;
                 found = true;
                 break;
             }
@@ -160,13 +160,13 @@ void Motion::nextChar(HWND hwndEdit, int count, char target) {
         if (!found) return;
     }
 
-    setCursorPosition(hwndEdit, foundPos, false); // false for f motion
+    setCursorPosition(hwndEdit, foundPos, false);
 }
 
 void Motion::prevChar(HWND hwndEdit, int count, char target) {
     int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
-    int lineStart = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE,
-        ::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, pos, 0), 0);
+    int line = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, pos, 0);
+    int lineStart = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, line, 0);
 
     int foundPos = pos;
 
@@ -176,7 +176,7 @@ void Motion::prevChar(HWND hwndEdit, int count, char target) {
         while (searchPos >= lineStart) {
             char c = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, searchPos, 0);
             if (c == target) {
-                foundPos = searchPos; // F moves TO the target character
+                foundPos = searchPos;
                 found = true;
                 break;
             }
@@ -185,23 +185,32 @@ void Motion::prevChar(HWND hwndEdit, int count, char target) {
         if (!found) return;
     }
 
-    setCursorPosition(hwndEdit, foundPos, false); // false for F motion
+    setCursorPosition(hwndEdit, foundPos, false);
 }
 
 void Motion::tillChar(HWND hwndEdit, int count, char target) {
     int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
-    int lineEnd = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION,
-        ::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, pos, 0), 0);
+    int line = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, pos, 0);
+    int lineEnd = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, line, 0);
 
-    int foundPos = pos;
+    int searchStart = pos;
 
     for (int i = 0; i < count; ++i) {
-        int searchPos = foundPos + 1;
+        int searchPos = searchStart + 1;
+
+        // If we're sitting one position before a target character, skip past it
+        if (searchPos <= lineEnd) {
+            char nextChar = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, searchPos, 0);
+            if (nextChar == target) {
+                searchPos++; // Skip past this occurrence to find the next one
+            }
+        }
+
         bool found = false;
         while (searchPos <= lineEnd) {
             char c = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, searchPos, 0);
             if (c == target) {
-                foundPos = searchPos - 1; // t moves to one position BEFORE the target
+                searchStart = searchPos;
                 found = true;
                 break;
             }
@@ -210,23 +219,33 @@ void Motion::tillChar(HWND hwndEdit, int count, char target) {
         if (!found) return;
     }
 
-    setCursorPosition(hwndEdit, foundPos, true); // true for t motion
+    // Move to one position BEFORE the final target found
+    int finalPos = searchStart - 1;
+    setCursorPosition(hwndEdit, finalPos, true);
 }
 
 void Motion::tillCharBack(HWND hwndEdit, int count, char target) {
     int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
-    int lineStart = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE,
-        ::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, pos, 0), 0);
+    int line = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, pos, 0);
+    int lineStart = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, line, 0);
 
-    int foundPos = pos;
+    int searchStart = pos;
 
     for (int i = 0; i < count; ++i) {
-        int searchPos = foundPos - 1;
+        int searchPos = searchStart - 1;
+
+        if (searchPos >= lineStart) {
+            char prevChar = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, searchPos, 0);
+            if (prevChar == target) {
+                searchPos--;
+            }
+        }
+
         bool found = false;
         while (searchPos >= lineStart) {
             char c = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, searchPos, 0);
             if (c == target) {
-                foundPos = searchPos + 1; // T moves to one position AFTER the target
+                searchStart = searchPos;
                 found = true;
                 break;
             }
@@ -235,25 +254,25 @@ void Motion::tillCharBack(HWND hwndEdit, int count, char target) {
         if (!found) return;
     }
 
-    setCursorPosition(hwndEdit, foundPos, true); // true for T motion
+    int finalPos = searchStart + 1;
+    setCursorPosition(hwndEdit, finalPos, true);
 }
 
 void Motion::setCursorPosition(HWND hwndEdit, int pos, bool isTillMotion) {
     if (state.mode == VISUAL) {
         int anchor = (int)::SendMessage(hwndEdit, SCI_GETANCHOR, 0, 0);
+        int currentPos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
         int selectionEnd = pos;
 
-        bool isForward = (pos > anchor);
+        bool isMovingForward = (pos >= currentPos);
 
-        if (isForward) {
-            if (isTillMotion) {
-                selectionEnd = pos + 1;
-            }
-            else {
-                selectionEnd = pos + 1;
-            }
+        if (isMovingForward) {
+            // Moving forward - extend to include the character
+            selectionEnd = pos + 1;
         }
         else {
+            // Moving backward - just go to the position
+            selectionEnd = pos;
         }
 
         ::SendMessage(hwndEdit, SCI_SETSEL, anchor, selectionEnd);

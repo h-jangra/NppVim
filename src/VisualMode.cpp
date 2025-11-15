@@ -125,6 +125,58 @@ void VisualMode::setSelection(HWND hwndEdit) {
 }
 
 void VisualMode::handleKey(HWND hwndEdit, char c) {
+    // Handle f/F
+    if (state.textObjectPending == 'f' && (state.opPending == 'f' || state.opPending == 'F')) {
+        char searchChar = c;
+
+        // Store the search state before performing the motion
+        state.lastSearchChar = searchChar;
+        state.lastSearchForward = (state.opPending == 'f');
+        state.lastSearchTill = false;
+
+        int count = (state.repeatCount > 0) ? state.repeatCount : 1;
+
+        if (state.opPending == 'f')
+            Motion::nextChar(hwndEdit, count, searchChar);
+        else
+            Motion::prevChar(hwndEdit, count, searchChar);
+
+        state.recordLastOp(OP_MOTION, count, state.opPending, searchChar);
+
+        state.opPending = 0;
+        state.textObjectPending = 0;
+        state.repeatCount = 0;
+
+        Utils::setStatus(TEXT("-- VISUAL --"));
+        return;
+    }
+
+    // Handle t/T
+    if (state.textObjectPending == 't' && (state.opPending == 't' || state.opPending == 'T')) {
+        char searchChar = c;
+
+        // Store the search state before performing the motion
+        state.lastSearchChar = searchChar;
+        state.lastSearchForward = (state.opPending == 't');
+        state.lastSearchTill = true;
+
+        int count = (state.repeatCount > 0) ? state.repeatCount : 1;
+
+        if (state.opPending == 't')
+            Motion::tillChar(hwndEdit, count, searchChar);
+        else
+            Motion::tillCharBack(hwndEdit, count, searchChar);
+
+        state.recordLastOp(OP_MOTION, count, state.opPending, searchChar);
+
+        state.opPending = 0;
+        state.textObjectPending = 0;
+        state.repeatCount = 0;
+
+        Utils::setStatus(TEXT("-- VISUAL --"));
+        return;
+    }
+
     if (std::isdigit(static_cast<unsigned char>(c))) {
         int digit = c - '0';
         if (c == '0' && state.repeatCount == 0) {
@@ -166,54 +218,6 @@ void VisualMode::handleKey(HWND hwndEdit, char c) {
         TextObject::apply(hwndEdit, state, 'v', state.textObjectPending, c == 't' ? 't' : c);
         state.textObjectPending = 0;
         state.repeatCount = 0;
-        Utils::setStatus(TEXT("-- VISUAL --"));
-        return;
-    }
-
-    // Handle f/F second character input
-    if (state.textObjectPending == 'f' && (state.opPending == 'f' || state.opPending == 'F')) {
-        char searchChar = c;
-
-        // Store the search state BEFORE performing the motion
-        state.lastSearchChar = searchChar;
-        state.lastSearchForward = (state.opPending == 'f');
-        state.lastSearchTill = false;
-
-        if (state.opPending == 'f')
-            Motion::nextChar(hwndEdit, count, searchChar);
-        else
-            Motion::prevChar(hwndEdit, count, searchChar);
-
-        state.recordLastOp(OP_MOTION, count, state.opPending, searchChar);
-
-        state.opPending = 0;
-        state.textObjectPending = 0;
-        state.repeatCount = 0;
-
-        Utils::setStatus(TEXT("-- VISUAL --"));
-        return;
-    }
-
-    // Handle t/T second character input
-    if (state.textObjectPending == 't' && (state.opPending == 't' || state.opPending == 'T')) {
-        char searchChar = c;
-
-        // Store the search state BEFORE performing the motion
-        state.lastSearchChar = searchChar;
-        state.lastSearchForward = (state.opPending == 't');
-        state.lastSearchTill = true;
-
-        if (state.opPending == 't')
-            Motion::tillChar(hwndEdit, count, searchChar);
-        else
-            Motion::tillCharBack(hwndEdit, count, searchChar);
-
-        state.recordLastOp(OP_MOTION, count, state.opPending, searchChar);
-
-        state.opPending = 0;
-        state.textObjectPending = 0;
-        state.repeatCount = 0;
-
         Utils::setStatus(TEXT("-- VISUAL --"));
         return;
     }
@@ -430,17 +434,21 @@ void VisualMode::handleTillCharBack(HWND hwndEdit, int count) {
 void VisualMode::handleRepeatFind(HWND hwndEdit, int count) {
     if (state.lastSearchChar == 0) return;
 
-    if (state.lastSearchTill) {
-        if (state.lastSearchForward)
-            Motion::tillChar(hwndEdit, count, state.lastSearchChar);
+    bool isForward = state.lastSearchForward;
+    bool isTill = state.lastSearchTill;
+    char searchChar = state.lastSearchChar;
+
+    if (isTill) {
+        if (isForward)
+            Motion::tillChar(hwndEdit, count, searchChar);
         else
-            Motion::tillCharBack(hwndEdit, count, state.lastSearchChar);
+            Motion::tillCharBack(hwndEdit, count, searchChar);
     }
     else {
-        if (state.lastSearchForward)
-            Motion::nextChar(hwndEdit, count, state.lastSearchChar);
+        if (isForward)
+            Motion::nextChar(hwndEdit, count, searchChar);
         else
-            Motion::prevChar(hwndEdit, count, state.lastSearchChar);
+            Motion::prevChar(hwndEdit, count, searchChar);
     }
 
     Utils::setStatus(TEXT("-- VISUAL --"));
@@ -449,17 +457,21 @@ void VisualMode::handleRepeatFind(HWND hwndEdit, int count) {
 void VisualMode::handleRepeatFindReverse(HWND hwndEdit, int count) {
     if (state.lastSearchChar == 0) return;
 
-    if (state.lastSearchTill) {
-        if (state.lastSearchForward)
-            Motion::tillCharBack(hwndEdit, count, state.lastSearchChar);
+    bool isForward = state.lastSearchForward;
+    bool isTill = state.lastSearchTill;
+    char searchChar = state.lastSearchChar;
+
+    if (isTill) {
+        if (isForward)
+            Motion::tillCharBack(hwndEdit, count, searchChar);
         else
-            Motion::tillChar(hwndEdit, count, state.lastSearchChar);
+            Motion::tillChar(hwndEdit, count, searchChar);
     }
     else {
-        if (state.lastSearchForward)
-            Motion::prevChar(hwndEdit, count, state.lastSearchChar);
+        if (isForward)
+            Motion::prevChar(hwndEdit, count, searchChar);
         else
-            Motion::nextChar(hwndEdit, count, state.lastSearchChar);
+            Motion::nextChar(hwndEdit, count, searchChar);
     }
 
     Utils::setStatus(TEXT("-- VISUAL --"));
@@ -467,32 +479,144 @@ void VisualMode::handleRepeatFindReverse(HWND hwndEdit, int count) {
 
 void VisualMode::handleSearchForward(HWND hwndEdit, int count) {
     if (g_commandMode) {
-        // Store the current anchor before entering search
+        // Store the current position as the anchor before entering search
+        int currentPos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
         state.visualSearchAnchor = state.visualAnchor;
         g_commandMode->enter('/');
     }
 }
 
 void VisualMode::handleSearchNext(HWND hwndEdit, int count) {
-    if (g_commandMode && state.visualSearchAnchor != -1) {
-        g_commandMode->searchNext(hwndEdit);
+    if (!g_commandMode) return;
 
-        // Extend selection from original anchor to match start
-        int matchStart = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
-        ::SendMessage(hwndEdit, SCI_SETSEL, state.visualSearchAnchor, matchStart);
+    // If no visual search anchor is set, set it now
+    if (state.visualSearchAnchor == -1) {
+        state.visualSearchAnchor = state.visualAnchor;
+    }
 
-        Utils::setStatus(TEXT("-- VISUAL --"));
+    // Get current selection end to continue searching from there
+    int currentEnd = (int)::SendMessage(hwndEdit, SCI_GETSELECTIONEND, 0, 0);
+
+    // Perform search from current end position
+    int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
+    int flags = (state.useRegex ? SCFIND_REGEXP : 0);
+    ::SendMessage(hwndEdit, SCI_SETSEARCHFLAGS, flags, 0);
+
+    ::SendMessage(hwndEdit, SCI_SETTARGETSTART, currentEnd, 0);
+    ::SendMessage(hwndEdit, SCI_SETTARGETEND, docLen, 0);
+
+    int found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
+        (WPARAM)state.lastSearchTerm.length(), (LPARAM)state.lastSearchTerm.c_str());
+
+    // If not found, wrap to beginning
+    if (found == -1) {
+        ::SendMessage(hwndEdit, SCI_SETTARGETSTART, 0, 0);
+        ::SendMessage(hwndEdit, SCI_SETTARGETEND, docLen, 0);
+        found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
+            (WPARAM)state.lastSearchTerm.length(), (LPARAM)state.lastSearchTerm.c_str());
+
+        if (found != -1) {
+            Utils::setStatus(TEXT("Search wrapped to top"));
+        }
+    }
+
+    if (found != -1) {
+        int matchStart = (int)::SendMessage(hwndEdit, SCI_GETTARGETSTART, 0, 0);
+        int matchEnd = (int)::SendMessage(hwndEdit, SCI_GETTARGETEND, 0, 0);
+
+        // Extend selection from original visual anchor to end of match
+        if (state.visualSearchAnchor <= matchStart) {
+            ::SendMessage(hwndEdit, SCI_SETSEL, state.visualSearchAnchor, matchEnd);
+        }
+        else {
+            ::SendMessage(hwndEdit, SCI_SETSEL, matchEnd, state.visualSearchAnchor);
+        }
+
+        ::SendMessage(hwndEdit, SCI_SCROLLCARET, 0, 0);
+        Utils::showCurrentMatchPosition(hwndEdit, state.lastSearchTerm, state.useRegex);
+    }
+    else {
+        Utils::setStatus(TEXT("Pattern not found"));
     }
 }
 
 void VisualMode::handleSearchPrevious(HWND hwndEdit, int count) {
-    if (g_commandMode && state.visualSearchAnchor != -1) {
-        g_commandMode->searchPrevious(hwndEdit);
+    if (!g_commandMode) return;
 
-        // Extend selection from original anchor to match start
-        int matchStart = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
-        ::SendMessage(hwndEdit, SCI_SETSEL, state.visualSearchAnchor, matchStart);
+    if (state.visualSearchAnchor == -1) {
+        state.visualSearchAnchor = state.visualAnchor;
+    }
 
-        Utils::setStatus(TEXT("-- VISUAL --"));
+    int currentStart = (int)::SendMessage(hwndEdit, SCI_GETSELECTIONSTART, 0, 0);
+    if (currentStart > 0) currentStart--;
+
+    int flags = (state.useRegex ? SCFIND_REGEXP : 0);
+    ::SendMessage(hwndEdit, SCI_SETSEARCHFLAGS, flags, 0);
+
+    ::SendMessage(hwndEdit, SCI_SETTARGETSTART, 0, 0);
+    ::SendMessage(hwndEdit, SCI_SETTARGETEND, currentStart, 0);
+
+    int found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
+        (WPARAM)state.lastSearchTerm.length(), (LPARAM)state.lastSearchTerm.c_str());
+
+    int lastFound = -1;
+    int lastStart = -1, lastEnd = -1;
+
+    // Find the last match before current position
+    while (found != -1) {
+        lastFound = found;
+        lastStart = (int)::SendMessage(hwndEdit, SCI_GETTARGETSTART, 0, 0);
+        lastEnd = (int)::SendMessage(hwndEdit, SCI_GETTARGETEND, 0, 0);
+        ::SendMessage(hwndEdit, SCI_SETTARGETSTART, lastEnd, 0);
+        found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
+            (WPARAM)state.lastSearchTerm.length(), (LPARAM)state.lastSearchTerm.c_str());
+    }
+
+    if (lastFound != -1) {
+        // Extend selection from original visual anchor to start of match
+        if (state.visualSearchAnchor >= lastEnd) {
+            ::SendMessage(hwndEdit, SCI_SETSEL, state.visualSearchAnchor, lastStart);
+        }
+        else {
+            ::SendMessage(hwndEdit, SCI_SETSEL, lastStart, state.visualSearchAnchor);
+        }
+
+        ::SendMessage(hwndEdit, SCI_SCROLLCARET, 0, 0);
+        Utils::showCurrentMatchPosition(hwndEdit, state.lastSearchTerm, state.useRegex);
+    }
+    else {
+        // Wrap to end
+        int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
+        ::SendMessage(hwndEdit, SCI_SETTARGETSTART, currentStart, 0);
+        ::SendMessage(hwndEdit, SCI_SETTARGETEND, docLen, 0);
+
+        found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
+            (WPARAM)state.lastSearchTerm.length(), (LPARAM)state.lastSearchTerm.c_str());
+
+        lastFound = -1;
+        while (found != -1) {
+            lastFound = found;
+            lastStart = (int)::SendMessage(hwndEdit, SCI_GETTARGETSTART, 0, 0);
+            lastEnd = (int)::SendMessage(hwndEdit, SCI_GETTARGETEND, 0, 0);
+            ::SendMessage(hwndEdit, SCI_SETTARGETSTART, lastEnd, 0);
+            found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
+                (WPARAM)state.lastSearchTerm.length(), (LPARAM)state.lastSearchTerm.c_str());
+        }
+
+        if (lastFound != -1) {
+            if (state.visualSearchAnchor >= lastEnd) {
+                ::SendMessage(hwndEdit, SCI_SETSEL, state.visualSearchAnchor, lastStart);
+            }
+            else {
+                ::SendMessage(hwndEdit, SCI_SETSEL, lastStart, state.visualSearchAnchor);
+            }
+
+            ::SendMessage(hwndEdit, SCI_SCROLLCARET, 0, 0);
+            Utils::setStatus(TEXT("Search wrapped to bottom"));
+            Utils::showCurrentMatchPosition(hwndEdit, state.lastSearchTerm, state.useRegex);
+        }
+        else {
+            Utils::setStatus(TEXT("Pattern not found"));
+        }
     }
 }

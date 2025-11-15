@@ -22,25 +22,64 @@ void Utils::clearSearchHighlights(HWND hwndEdit) {
     ::SendMessage(hwndEdit, SCI_INDICATORCLEARRANGE, 0, docLen);
 }
 
-std::string Utils::getClipboardText(HWND hwnd) {
-    std::string text;
-    if (!OpenClipboard(hwnd)) return text;
-
-    HANDLE hData = GetClipboardData(CF_TEXT);
-    if (hData) {
-        char* pszText = static_cast<char*>(GlobalLock(hData));
-        if (pszText) {
-            text = pszText;
-            GlobalUnlock(hData);
-        }
-    }
-    CloseClipboard();
-    return text;
+std::pair<int, int> Utils::findWordBounds(HWND hwndEdit, int pos) {
+    // For lowercase 'w'
+    return findWordBoundsEx(hwndEdit, pos, false);
 }
 
-std::pair<int, int> Utils::findWordBounds(HWND hwndEdit, int pos) {
-    int start = (int)::SendMessage(hwndEdit, SCI_WORDSTARTPOSITION, pos, 1);
-    int end = (int)::SendMessage(hwndEdit, SCI_WORDENDPOSITION, pos, 1);
+std::pair<int, int> Utils::findWordBoundsEx(HWND hwndEdit, int pos, bool bigWord) {
+    int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
+    if (pos >= docLen) return { pos, pos };
+
+    char charAtPos = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, pos, 0);
+
+    if (charAtPos == ' ' || charAtPos == '\t' || charAtPos == '\r' || charAtPos == '\n') {
+        return { pos, pos };
+    }
+
+    int start = pos;
+    int end = pos;
+
+    if (bigWord) {
+        // Find start
+        while (start > 0) {
+            char prevChar = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, start - 1, 0);
+            if (prevChar == ' ' || prevChar == '\t' || prevChar == '\r' || prevChar == '\n') {
+                break;
+            }
+            start--;
+        }
+
+        // Find end
+        while (end < docLen) {
+            char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, end, 0);
+            if (ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n') {
+                break;
+            }
+            end++;
+        }
+    }
+    else {
+        // For w: only alphanumeric and underscore
+        // Find start
+        while (start > 0) {
+            char prevChar = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, start - 1, 0);
+            if (!(std::isalnum(static_cast<unsigned char>(prevChar)) || prevChar == '_')) {
+                break;
+            }
+            start--;
+        }
+
+        // Find end
+        while (end < docLen) {
+            char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, end, 0);
+            if (!(std::isalnum(static_cast<unsigned char>(ch)) || ch == '_')) {
+                break;
+            }
+            end++;
+        }
+    }
+
     return { start, end };
 }
 

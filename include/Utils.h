@@ -10,8 +10,8 @@ public:
     static HWND getCurrentScintillaHandle();
     static void setStatus(const TCHAR* msg);
     static void clearSearchHighlights(HWND hwndEdit);
-    static std::string getClipboardText(HWND hwnd);
     static std::pair<int, int> findWordBounds(HWND hwndEdit, int pos);
+    static std::pair<int, int> findWordBoundsEx(HWND hwndEdit, int pos, bool bigWord);
     static int findMatchingBracket(HWND hwndEdit, int pos, char openChar, char closeChar);
     static std::pair<int, int> findQuoteBounds(HWND hwndEdit, int pos, char quoteChar);
 

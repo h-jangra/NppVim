@@ -162,18 +162,6 @@ void NormalMode::handleTReverseCommand(HWND hwndEdit, int count) {
 }
 
 void NormalMode::handleKey(HWND hwndEdit, char c) {
-    if (std::isdigit(static_cast<unsigned char>(c))) {
-        int digit = c - '0';
-        if (c == '0' && state.repeatCount == 0) {
-            handleMotion(hwndEdit, '^', 1);
-            return;
-        }
-        state.repeatCount = state.repeatCount * 10 + digit;
-        return;
-    }
-
-    int count = (state.repeatCount > 0) ? state.repeatCount : 1;
-
     if (state.replacePending) {
         int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
         int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
@@ -192,10 +180,12 @@ void NormalMode::handleKey(HWND hwndEdit, char c) {
         return;
     }
 
+    // Handle f/F/t/T
     if ((state.textObjectPending == 'f' && (state.opPending == 'f' || state.opPending == 'F')) ||
         (state.textObjectPending == 't' && (state.opPending == 't' || state.opPending == 'T'))) {
 
         char searchChar = c;
+        int count = (state.repeatCount > 0) ? state.repeatCount : 1;
         bool isTill = (state.textObjectPending == 't');
         bool isForward = (state.opPending == 'f' || state.opPending == 't');
 
@@ -225,6 +215,18 @@ void NormalMode::handleKey(HWND hwndEdit, char c) {
         state.repeatCount = 0;
         return;
     }
+
+    if (std::isdigit(static_cast<unsigned char>(c))) {
+        int digit = c - '0';
+        if (c == '0' && state.repeatCount == 0) {
+            handleMotion(hwndEdit, '^', 1);
+            return;
+        }
+        state.repeatCount = state.repeatCount * 10 + digit;
+        return;
+    }
+
+    int count = (state.repeatCount > 0) ? state.repeatCount : 1;
 
     if (state.opPending && (c == 'w' || c == 'W' || c == '$'
         || c == 'e' || c == 'E' ||
@@ -546,21 +548,31 @@ void NormalMode::handleGCommand(HWND hwnd, int count) {
 }
 
 void NormalMode::handleSearchForward(HWND hwndEdit, int count) { if (g_commandMode) g_commandMode->enter('/'); }
+
 void NormalMode::handleSearchNext(HWND hwndEdit, int count) {
     if (g_commandMode) {
         long currentPos = SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
         int currentLine = SendMessage(hwndEdit, SCI_LINEFROMPOSITION, currentPos, 0);
         state.recordJump(currentPos, currentLine);
-        g_commandMode->searchNext(hwndEdit);
+
+        for (int i = 0; i < count; i++) {
+            g_commandMode->searchNext(hwndEdit);
+        }
+
         state.recordLastOp(OP_MOTION, count, 'n');
     }
 }
+
 void NormalMode::handleSearchPrevious(HWND hwndEdit, int count) {
     if (g_commandMode) {
         long currentPos = SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
         int currentLine = SendMessage(hwndEdit, SCI_LINEFROMPOSITION, currentPos, 0);
         state.recordJump(currentPos, currentLine);
-        g_commandMode->searchPrevious(hwndEdit);
+
+        for (int i = 0; i < count; i++) {
+            g_commandMode->searchPrevious(hwndEdit);
+        }
+
         state.recordLastOp(OP_MOTION, count, 'N');
     }
 }
@@ -624,7 +636,7 @@ void NormalMode::handleRepeatFind(HWND hwndEdit, int count) {
     bool isTill = state.lastSearchTill;
     char searchChar = state.lastSearchChar;
 
-    // Perform the same motion again
+    // Perform the same motion again in the SAME direction
     if (isTill) {
         if (isForward)
             Motion::tillChar(hwndEdit, count, searchChar);
@@ -638,13 +650,8 @@ void NormalMode::handleRepeatFind(HWND hwndEdit, int count) {
             Motion::prevChar(hwndEdit, count, searchChar);
     }
 
-    // Keep same repeat info
-    updateLastSearchState(state, isForward, isTill, searchChar);
-
     // Record for . repeat
-    state.recordLastOp(OP_MOTION, count,
-        isForward ? (isTill ? 't' : 'f') : (isTill ? 'T' : 'F'),
-        searchChar);
+    state.recordLastOp(OP_MOTION, count, ';');
 
     // Move caret to new position
     int caret = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
@@ -658,7 +665,7 @@ void NormalMode::handleRepeatFindReverse(HWND hwndEdit, int count) {
     bool isTill = state.lastSearchTill;
     char searchChar = state.lastSearchChar;
 
-    // Perform motion in opposite direction
+    // Perform motion in OPPOSITE direction
     if (isTill) {
         if (isForward)
             Motion::tillCharBack(hwndEdit, count, searchChar);
@@ -672,13 +679,8 @@ void NormalMode::handleRepeatFindReverse(HWND hwndEdit, int count) {
             Motion::nextChar(hwndEdit, count, searchChar);
     }
 
-    // Keep repeat info but flip direction (like Vim)
-    updateLastSearchState(state, !isForward, isTill, searchChar);
-
     // Record for . repeat
-    state.recordLastOp(OP_MOTION, count,
-        isForward ? (isTill ? 'T' : 'F') : (isTill ? 't' : 'f'),
-        searchChar);
+    state.recordLastOp(OP_MOTION, count, ',');
 
     // Move caret to new position
     int caret = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);

@@ -9,10 +9,9 @@ class TextObject {
 public:
     static void apply(HWND hwndEdit, VimState& state, char op, char modifier, char object);
 
-    static void handleIndentOperation(HWND hwndEdit, VimState& state, char op);
+    static void handleWordTextObject(HWND hwndEdit, VimState& state, char op, bool inner, int count, bool bigWord);
 
 private:
-    static void handleWordTextObject(HWND hwndEdit, VimState& state, char op, bool inner, int count);
     static std::pair<int, int> getTextObjectBounds(HWND hwndEdit, TextObjectType objType, bool inner, int count);
     static std::pair<int, int> findSentenceBounds(HWND hwndEdit, int pos, bool inner);
     static std::pair<int, int> findParagraphBounds(HWND hwndEdit, int pos, bool inner);

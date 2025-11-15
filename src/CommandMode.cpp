@@ -21,14 +21,21 @@ void CommandMode::enter(char prompt) {
 void CommandMode::exit() {
     state.commandMode = false;
     state.commandBuffer.clear();
-    Utils::clearSearchHighlights(Utils::getCurrentScintillaHandle());
-    state.lastSearchMatchCount = -1;
 
-    if (g_normalMode) {
-        g_normalMode->enter();
+    // Don't clear highlights or exit visual mode if we're in visual mode
+    if (state.mode != VISUAL) {
+        Utils::clearSearchHighlights(Utils::getCurrentScintillaHandle());
+        state.lastSearchMatchCount = -1;
+
+        if (g_normalMode) {
+            g_normalMode->enter();
+        }
+    }
+    else {
+        // In visual mode, just update status
+        Utils::setStatus(TEXT("-- VISUAL --"));
     }
 }
-
 void CommandMode::updateStatus() {
     if (state.commandBuffer.empty()) {
         Utils::setStatus(TEXT(""));
@@ -166,7 +173,13 @@ void CommandMode::handleCommand(HWND hwndEdit) {
         Utils::setStatus(std::wstring(error.begin(), error.end()).c_str());
     }
 
-    exit();
+    // Only exit command mode, don't exit visual mode
+    state.commandMode = false;
+    state.commandBuffer.clear();
+
+    if (state.mode == VISUAL) {
+        Utils::setStatus(TEXT("-- VISUAL --"));
+    }
 }
 
 void CommandMode::handleSearchCommand(HWND hwndEdit, const std::string& searchTerm) {
@@ -255,16 +268,50 @@ void CommandMode::performSearch(HWND hwndEdit, const std::string& searchTerm, bo
     int flags = (useRegex ? SCFIND_REGEXP : 0);
     ::SendMessage(hwndEdit, SCI_SETSEARCHFLAGS, flags, 0);
 
-    ::SendMessage(hwndEdit, SCI_SETTARGETSTART, 0, 0);
+    // In visual mode, search from visual anchor; otherwise from cursor
+    int startPos;
+    if (state.mode == VISUAL && state.visualSearchAnchor != -1) {
+        startPos = state.visualSearchAnchor;
+    }
+    else {
+        startPos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+    }
+
+    ::SendMessage(hwndEdit, SCI_SETTARGETSTART, startPos, 0);
     ::SendMessage(hwndEdit, SCI_SETTARGETEND, docLen, 0);
 
     int found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
         (WPARAM)searchTerm.length(), (LPARAM)searchTerm.c_str());
 
+    // If not found from start position, wrap to beginning
+    if (found == -1) {
+        ::SendMessage(hwndEdit, SCI_SETTARGETSTART, 0, 0);
+        ::SendMessage(hwndEdit, SCI_SETTARGETEND, startPos, 0);
+        found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
+            (WPARAM)searchTerm.length(), (LPARAM)searchTerm.c_str());
+
+        if (found != -1) {
+            Utils::setStatus(TEXT("Search wrapped to top"));
+        }
+    }
+
     if (found != -1) {
         int start = (int)::SendMessage(hwndEdit, SCI_GETTARGETSTART, 0, 0);
         int end = (int)::SendMessage(hwndEdit, SCI_GETTARGETEND, 0, 0);
-        ::SendMessage(hwndEdit, SCI_SETSEL, start, end);
+
+        if (state.mode == VISUAL && state.visualSearchAnchor != -1) {
+            // Extend selection from visual anchor to match
+            if (state.visualSearchAnchor <= start) {
+                ::SendMessage(hwndEdit, SCI_SETSEL, state.visualSearchAnchor, end);
+            }
+            else {
+                ::SendMessage(hwndEdit, SCI_SETSEL, end, state.visualSearchAnchor);
+            }
+        }
+        else {
+            ::SendMessage(hwndEdit, SCI_SETSEL, start, end);
+        }
+
         ::SendMessage(hwndEdit, SCI_SCROLLCARET, 0, 0);
         Utils::showCurrentMatchPosition(hwndEdit, searchTerm, useRegex);
     }
@@ -293,7 +340,7 @@ void CommandMode::searchNext(HWND hwndEdit) {
 
     if (found == -1) {
         ::SendMessage(hwndEdit, SCI_SETTARGETSTART, 0, 0);
-        ::SendMessage(hwndEdit, SCI_SETTARGETEND, startPos, 0);
+        ::SendMessage(hwndEdit, SCI_SETTARGETEND, docLen, 0);
         found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
             (WPARAM)state.lastSearchTerm.length(), (LPARAM)state.lastSearchTerm.c_str());
 

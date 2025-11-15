@@ -14,7 +14,6 @@ vs.proj/NppVim.vcxproj.user
 vs.proj/NppVim.exp
 vs.proj/NppVim.lib
 vs.proj/NppVim.log
-vs.proj/NppVim.sln
 vs.proj/NppVim
 vs.proj/NppVim.lib
 UpgradeLog.htm
@@ -27,3 +26,4 @@ UpgradeLog.htm
 *.exp
 *.aps
 *.bak
+.vs/
