@@ -98,7 +98,8 @@ void Motion::wordRightBig(HWND hwndEdit, int count) {
     if (state.mode == VISUAL) {
         int anchor = (int)::SendMessage(hwndEdit, SCI_GETANCHOR, 0, 0);
         ::SendMessage(hwndEdit, SCI_SETSEL, anchor, pos);
-    } else {
+    }
+    else {
         ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, pos, 0);
         ::SendMessage(hwndEdit, SCI_SETSEL, pos, pos);
     }
@@ -145,7 +146,8 @@ void Motion::wordLeftBig(HWND hwndEdit, int count) {
     if (state.mode == VISUAL) {
         int anchor = (int)::SendMessage(hwndEdit, SCI_GETANCHOR, 0, 0);
         ::SendMessage(hwndEdit, SCI_SETSEL, anchor, pos);
-    } else {
+    }
+    else {
         ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, pos, 0);
         ::SendMessage(hwndEdit, SCI_SETSEL, pos, pos);
     }
@@ -196,7 +198,8 @@ void Motion::wordEndBig(HWND hwndEdit, int count) {
     if (state.mode == VISUAL) {
         int anchor = (int)::SendMessage(hwndEdit, SCI_GETANCHOR, 0, 0);
         ::SendMessage(hwndEdit, SCI_SETSEL, anchor, pos + 1);
-    } else {
+    }
+    else {
         ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, pos, 0);
         ::SendMessage(hwndEdit, SCI_SETSEL, pos, pos);
     }

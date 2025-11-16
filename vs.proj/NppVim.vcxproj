@@ -49,6 +49,7 @@
     <ClInclude Include="..\plugin\Notepad_plus_msgs.h" />
     <ClInclude Include="..\plugin\PluginInterface.h" />
     <ClInclude Include="..\plugin\resource.h" />
+    <ClInclude Include="..\plugin\SciLexer.h" />
     <ClInclude Include="..\plugin\Scintilla.h" />
     <ClInclude Include="..\plugin\Sci_Position.h" />
   </ItemGroup>

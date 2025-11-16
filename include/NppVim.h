@@ -45,51 +45,43 @@ struct JumpPosition {
 };
 
 struct VimState {
-    //  Core Mode State
     VimMode mode = NORMAL;
     bool vimEnabled = true;
     bool commandMode = false;
     bool isLineVisual = false;
+    bool isBlockVisual = false;
 
-    //  Operator / Repeat Info
     int repeatCount = 0;
     char opPending = 0;
     char textObjectPending = 0;
     bool replacePending = false;
 
-	// [ & ] Bracket Motions
     bool awaitingBracketAbove = false;
     bool awaitingBracketBelow = false;
 
-    //  Visual Mode State
     int visualAnchor = -1;
     int visualAnchorLine = -1;
 
-    //  Character Search State
     char lastSearchChar = 0;
     bool lastSearchForward = true;
     bool lastSearchTill = false;
 
-    //  Operation History
     LastOperation lastOp;
 
-    //  Jump List
     std::vector<JumpPosition> jumpList;
     int jumpIndex = -1;
 
-    //  Command Mode State (added for CommandMode.cpp)
-    std::string commandBuffer;      // Stores ":" or "/" command text
-    std::string lastSearchTerm;     // Last searched string
-    bool useRegex = false;          // Whether last search used regex
-    int lastSearchMatchCount = -1;  // Number of matches for last search
-    int visualSearchAnchor = -1;  // Stores anchor position for visual search
+    std::string commandBuffer;
+    std::string lastSearchTerm;
+    bool useRegex = false;
+    int lastSearchMatchCount = -1;
+    int visualSearchAnchor = -1;
 
-    //  Mark Flags
     bool awaitingMarkSet = false;
     bool awaitingMarkJump = false;
     bool isBacktickJump = false;
+    int pendingJumpCount = 0;
 
-    //  Reset & Record Helpers
     void reset() {
         repeatCount = 0;
         opPending = 0;
@@ -112,26 +104,35 @@ struct VimState {
     }
 
     void recordJump(long position, int lineNumber) {
-        if (jumpIndex < (int)jumpList.size() - 1)
-            jumpList.erase(jumpList.begin() + jumpIndex + 1, jumpList.end());
+        if (!jumpList.empty()) {
+            auto& last = jumpList.back();
+            if (abs(last.position - position) < 5 && last.lineNumber == lineNumber) {
+                return;
+            }
+        }
 
         JumpPosition jump;
         jump.position = position;
         jump.lineNumber = lineNumber;
 
-        if (jumpList.size() >= 100)
+        if (jumpList.size() >= 100) {
             jumpList.erase(jumpList.begin());
+        }
 
         jumpList.push_back(jump);
         jumpIndex = (int)jumpList.size() - 1;
     }
 
+    int getJumpStackSize() const {
+        return (int)jumpList.size();
+    }
+
     JumpPosition getLastJump() {
-        if (jumpIndex > 0) {
-            jumpIndex--;
-            return jumpList[jumpIndex];
+        if (jumpList.size() < 2) {
+            return JumpPosition();
         }
-        return JumpPosition();
+
+        return jumpList[jumpList.size() - 2];
     }
 };
 

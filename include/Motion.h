@@ -1,4 +1,3 @@
-//Motion.h
 #pragma once
 
 #include <windows.h>
@@ -19,11 +18,10 @@ public:
     static void lineEnd(HWND hwndEdit, int count);
     static void lineStart(HWND hwndEdit, int count);
 
-    // Character search motions
     static void nextChar(HWND hwndEdit, int count, char target);
     static void prevChar(HWND hwndEdit, int count, char target);
-    static void tillChar(HWND hwndEdit, int count, char target);      // New: t motion
-    static void tillCharBack(HWND hwndEdit, int count, char target);  // New: T motion
+    static void tillChar(HWND hwndEdit, int count, char target);
+    static void tillCharBack(HWND hwndEdit, int count, char target);
 
     static void setCursorPosition(HWND hwndEdit, int pos, bool isTillMotion = false);
 

@@ -20,5 +20,5 @@ private:
     static std::pair<int, int> trimWhitespaceBounds(HWND hwndEdit, std::pair<int, int> bounds);
     static std::pair<int, int> expandToWordBoundaries(HWND hwndEdit, std::pair<int, int> bounds);
     static bool handleCustomTextObject(HWND hwndEdit, VimState& state, char op, bool inner, char object);
-    static void executeTextObjectOperation(HWND hwndEdit, VimState& state, char op, int start, int end);
+    static void executeTextObjectOperation(HWND hwndEdit, VimState& state, char op, int start, int end, int count);
 };

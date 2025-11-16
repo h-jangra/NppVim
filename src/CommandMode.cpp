@@ -22,7 +22,6 @@ void CommandMode::exit() {
     state.commandMode = false;
     state.commandBuffer.clear();
 
-    // Don't clear highlights or exit visual mode if we're in visual mode
     if (state.mode != VISUAL) {
         Utils::clearSearchHighlights(Utils::getCurrentScintillaHandle());
         state.lastSearchMatchCount = -1;
@@ -32,7 +31,6 @@ void CommandMode::exit() {
         }
     }
     else {
-        // In visual mode, just update status
         Utils::setStatus(TEXT("-- VISUAL --"));
     }
 }
@@ -87,11 +85,8 @@ void CommandMode::handleKey(HWND hwndEdit, char c) {
             std::string currentSearch = state.commandBuffer.substr(1);
             Utils::updateSearchHighlight(hwndEdit, currentSearch, false);
         }
-        else if (state.commandBuffer.size() > 3 &&
-            state.commandBuffer[0] == ':' &&
-            state.commandBuffer[1] == 's' &&
-            state.commandBuffer[2] == ' ') {
-            std::string currentPattern = state.commandBuffer.substr(3);
+        else if (state.commandBuffer[0] == '?' && state.commandBuffer.size() > 1) {
+            std::string currentPattern = state.commandBuffer.substr(1);
             Utils::updateSearchHighlight(hwndEdit, currentPattern, true);
         }
         else if (state.commandBuffer.size() == 1) {
@@ -153,7 +148,12 @@ void CommandMode::handleCommand(HWND hwndEdit) {
             }
         }
         else if (firstChar == '?') {
-            Utils::setStatus(TEXT("Backward search not implemented yet"));
+            if (buf.size() > 1) {
+                handleSearchCommand(hwndEdit, buf.substr(1), true); // regex search
+            }
+            else {
+                Utils::setStatus(TEXT("No regex pattern"));
+            }
         }
         else if (firstChar == ':') {
             if (buf.size() > 1) {
@@ -173,7 +173,6 @@ void CommandMode::handleCommand(HWND hwndEdit) {
         Utils::setStatus(std::wstring(error.begin(), error.end()).c_str());
     }
 
-    // Only exit command mode, don't exit visual mode
     state.commandMode = false;
     state.commandBuffer.clear();
 
@@ -182,14 +181,14 @@ void CommandMode::handleCommand(HWND hwndEdit) {
     }
 }
 
-void CommandMode::handleSearchCommand(HWND hwndEdit, const std::string& searchTerm) {
-    performSearch(hwndEdit, searchTerm, false);
+void CommandMode::handleSearchCommand(HWND hwndEdit, const std::string& searchTerm, bool useRegex) {
+    performSearch(hwndEdit, searchTerm, useRegex);
 }
 
 void CommandMode::handleColonCommand(HWND hwndEdit, const std::string& cmd) {
     if (cmd.empty()) return;
 
-    if (cmd == "marks" || cmd.find("delm") == 0) {
+    if (cmd == "marks" || cmd == "m" || cmd.find("delm") == 0 || cmd.find("dm") == 0) {
         handleMarksCommand(hwndEdit, cmd);
         return;
     }
@@ -239,7 +238,7 @@ void CommandMode::handleColonCommand(HWND hwndEdit, const std::string& cmd) {
     else if (cmd == "q!" || cmd == "quit!") {
         ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_FILE_CLOSE);
     }
-    else if (cmd == "tutor") {
+    else if (cmd == "tutor" || cmd == "tut") {
         TCHAR nppPath[MAX_PATH] = { 0 };
         ::SendMessage(nppData._nppHandle, NPPM_GETNPPDIRECTORY, MAX_PATH, (LPARAM)nppPath);
         std::wstring tutorPath = std::wstring(nppPath) + L"\\plugins\\NppVim\\tutor.txt";
@@ -268,7 +267,6 @@ void CommandMode::performSearch(HWND hwndEdit, const std::string& searchTerm, bo
     int flags = (useRegex ? SCFIND_REGEXP : 0);
     ::SendMessage(hwndEdit, SCI_SETSEARCHFLAGS, flags, 0);
 
-    // In visual mode, search from visual anchor; otherwise from cursor
     int startPos;
     if (state.mode == VISUAL && state.visualSearchAnchor != -1) {
         startPos = state.visualSearchAnchor;
@@ -283,7 +281,6 @@ void CommandMode::performSearch(HWND hwndEdit, const std::string& searchTerm, bo
     int found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
         (WPARAM)searchTerm.length(), (LPARAM)searchTerm.c_str());
 
-    // If not found from start position, wrap to beginning
     if (found == -1) {
         ::SendMessage(hwndEdit, SCI_SETTARGETSTART, 0, 0);
         ::SendMessage(hwndEdit, SCI_SETTARGETEND, startPos, 0);
@@ -300,7 +297,6 @@ void CommandMode::performSearch(HWND hwndEdit, const std::string& searchTerm, bo
         int end = (int)::SendMessage(hwndEdit, SCI_GETTARGETEND, 0, 0);
 
         if (state.mode == VISUAL && state.visualSearchAnchor != -1) {
-            // Extend selection from visual anchor to match
             if (state.visualSearchAnchor <= start) {
                 ::SendMessage(hwndEdit, SCI_SETSEL, state.visualSearchAnchor, end);
             }
@@ -427,7 +423,7 @@ void CommandMode::searchPrevious(HWND hwndEdit) {
 }
 
 void CommandMode::handleMarksCommand(HWND hwndEdit, const std::string& commandLine) {
-    if (commandLine == "marks") {
+    if (commandLine == "marks" || commandLine == "m") {
         std::string marksList = Marks::listMarks(hwndEdit);
 
 #ifdef UNICODE
@@ -446,10 +442,10 @@ void CommandMode::handleMarksCommand(HWND hwndEdit, const std::string& commandLi
         return;
     }
 
-    if (commandLine.find("delm") == 0) {
+    if (commandLine.find("delm") == 0 || commandLine.find("dm") == 0) {
         size_t startPos = (commandLine.length() > 4 && commandLine[4] == ' ') ? 5 : 4;
 
-        if (commandLine.find("!") != std::string::npos) {
+        if (commandLine.find("!") != std::string::npos || commandLine.find("a") != std::string::npos) {
             Marks::clearAllMarks(hwndEdit);
             Utils::setStatus(TEXT("-- All marks deleted --"));
             return;

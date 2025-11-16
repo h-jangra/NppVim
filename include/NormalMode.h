@@ -1,4 +1,3 @@
-//NormalMode.h
 #ifndef NORMALMODE_H
 #define NORMALMODE_H
 
@@ -24,7 +23,6 @@ private:
 
     void setupKeyHandlers();
 
-    // Insert mode handlers
     void handleInsert(HWND hwndEdit, int count);
     void handleAppend(HWND hwndEdit, int count);
     void handleAppendEnd(HWND hwndEdit, int count);
@@ -32,7 +30,6 @@ private:
     void handleOpenBelow(HWND hwndEdit, int count);
     void handleOpenAbove(HWND hwndEdit, int count);
 
-    // Edit handlers
     void handleDelete(HWND hwndEdit, int count);
     void handleYank(HWND hwndEdit, int count);
     void handleChange(HWND hwndEdit, int count);
@@ -46,13 +43,11 @@ private:
     void handlePaste(HWND hwndEdit, int count);
     void handlePasteBefore(HWND hwndEdit, int count);
 
-    // Motion handlers
     void handleMotion(HWND hwndEdit, char motionChar, int count);
     void handleGCommand(HWND hwndEdit, int count);
-    void handleTCommand(HWND hwndEdit, int count);        // New: t motion
-    void handleTReverseCommand(HWND hwndEdit, int count);  // New: T motion
+    void handleTCommand(HWND hwndEdit, int count);
+    void handleTReverseCommand(HWND hwndEdit, int count);
 
-    // Search handlers
     void handleSearchForward(HWND hwndEdit, int count);
     void handleSearchNext(HWND hwndEdit, int count);
     void handleSearchPrevious(HWND hwndEdit, int count);
@@ -63,22 +58,20 @@ private:
     void handleRepeatFind(HWND hwndEdit, int count);
     void handleRepeatFindReverse(HWND hwndEdit, int count);
 
-    // Visual mode handlers
     void handleVisualChar(HWND hwndEdit, int count);
     void handleVisualLine(HWND hwndEdit, int count);
 
-    // Undo/Repeat/Command handlers
     void handleUndo(HWND hwndEdit, int count);
     void handleRepeat(HWND hwndEdit, int count);
     void handleCommandMode(HWND hwndEdit, int count);
 
-    // Jump handlers
     void handleJumpBack(HWND hwndEdit, int count);
     void handleJumpBackToLine(HWND hwndEdit, int count);
 
     void handleZCommand(HWND hwndEdit, int count);
 
-    // Helper methods
+    void handleToggleComment(HWND hwndEdit, int count);
+
     void deleteLineOnce(HWND hwndEdit);
     void yankLineOnce(HWND hwndEdit);
     void applyOperatorToMotion(HWND hwndEdit, char op, char motion, int count);

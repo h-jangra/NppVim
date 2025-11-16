@@ -275,6 +275,17 @@ bool checkEscapeSequence(char c) {
     return false;
 }
 
+void clearCtrlQShortcut() {
+    HWND editors[] = { nppData._scintillaMainHandle, nppData._scintillaSecondHandle };
+
+    for (HWND hEdit : editors) {
+        if (hEdit && IsWindow(hEdit)) {
+            // Clear Ctrl+Q mapping (Q = 81, Ctrl = SCMOD_CTRL = 16 << 16)
+            ::SendMessage(hEdit, SCI_CLEARCMDKEY, MAKEWPARAM(81, SCMOD_CTRL), 0);
+        }
+    }
+}
+
 LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     WNDPROC orig = nullptr;
     auto it = origProcMap.find(hwnd);
@@ -299,7 +310,7 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
     if ((state.mode == NORMAL || state.mode == VISUAL) && msg == WM_KEYDOWN) {
         bool ctrlPressed = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
 
-        if (ctrlPressed) {
+        if (ctrlPressed && (state.mode == NORMAL || state.mode == VISUAL)) {
             if (wParam == 'D' && g_config.overrideCtrlD) {
                 // Ctrl+D: Page down
                 Motion::pageDown(hwndEdit);
@@ -322,6 +333,21 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
                 // Ctrl+R: Redo in normal mode
                 ::SendMessage(hwndEdit, SCI_REDO, 0, 0);
                 state.recordLastOp(OP_MOTION, 1, 'R');
+                return 0;
+            }
+            // Ctrl+Q: Enter visual block mode
+            else if (wParam == 'Q') {
+                if (state.mode == VISUAL) {
+                    if (state.isBlockVisual) {
+                        g_normalMode->enter();
+                    }
+                    else {
+                        g_visualMode->enterBlock(hwndEdit);
+                    }
+                }
+                else {
+                    g_visualMode->enterBlock(hwndEdit);
+                }
                 return 0;
             }
         }
@@ -543,12 +569,7 @@ void toggleVimMode() {
 void about() {
     ::MessageBox(nppData._nppHandle,
         TEXT("NppVim - A Vim emulation plugin for Notepad++\n\n")
-        TEXT("Features:\n")
-        TEXT("• Normal, Insert, Visual, and Command modes\n")
-        TEXT("• Customizable escape key sequences (Esc, jj, jk, kj)\n")
-        TEXT("• Common Vim motions and commands\n")
-        TEXT("• Search and navigation\n")
-        TEXT("• Ctrl+D, Ctrl+U, Ctrl+R support"),
+        TEXT("Explore features with :tut or :tutor\n"),
         TEXT("About NppVim"), MB_OK | MB_ICONINFORMATION);
 }
 
@@ -575,6 +596,8 @@ extern "C" __declspec(dllexport) void setInfo(NppData notpadPlusData) {
     g_normalMode = new NormalMode(state);
     g_visualMode = new VisualMode(state);
     g_commandMode = new CommandMode(state);
+
+    clearCtrlQShortcut();
 
     state.vimEnabled = true;
     ensureScintillaHooks();

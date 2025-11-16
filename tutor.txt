@@ -1,560 +1,94 @@
-===>70G===========================================================================
-															NppVim Tutor v1.4.0.0
-==================================================================================
-
-Welcome to NppVim! This interactive tutor will guide you through Vim editing.
-
-Lesson 1: BASIC MOVEMENT
-~~~~~~~~~~~~~~~~~~~~~~~~
-The cursor is moved using the h,j,k,l keys.
-
-   k
- h   l
-   j
-
-Exercise 1.1: Move the cursor around using h,j,k,l
-  - Press j to move down to the next line
-  - Press k to move up
-  - Press l to move right
-  - Press h to move left
-
-Practice moving between these lines:
-Line 1 - practice moving here
-Line 2 - continue practicing
-Line 3 - almost done
-Line 4 - great job!
-
-When comfortable, move to the next section.
-
----
-
-Exercise 1.2: Word Movement
-w/W - move to next word
-b/B - move to previous word
-e/E - move to end of word
-
-Practice on this line:
-The quick brown fox jumps over the lazy dog.
-
-When ready, continue to the next exercise.
-
----
-
-Exercise 1.3: Line Movement
-0/^ - move to beginning of line
-$ - move to end of line
-
-Practice on these lines:
-   This line has leading spaces
-This line starts immediately
-    Another indented line
-
-Use 0, ^, and $ to navigate these lines.
-
----
-
-Exercise 1.4: File Movement
-gg - move to top of file
-G - move to bottom of file
-{ - move to previous paragraph
-} - move to next paragraph
-
-Practice:
-- Use gg to jump to the top
-- Use G to jump to the bottom
-- Use 10G to jump to line 10
-
----
-
-Lesson 2: INSERT MODE
-~~~~~~~~~~~~~~~~~~~~~
-
-Exercise 2.1: Basic Insertion
-i - insert before cursor
-a - append after cursor
-I - insert at line start
-A - append at line end
-
-Practice on this text:
-Start with this text
-
-- Move to "with" and press i to insert before it
-- Move to "text" and press a to append after it
-- Press I to insert at line beginning
-- Press A to append at line end
-
-Remember: Press ESC after each insertion to return to NORMAL mode.
-
----
-
-Exercise 2.2: Line Creation
-o - open new line below
-O - open new line above
-
-Practice:
-- Move to this line and press o to create a line below
-- Press O to create a line above
-
-Create three new lines below this one.
-
----
-
-Lesson 3: DELETION COMMANDS
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Exercise 3.1: Character Deletion
-x - delete character under cursor
-X - delete character before cursor
-
-Practice on this text:
-Delete these characters
-
-- Move to "D" and press x repeatedly
-- Move to "s" and press X to delete backwards
-
-Try to delete the word "these" using x and X.
-
----
-
-Exercise 3.2: Word and Line Deletion
-dw - delete word
-dd - delete line
-D - delete to end of line
-C - change to end of line
-
-Practice on these lines:
-Line one to delete
-Line two for practice
-Line three for deletion
-Line four to remove
-
-- Use dw to delete "one" from first line
-- Use dd to delete the entire second line
-- Use D to delete from cursor to end on third line
-
-Delete all four lines using these commands.
-
----
-
-Lesson 4: COPY AND PASTE
-~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Exercise 4.1: Yanking (Copying)
-yw - yank word
-yy - yank line
-y$ - yank to end of line
-
-Practice on this text:
-Copy this sentence for practice.
-
-- Use yw to copy "Copy"
-- Use yy to copy the entire line
-- Use y$ to copy from cursor to end
-
----
-
-Exercise 4.2: Pasting
-p - paste after cursor
-P - paste before cursor
-
-Practice:
-- Yank a word with yw and paste it with p
-- Yank a line with yy and paste it with P
-- Create multiple copies with 3p
-
-Try copying this word: [Hello] and pasting it multiple times.
-
----
-
-Lesson 5: VISUAL MODE
-~~~~~~~~~~~~~~~~~~~~~
-
-Exercise 5.1: Character Visual Mode
-v - enter visual mode (character-wise)
-
-Practice on this text:
-Select parts of this sentence visually.
-
-- Press v and move with h,j,k,l to select text
-- Try selecting the word "sentence"
-- Select "parts of this"
-
-Now try these operations in visual mode:
-- d to delete selection
-- y to yank selection
-- c to change selection
-
----
-
-Exercise 5.2: Line Visual Mode
-V - enter visual line mode
-
-Practice on these lines:
-Select entire lines
-Using visual line mode
-For block operations
-
-- Press V and select multiple lines
-- Delete the selection with d
-- Yank the selection with y
-- Change the selection with c
-
-Select all three lines and delete them.
-
----
-
-Lesson 6: SEARCH AND REPLACE
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Exercise 6.1: Basic Search
-/pattern - search forward with real-time highlighting
-n - repeat search forward
-N - repeat search backward
-
-Practice searching for these words in the text below:
-cat, dog, bird
-
-The cat chased the dog while the bird watched.
-Another cat played near the dog house.
-The bird flew away from the cat.
-
-- Use /cat to find "cat" - notice real-time highlighting!
-- Use n to find next occurrence
-- Use N to find previous occurrence
-
-Search for all three animals.
-
----
-
-Exercise 6.2: Word Search and Replace
-* - search word under cursor forward
-# - search word under cursor backward
-r - replace single character
-R - enter replace mode (overwrite)
-
-Practice on this text:
-Replace the m in mouse with h to make house.
-Change the c in cat to b to make bat.
-Fix the d in dog to f to make fog.
-
-- Move to "m" in "house" and press r then h
-- Move to "c" in "cat" and press r then b
-- Move to "d" in "dog" and press r then f
-- Press R to enter replace mode and overwrite text
-
-Now try using * on "house" to search for it.
-
----
-
-Lesson 7: ADVANCED OPERATIONS
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Exercise 7.1: Joining Lines
-J - join current line with next line
-
-Practice on these lines:
-Join these
-multiple lines
-together into
-single lines
-
-- Move to first line and press J
-- Press J twice more to join all lines
-
-Now you should have one continuous line.
-
----
-
-Exercise 7.2: Undo and Repeat
-u - undo last change
-. - repeat single last change
-
-Practice:
-- Delete a word with dw
-- Press u to undo the deletion
-- Press . to redo the deletion
-
-Try changing a word with cw, then use u and ..
-
----
-
-Lesson 8: REPEAT COUNTS
-~~~~~~~~~~~~~~~~~~~~~~~~
-
-Exercise 8.1: Movement with Counts
-[count]motion - repeat motion count times
-
-Practice on this text:
-Move 3 words forward, then 2 words back.
-Jump 5 lines down, then 4 lines up.
-Delete 2 words ahead, then 3 characters.
-
-- Use 3w to move 3 words forward
-- Use 2b to move 2 words back
-- Use 5j to move 5 lines down
-- Use 4k to move 4 lines up
-
----
-
-Exercise 8.2: Editing with Counts
-[count]command - repeat command count times
-
-Practice on these lines:
-Line one for deletion
-Line two for deletion
-Line three for deletion
-Line four for deletion
-Line five for deletion
-
-- Use d3d to delete 3 lines
-- Use 2p to paste 2 copies
-- Use 5x to delete 5 characters
-
-Delete lines 2-4 using counts.
-
----
-
-Lesson 9: TEXT OBJECTS
-~~~~~~~~~~~~~~~~~~~~~~
-
-Exercise 9.1: Word Text Objects
-diw - delete inner word
-ciw - change inner word
-daw - delete a word (with surrounding space)
-diW - delete inner big word (ignores punctuation)
-ciW - change inner big word
-daW - delete a big word (with surrounding space)
-
-Practice on this text:
-Change the word middle using ciw.
-Delete the word remove using diw.
-Test big words: hello-world, test_file, and more!
-
-- Move to "middle" and press ciw then type "center"
-- Move to "remove" and press diw
-- Move to "hello-world" and use ciW to change the whole big word
-- Use diW to delete big words that include punctuation
-
-Try both commands on different words.
-
----
-
-Exercise 9.2: Quote Text Objects
-yi" - yank inside quotes
-ci' - change inside single quotes
-da" - delete around quotes
-yi` - yank inside backticks
-ci` - change inside backticks
-
-Practice on this text:
-"Change this quoted text" using ci"
-'Modify this single quoted text' using ci'
-"Delete these quotes completely" using da"
-`Change this backtick text` using ci`
-
-- Move inside the double quotes and press ci"
-- Move inside the single quotes and press ci'
-- Move anywhere in the last quotes and press da"
-- Move inside backticks and press ci`
-
----
-
-Exercise 9.3: Bracket Text Objects
-ci( - change inside parentheses
-di[ - delete inside brackets
-ya{ - yank around braces
-ci< - change inside angle brackets
-di( - delete inside parentheses
-ya[ - yank around brackets
-
-Practice on this text:
-(change the content inside these parentheses)
-[delete everything inside these brackets]
-{yank everything including these braces}
-<change content inside angle brackets>
-
-- Use ci( to change parenthetical content
-- Use di[ to delete bracket content
-- Use ya{ to yank brace content including braces
-- Use ci< to change angle bracket content
-
----
-
-Exercise 9.4: Sentence and Paragraph Text Objects
-dis - delete inner sentence
-cis - change inner sentence
-dap - delete around paragraph
-cip - change inner paragraph
-
-Practice on this text:
-This is the first sentence. This is the second sentence!
-This is a third sentence? And here's a fourth.
-
-This is a new paragraph with multiple sentences. It has content.
-More content here in the same paragraph.
-
-- Use dis to delete a sentence
-- Use cis to change a sentence
-- Use dap to delete an entire paragraph
-- Use cip to change paragraph content
-
----
-
-Exercise 9.5: Text Objects in Visual Mode
-All text objects work in Visual mode too!
-
-viw - select inner word in visual mode
-vaw - select a word (with space) in visual mode
-vi" - select inside quotes
-va( - select around parentheses
-vis - select inner sentence
-vap - select around paragraph
-
-Practice on this text:
-Select words using viw and vaw in visual mode.
-"Select quoted text" using vi" in visual mode.
-(Select parenthetical content) using vi( in visual mode.
-
-- Press v to enter visual mode, then press iw to select inner word
-- Press v then aw to select a word with surrounding space
-- Press v then i" to select inside quotes
-- Press v then a( to select around parentheses including the brackets
-- Try other text objects in visual mode: vis, vap, viW, etc.
-
-After selecting, you can:
-- Press d to delete the selection
-- Press y to yank (copy) the selection
-- Press c to change the selection
-
----
-
-Lesson 10: CHARACTER SEARCH
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Exercise 10.1: Find Characters
-f<char> - find next character on line
-F<char> - find previous character on line
-t<char> - till next character on line
-T<char> - till previous character on line
-
-Practice on this line:
-Find all the letter 'e' characters in this sentence.
-
-- Press fe to find first 'e'
-- Press ; to find next 'e'
-- Press , to find previous 'e'
-
-Now try finding 't' with ft and navigating with ; and ,.
-
----
-
-Exercise 10.2: Character Search with Counts
-3fa - find third occurrence of 'a'
-
-Practice on this line:
-Find the banana in Alabama with ana and ana.
-
-- Use 3fa to find the third 'a'
-- Use 2fna to find the second "na"
-
-Try finding specific occurrences of other letters.
-
----
-
-Lesson 11: COMMAND MODE
-~~~~~~~~~~~~~~~~~~~~~~~~
-
-Exercise 11.1: File Operations
-:w - save file
-:q - quit file
-:wq - save and quit
-
-Practice:
-- Try :w to save a file
-- Don't worry, this is a practice file
-- Use :q if you want to exit (come back!)
-
----
-
-Exercise 11.2: Navigation and Search
-:15 - go to line 15
-:s <pattern> - regex search with real-time highlighting
-:tutor - open this tutor
-
-Practice:
-- Use :5 to go to line 5
-- Use :20 to go to line 20
-- Use :s cat to search for "cat" with regex - see real-time highlights!
-- Use :tutor to reopen this file
-
-Try going to different line numbers.
-
----
-
-Lesson 12: ADVANCED FEATURES
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Exercise 12.1: Replace Mode
-R - enter replace/overwrite mode
-
-Practice on this text:
-Overwrite this text in replace mode.
-
-- Move to beginning and press R
-- Type new text to overwrite existing text
-- Press ESC to return to normal mode
-
----
-
-Exercise 12.2: Search Match Counter
-Real-time match counting in status bar
-
-Practice:
-- Search for any word with /word
-- See the "Found X matches" in status bar
-- Use n and N to navigate - see "Match X of Y" counter
-- Try :s <regex> for regex search with counters
-
----
-
-Exercise 12.3: Goto last position
-`` - Press backtick to goto last position
-
-Practice:
-- Press gg and then `` to come back here.
-=======
-` - Press backtick to goto last position
-
-Practice:
-- Press gg and then ` to come back here.
-- Press G or search to go back to previous position.
-
----
-
-Exercise 12.4: Marks
-Note: Characters i.e. a,i,o,u which are already mapped for motions does not work.
-
-Local marks
-m<b-z> - Press m and any small letter
-`<b-z> - go back to that line where you set mark
-
-Global Marks
-m<B-Z> - Press m and any capital letter
-`<B-Z> - go back to that file and line where you set mark even from different file
-
-:marks - list all marks
-:delm! or delmarks! - delete all marks
-:delm a or delmarks a - will delete mark a
-
----
-
-Exercise 12.5: Ctrl+d, Ctrl+u, Ctrl+r overwrite
-Ctrl+u - Move page up
-Ctrl+d - Move page down
-Ctrl+r - Redo
-
----
-=======
-To review this tutor anytime, use :tutor
-
---->56G
+# NppVim Quick Reference
+
+## Mode Switching
+Esc - Normal mode
+i - Insert mode
+v - Visual mode
+V - Visual line mode
+Ctrl+q - Visual block mode
+: - Command mode
+
+## Movement
+h j k l - Left Down Up Right
+w W - Next word/WORD
+b B - Previous word/WORD
+e E - End of word/WORD
+$ ^ 0 - End/Start/Start of line
+{ } - Paragraph up/down
+G - Go to line/end
+:10 / 10G / 10gg - Go to line 10
+gg - File start
+H L - Top/Bottom of screen
+Ctrl+d Ctrl+u - Page down/up
+
+## Editing
+x X - Delete char/backwards
+dd - Delete line
+D - Delete to line end
+C - Change to line end
+yy - Yank line
+p P - Paste after/before
+u - Undo
+Ctrl+r- Redo
+J - Join lines
+r - Replace char
+R - Replace mode
+~ - Toggle case
+
+## Operators
+d - Delete (dw, d$, d%)
+c - Change (cw, c$, c%)
+y - Yank (yw, y$, y%)
+> < - Indent/Unindent
+
+## Text Objects
+iw aw - Inner/A word
+i" a" - Inside/Around quotes
+i( a( - Inside/Around parens
+i[ a[ - Inside/Around brackets
+i{ a{ - Inside/Around braces
+i< a< - Inside/Around angles
+it at - Inside/Around tags
+Test: { ( [  ] ) }
+
+## Search
+/ - Search forward
+? - Regex search
+n N - Next/Previous match
+* # - Word under cursor forward/backward
+f F - Find char forward/backward
+t T - Till char forward/backward
+; , - Repeat find reverse
+% - Match bracket
+
+## Marks
+m[a-z] - Set local mark
+m[A-Z] - Set global mark
+`mark - Jump to exact mark
+`''' - Jump back
+
+## Visual Mode
+d x - Delete selection
+y - Yank selection
+c - Change selection
+> < - Indent/Unindent
+~ - Toggle case
+o - Swap cursor/anchor
+
+## Command Mode
+:w - Save
+:q - Quit
+:wq - Save & quit
+:q! - Quit without save
+:line - Go to line
+:marks - Show marks
+:delm marks or :dm marks- Delete marks
+:delm! or dma or dm! - Delete all marks
+:tutor or :tut- Open tutor
+
+## Other
+. - Repeat last change
+gt gT - Next/Previous tab
+zz - Center screen
+gc - Toggle comment
+[space or ]space - New line above/below

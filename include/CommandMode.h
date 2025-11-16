@@ -25,5 +25,5 @@ private:
 
     void handleCommand(HWND hwndEdit);
     void handleColonCommand(HWND hwndEdit, const std::string& cmd);
-    void handleSearchCommand(HWND hwndEdit, const std::string& searchTerm);
+    void handleSearchCommand(HWND hwndEdit, const std::string& searchTerm, bool useRegex = false);
 };
