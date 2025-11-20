@@ -1,4 +1,5 @@
 build/
+Debug/
 bin/
 bin64/
 arm64/
@@ -22,8 +23,9 @@ UpgradeLog.htm
 *.suo
 *.filters
 *.opensdf
-*.sln
+# *.sln
 *.exp
 *.aps
 *.bak
 .vs/
+CMakeFiles

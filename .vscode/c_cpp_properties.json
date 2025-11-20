@@ -1,0 +1,21 @@
+{
+    "configurations": [
+        {
+            "name": "MSVC-x64",
+            "intelliSenseMode": "windows-msvc-x64",
+            "compilerPath": "C:/dev/msvc/VC/Tools/MSVC/14.50.35717/bin/Hostx64/x64/cl.exe",
+            "windowsSdkVersion": "10.0.26100.0",
+            "includePath": [
+                "${workspaceFolder}/include",
+                "${workspaceFolder}/plugin",
+                "${workspaceFolder}/src",
+                "C:/dev/msvc/VC/Tools/MSVC/14.50.35717/include",
+                "C:/dev/msvc/Windows Kits/10/Include/10.0.26100.0/shared",
+                "C:/dev/msvc/Windows Kits/10/Include/10.0.26100.0/ucrt",
+                "C:/dev/msvc/Windows Kits/10/Include/10.0.26100.0/um"
+            ],
+            "defines": ["UNICODE", "_UNICODE", "WIN32", "_WINDOWS", "NOMINMAX"]
+        }
+    ],
+    "version": 4
+}
