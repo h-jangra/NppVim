@@ -2,15 +2,20 @@
 setlocal enabledelayedexpansion
 
 if "%1"=="" (
+    echo Building Debug...
     call "C:\dev\msvc\VC\Auxiliary\Build\vcvarsall.bat" x64
-    if not exist debug mkdir debug
-    pushd debug
-    cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug ..
+
+    if not exist build\debug mkdir build\debug
+    pushd build\debug
+
+    cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug ..\..
     cmake --build .
+
     popd
-    echo Debug build completed
+    echo Debug build completed in build/debug/
     goto :eof
 )
+
 
 if "%1"=="release" (
     goto :BUILD_RELEASE

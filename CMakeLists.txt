@@ -23,7 +23,7 @@ target_link_libraries(NppVim PRIVATE
     kernel32 user32 gdi32 shell32 ole32 oleaut32 advapi32 shlwapi uuid
 )
 
-# Always build to current binary directory
+# Build outputs always stay inside binary dir
 set_target_properties(NppVim PROPERTIES
     ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
@@ -31,28 +31,34 @@ set_target_properties(NppVim PROPERTIES
     OUTPUT_NAME "NppVim"
 )
 
-# Manual architecture detection based on binary directory path
+#
+# Detect architecture from build folder name
+#
 if(CMAKE_BINARY_DIR MATCHES ".*[\\/]win32[\\/]?$")
-    set(DIST_DIR "${CMAKE_SOURCE_DIR}/NppVim")
-    message(STATUS "Detected win32 build, distribution: ${DIST_DIR}")
+    set(DIST_DIR "${CMAKE_SOURCE_DIR}/dist/NppVim")
+    message(STATUS "Detected win32 build → ${DIST_DIR}")
+
 elseif(CMAKE_BINARY_DIR MATCHES ".*[\\/]x64[\\/]?$")
-    set(DIST_DIR "${CMAKE_SOURCE_DIR}/NppVim.x64")
-    message(STATUS "Detected x64 build, distribution: ${DIST_DIR}")
+    set(DIST_DIR "${CMAKE_SOURCE_DIR}/dist/NppVim.x64")
+    message(STATUS "Detected x64 build → ${DIST_DIR}")
+
 elseif(CMAKE_BINARY_DIR MATCHES ".*[\\/]arm64[\\/]?$")
-    set(DIST_DIR "${CMAKE_SOURCE_DIR}/NppVim.arm64")
-    message(STATUS "Detected arm64 build, distribution: ${DIST_DIR}")
+    set(DIST_DIR "${CMAKE_SOURCE_DIR}/dist/NppVim.arm64")
+    message(STATUS "Detected arm64 build → ${DIST_DIR}")
+
 else()
-    # Fallback based on pointer size
     if(CMAKE_SIZEOF_VOID_P EQUAL 8)
-        set(DIST_DIR "${CMAKE_SOURCE_DIR}/NppVim.x64")
-        message(STATUS "Fallback to x64, distribution: ${DIST_DIR}")
+        set(DIST_DIR "${CMAKE_SOURCE_DIR}/dist/NppVim.x64")
+        message(STATUS "Fallback to x64 → ${DIST_DIR}")
     else()
-        set(DIST_DIR "${CMAKE_SOURCE_DIR}/NppVim")
-        message(STATUS "Fallback to win32, distribution: ${DIST_DIR}")
+        set(DIST_DIR "${CMAKE_SOURCE_DIR}/dist/NppVim")
+        message(STATUS "Fallback to win32 → ${DIST_DIR}")
     endif()
 endif()
 
-# For Release builds, copy files to distribution directory
+#
+# Copy Release DLLs and files into dist/
+#
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     add_custom_command(TARGET NppVim POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory "${DIST_DIR}"
