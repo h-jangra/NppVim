@@ -38,6 +38,24 @@ void VisualMode::setupKeyHandlers() {
     keyHandlers['H'] = [this](HWND hwnd, int c) { handleMotion(hwnd, 'H', c); };
     keyHandlers['L'] = [this](HWND hwnd, int c) { handleMotion(hwnd, 'L', c); };
 
+    keyHandlers['I'] = [this](HWND hwnd, int c) { handleBlockInsert(hwnd, c); };
+    keyHandlers['A'] = [this](HWND hwnd, int c) { handleBlockAppend(hwnd, c); };
+    keyHandlers['i'] = [this](HWND hwnd, int c) {
+    if (state.isBlockVisual) {
+        return;
+      }
+      state.textObjectPending = 'i';
+      Utils::setStatus(TEXT("-- inner text object --"));
+  };
+
+    keyHandlers['a'] = [this](HWND hwnd, int c) {
+        if (state.isBlockVisual) {
+            return;
+        }
+        state.textObjectPending = 'a';
+        Utils::setStatus(TEXT("-- around text object --"));
+    };
+
     keyHandlers['h'] = [this](HWND hwnd, int c) { handleMotion(hwnd, 'h', c); };
     keyHandlers['j'] = [this](HWND hwnd, int c) { handleMotion(hwnd, 'j', c); };
     keyHandlers['k'] = [this](HWND hwnd, int c) { handleMotion(hwnd, 'k', c); };
@@ -991,4 +1009,97 @@ void VisualMode::handleToggleComment(HWND hwndEdit, int count) {
     }
 
     state.recordLastOp(OP_MOTION, count, 'c');
+}
+
+void VisualMode::handleBlockInsert(HWND hwndEdit, int count) {
+    if (!state.isBlockVisual) {
+        return;
+    }
+
+    int anchor = (int)::SendMessage(hwndEdit, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
+    int caret = (int)::SendMessage(hwndEdit, SCI_GETRECTANGULARSELECTIONCARET, 0, 0);
+
+    int anchorLine = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, anchor, 0);
+    int caretLine = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, caret, 0);
+    int anchorColumn = anchor - (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, anchorLine, 0);
+    int caretColumn = caret - (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, caretLine, 0);
+
+    int startLine = (std::min)(anchorLine, caretLine);
+    int endLine = (std::max)(anchorLine, caretLine);
+    int startColumn = (std::min)(anchorColumn, caretColumn);
+    int endColumn = (std::max)(anchorColumn, caretColumn);
+
+    ::SendMessage(hwndEdit, SCI_SETSELECTIONMODE, SC_SEL_STREAM, 0);
+    ::SendMessage(hwndEdit, SCI_CLEARSELECTIONS, 0, 0);
+
+    bool firstCursor = true;
+    for (int line = startLine; line <= endLine; line++) {
+        int lineStart = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, line, 0);
+        int lineEnd = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, line, 0);
+
+        int cursorPos = lineStart + startColumn;
+        if (cursorPos > lineEnd) {
+            cursorPos = lineEnd;
+        }
+
+        if (firstCursor) {
+            ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, cursorPos, 0);
+            ::SendMessage(hwndEdit, SCI_SETANCHOR, cursorPos, 0);
+            firstCursor = false;
+        } else {
+            ::SendMessage(hwndEdit, SCI_ADDSELECTION, cursorPos, cursorPos);
+        }
+    }
+
+    state.isBlockVisual = false;
+    if (g_normalMode) {
+        g_normalMode->enterInsertMode();
+    }
+}
+
+void VisualMode::handleBlockAppend(HWND hwndEdit, int count) {
+    if (!state.isBlockVisual) {
+        return;
+    }
+
+    int anchor = (int)::SendMessage(hwndEdit, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
+    int caret = (int)::SendMessage(hwndEdit, SCI_GETRECTANGULARSELECTIONCARET, 0, 0);
+
+    int anchorLine = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, anchor, 0);
+    int caretLine = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, caret, 0);
+    int anchorColumn = anchor - (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, anchorLine, 0);
+    int caretColumn = caret - (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, caretLine, 0);
+
+    int startLine = (std::min)(anchorLine, caretLine);
+    int endLine = (std::max)(anchorLine, caretLine);
+    int startColumn = (std::min)(anchorColumn, caretColumn);
+    int endColumn = (std::max)(anchorColumn, caretColumn);
+
+    ::SendMessage(hwndEdit, SCI_SETSELECTIONMODE, SC_SEL_STREAM, 0);
+    ::SendMessage(hwndEdit, SCI_CLEARSELECTIONS, 0, 0);
+
+    bool firstCursor = true;
+    for (int line = startLine; line <= endLine; line++) {
+        int lineStart = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, line, 0);
+        int lineEnd = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, line, 0);
+
+        int cursorPos = lineStart + endColumn;
+
+        if (cursorPos > lineEnd) {
+            cursorPos = lineEnd;
+        }
+
+        if (firstCursor) {
+            ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, cursorPos, 0);
+            ::SendMessage(hwndEdit, SCI_SETANCHOR, cursorPos, 0);
+            firstCursor = false;
+        } else {
+            ::SendMessage(hwndEdit, SCI_ADDSELECTION, cursorPos, cursorPos);
+        }
+    }
+
+    state.isBlockVisual = false;
+    if (g_normalMode) {
+        g_normalMode->enterInsertMode();
+    }
 }

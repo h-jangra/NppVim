@@ -55,4 +55,6 @@ private:
     void handleSearchPrevious(HWND hwndEdit, int count);
 
     void handleToggleComment(HWND hwndEdit, int count);
+    void handleBlockInsert(HWND hwndEdit, int count);
+    void handleBlockAppend(HWND hwndEdit, int count);
 };
