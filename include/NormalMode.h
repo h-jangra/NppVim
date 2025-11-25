@@ -75,6 +75,10 @@ private:
     void deleteLineOnce(HWND hwndEdit);
     void yankLineOnce(HWND hwndEdit);
     void applyOperatorToMotion(HWND hwndEdit, char op, char motion, int count);
+
+    void handleIndent(HWND hwndEdit, int count);
+    void handleUnindent(HWND hwndEdit, int count);
+    void handleAutoIndent(HWND hwndEdit, int count);
 };
 
 #endif // NORMALMODE_H

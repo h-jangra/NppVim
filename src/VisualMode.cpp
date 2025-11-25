@@ -85,49 +85,9 @@ void VisualMode::setupKeyHandlers() {
         }
         };
 
-
-    keyHandlers['<'] = [this](HWND hwnd, int c) {
-        if (state.isBlockVisual) {
-            ::SendMessage(hwnd, SCI_BEGINUNDOACTION, 0, 0);
-            ::SendMessage(hwnd, SCI_TAB, 0, 0);
-            ::SendMessage(hwnd, SCI_ENDUNDOACTION, 0, 0);
-        }
-        else {
-            TextObject::apply(hwnd, state, 'v', 'a', '<');
-        }
-        };
-    keyHandlers['>'] = [this](HWND hwnd, int c) {
-        if (state.isBlockVisual) {
-            ::SendMessage(hwnd, SCI_BEGINUNDOACTION, 0, 0);
-            ::SendMessage(hwnd, SCI_BACKTAB, 0, 0);
-            ::SendMessage(hwnd, SCI_ENDUNDOACTION, 0, 0);
-        }
-        else {
-            TextObject::apply(hwnd, state, 'v', 'a', '>');
-        }
-        };
-    //keyHandlers['='] = [this](HWND hwnd, int c) {
-    //    if (state.isBlockVisual) {
-    //        // Handle block auto-indent
-    //        ::SendMessage(hwnd, SCI_BEGINUNDOACTION, 0, 0);
-    //        int startLine = (int)::SendMessage(hwnd, SCI_LINEFROMPOSITION,
-    //            (int)::SendMessage(hwnd, SCI_GETSELECTIONSTART, 0, 0), 0);
-    //        int endLine = (int)::SendMessage(hwnd, SCI_LINEFROMPOSITION,
-    //            (int)::SendMessage(hwnd, SCI_GETSELECTIONEND, 0, 0), 0);
-
-    //        for (int line = startLine; line <= endLine; line++) {
-    //            ::SendMessage(hwnd, SCI_SELECTIONSTART,
-    //                (int)::SendMessage(hwnd, SCI_POSITIONFROMLINE, line, 0), 0);
-    //            ::SendMessage(hwnd, SCI_SELECTIONEND,
-    //                (int)::SendMessage(hwnd, SCI_GETLINEENDPOSITION, line, 0), 0);
-    //            ::SendMessage(hwnd, SCI_TAB, 0, 0);
-    //        }
-    //        ::SendMessage(hwnd, SCI_ENDUNDOACTION, 0, 0);
-    //    }
-    //    else {
-    //        TextObject::apply(hwnd, state, 'v', 'a', '=');
-    //    }
-    //    };
+    keyHandlers['<'] = [this](HWND hwnd, int c) {handleIndent(hwnd, c);};
+    keyHandlers['>'] = [this](HWND hwnd, int c) {handleIndent(hwnd, c);};
+    keyHandlers['='] = [this](HWND hwnd, int c) {handleAutoIndent(hwnd, c);};
 
     // find / till motions
     keyHandlers['f'] = [this](HWND hwnd, int c) { handleFindChar(hwnd, c); };
@@ -1101,5 +1061,53 @@ void VisualMode::handleBlockAppend(HWND hwndEdit, int count) {
     state.isBlockVisual = false;
     if (g_normalMode) {
         g_normalMode->enterInsertMode();
+    }
+}
+void VisualMode::handleIndent(HWND hwndEdit, int count) {
+    ::SendMessage(hwndEdit, SCI_BEGINUNDOACTION, 0, 0);
+
+    ::SendMessage(hwndEdit, SCI_TAB, 0, 0);
+
+    ::SendMessage(hwndEdit, SCI_ENDUNDOACTION, 0, 0);
+
+}
+
+void VisualMode::handleUnindent(HWND hwndEdit, int count) {
+    ::SendMessage(hwndEdit, SCI_BEGINUNDOACTION, 0, 0);
+
+    ::SendMessage(hwndEdit, SCI_BACKTAB, 0, 0);
+
+    ::SendMessage(hwndEdit, SCI_ENDUNDOACTION, 0, 0);
+
+}
+
+void VisualMode::handleAutoIndent(HWND hwndEdit, int count) {
+    ::SendMessage(hwndEdit, SCI_BEGINUNDOACTION, 0, 0);
+
+    int lineStart = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION,
+                      (int)::SendMessage(hwndEdit, SCI_GETSELECTIONSTART, 0, 0), 0);
+    int lineEnd = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION,
+                    (int)::SendMessage(hwndEdit, SCI_GETSELECTIONEND, 0, 0), 0);
+
+    for (int line = lineStart; line <= lineEnd; line++) {
+        int lineStartPos = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, line, 0);
+        int lineEndPos = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, line, 0);
+
+        int firstNonSpace = lineStartPos;
+        while (firstNonSpace < lineEndPos) {
+            char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, firstNonSpace, 0);
+            if (ch != ' ' && ch != '\t') break;
+            firstNonSpace++;
+        }
+
+        if (firstNonSpace > lineStartPos) {
+            ::SendMessage(hwndEdit, SCI_DELETERANGE, lineStartPos, firstNonSpace - lineStartPos);
+        }
+    }
+
+    ::SendMessage(hwndEdit, SCI_ENDUNDOACTION, 0, 0);
+
+    if (state.mode == VISUAL && g_normalMode) {
+        g_normalMode->enter();
     }
 }

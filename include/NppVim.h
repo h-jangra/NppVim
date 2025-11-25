@@ -18,7 +18,8 @@ enum OperationType {
     OP_YANK_LINE,
     OP_PASTE_LINE,
     OP_MOTION,
-    OP_REPLACE
+    OP_REPLACE,
+    OP_PASTE
 };
 
 enum TextObjectType {

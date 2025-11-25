@@ -11,6 +11,7 @@
 #include "../plugin/PluginInterface.h"
 #include "../plugin/Scintilla.h"
 
+extern NormalMode* g_normalMode;
 extern VisualMode* g_visualMode;
 extern CommandMode* g_commandMode;
 extern NppData nppData;
@@ -109,6 +110,10 @@ void NormalMode::setupKeyHandlers() {
     keyHandlers[':'] = [this](HWND hwnd, int c) { handleCommandMode(hwnd, c); };
 
     keyHandlers['z'] = [this](HWND hwnd, int c) { handleZCommand(hwnd, c); };
+
+    keyHandlers['>'] = [this](HWND hwnd, int c) { handleIndent(hwnd, c); };
+    keyHandlers['<'] = [this](HWND hwnd, int c) { handleIndent(hwnd, c); };
+    keyHandlers['='] = [this](HWND hwnd, int c) { handleAutoIndent(hwnd, c); };
 
     keyHandlers['m'] = [this](HWND hwnd, int count) {
         state.awaitingMarkSet = true;
@@ -526,45 +531,58 @@ void NormalMode::handleReplaceMode(HWND hwndEdit, int count) {
 
 void NormalMode::handlePaste(HWND hwndEdit, int count) {
     ::SendMessage(hwndEdit, SCI_BEGINUNDOACTION, 0, 0);
-
-    int currentPos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
-    int currentLine = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, currentPos, 0);
-
-    int lineEnd = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, currentLine, 0);
-    ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, lineEnd, 0);
-
-    ::SendMessage(hwndEdit, SCI_NEWLINE, 0, 0);
-
-    for (int i = 0; i < count; ++i) {
-        ::SendMessage(hwndEdit, SCI_PASTE, 0, 0);
+    if (!::SendMessage(hwndEdit, SCI_CANPASTE, 0, 0)) {
+        ::SendMessage(hwndEdit, SCI_ENDUNDOACTION, 0, 0);
+        return;
     }
 
-    int newLineStart = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, currentLine + 1, 0);
-    ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, newLineStart, 0);
+    int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+    int line = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, pos, 0);
+    bool isLine = (state.lastOp.type == OP_YANK_LINE || state.lastOp.type == OP_DELETE_LINE);
+
+    if (isLine) {
+        int total = (int)::SendMessage(hwndEdit, SCI_GETLINECOUNT, 0, 0);
+        if (line == total - 1) {
+            int end = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, line, 0);
+            ::SendMessage(hwndEdit, SCI_GOTOPOS, end, 0);
+            ::SendMessage(hwndEdit, SCI_NEWLINE, 0, 0);
+        }
+        int nextStart = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, line + 1, 0);
+        ::SendMessage(hwndEdit, SCI_GOTOPOS, nextStart, 0);
+        for (int i = 0; i < count; i++)
+            ::SendMessage(hwndEdit, SCI_PASTE, 0, 0);
+    } else {
+        for (int i = 0; i < count; i++)
+            ::SendMessage(hwndEdit, SCI_PASTE, 0, 0);
+    }
 
     ::SendMessage(hwndEdit, SCI_ENDUNDOACTION, 0, 0);
-    state.recordLastOp(OP_PASTE_LINE, count);
+    state.recordLastOp(OP_PASTE, count);
 }
 
 void NormalMode::handlePasteBefore(HWND hwndEdit, int count) {
     ::SendMessage(hwndEdit, SCI_BEGINUNDOACTION, 0, 0);
-
-    int currentLine = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION,
-        ::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0), 0);
-
-    int lineStart = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, currentLine, 0);
-    ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, lineStart, 0);
-    ::SendMessage(hwndEdit, SCI_NEWLINE, 0, 0);
-
-    for (int i = 0; i < count; ++i) {
-        ::SendMessage(hwndEdit, SCI_PASTE, 0, 0);
+    if (!::SendMessage(hwndEdit, SCI_CANPASTE, 0, 0)) {
+        ::SendMessage(hwndEdit, SCI_ENDUNDOACTION, 0, 0);
+        return;
     }
 
-    int newLineStart = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, currentLine, 0);
-    ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, newLineStart, 0);
+    int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+    int line = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, pos, 0);
+    bool isLine = (state.lastOp.type == OP_YANK_LINE || state.lastOp.type == OP_DELETE_LINE);
+
+    if (isLine) {
+        int start = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, line, 0);
+        ::SendMessage(hwndEdit, SCI_GOTOPOS, start, 0);
+        for (int i = 0; i < count; i++)
+            ::SendMessage(hwndEdit, SCI_PASTE, 0, 0);
+    } else {
+        for (int i = 0; i < count; i++)
+            ::SendMessage(hwndEdit, SCI_PASTE, 0, 0);
+    }
 
     ::SendMessage(hwndEdit, SCI_ENDUNDOACTION, 0, 0);
-    state.recordLastOp(OP_PASTE_LINE, count);
+    state.recordLastOp(OP_PASTE, count);
 }
 
 void NormalMode::handleMotion(HWND hwndEdit, char motionChar, int count) {
@@ -854,6 +872,7 @@ void NormalMode::yankLineOnce(HWND hwndEdit) {
     ::SendMessage(hwndEdit, SCI_SETSEL, start, end);
     ::SendMessage(hwndEdit, SCI_COPY, 0, 0);
     ::SendMessage(hwndEdit, SCI_SETSEL, pos, pos);
+    state.recordLastOp(OP_YANK_LINE, 1);
 }
 
 void NormalMode::applyOperatorToMotion(HWND hwndEdit, char op, char motion, int count) {
@@ -992,4 +1011,51 @@ void NormalMode::handleZCommand(HWND hwndEdit, int count) {
 void NormalMode::handleToggleComment(HWND hwndEdit, int count) {
     ::SendMessage(nppData._nppHandle, WM_COMMAND, IDM_EDIT_BLOCK_COMMENT, 0);
     state.recordLastOp(OP_MOTION, count, 'c');
+}
+
+void NormalMode::handleIndent(HWND hwndEdit, int count) {
+    ::SendMessage(hwndEdit, SCI_BEGINUNDOACTION, 0, 0);
+
+    ::SendMessage(hwndEdit, SCI_TAB, 0, 0);
+
+    ::SendMessage(hwndEdit, SCI_ENDUNDOACTION, 0, 0);
+}
+
+void NormalMode::handleUnindent(HWND hwndEdit, int count) {
+    ::SendMessage(hwndEdit, SCI_BEGINUNDOACTION, 0, 0);
+
+    ::SendMessage(hwndEdit, SCI_BACKTAB, 0, 0);
+
+    ::SendMessage(hwndEdit, SCI_ENDUNDOACTION, 0, 0);
+}
+
+void NormalMode::handleAutoIndent(HWND hwndEdit, int count) {
+    ::SendMessage(hwndEdit, SCI_BEGINUNDOACTION, 0, 0);
+
+    int lineStart = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION,
+                      (int)::SendMessage(hwndEdit, SCI_GETSELECTIONSTART, 0, 0), 0);
+    int lineEnd = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION,
+                    (int)::SendMessage(hwndEdit, SCI_GETSELECTIONEND, 0, 0), 0);
+
+    for (int line = lineStart; line <= lineEnd; line++) {
+        int lineStartPos = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, line, 0);
+        int lineEndPos = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, line, 0);
+
+        int firstNonSpace = lineStartPos;
+        while (firstNonSpace < lineEndPos) {
+            char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, firstNonSpace, 0);
+            if (ch != ' ' && ch != '\t') break;
+            firstNonSpace++;
+        }
+
+        if (firstNonSpace > lineStartPos) {
+            ::SendMessage(hwndEdit, SCI_DELETERANGE, lineStartPos, firstNonSpace - lineStartPos);
+        }
+    }
+
+    ::SendMessage(hwndEdit, SCI_ENDUNDOACTION, 0, 0);
+
+    if (state.mode == VISUAL && g_normalMode) {
+        g_normalMode->enter();
+    }
 }

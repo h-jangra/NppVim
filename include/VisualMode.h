@@ -57,4 +57,7 @@ private:
     void handleToggleComment(HWND hwndEdit, int count);
     void handleBlockInsert(HWND hwndEdit, int count);
     void handleBlockAppend(HWND hwndEdit, int count);
+    void handleIndent(HWND hwndEdit, int count);
+    void handleUnindent(HWND hwndEdit, int count);
+    void handleAutoIndent(HWND hwndEdit, int count);
 };
