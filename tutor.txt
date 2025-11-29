@@ -40,6 +40,7 @@ d - Delete (dw, d$, d%)
 c - Change (cw, c$, c%)
 y - Yank (yw, y$, y%)
 > < - Indent/Unindent
+= - Autoindent
 
 ## Text Objects
 iw aw - Inner/A word

@@ -1,0 +1,13 @@
+[package]
+name = "NppVim"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+winapi = { version = "0.3", features = ["winuser"] }
+
+[build-dependencies]
+embed-resource = "2.5"

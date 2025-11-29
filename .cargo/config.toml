@@ -1,0 +1,14 @@
+[build]
+target = "x86_64-pc-windows-msvc"
+
+# [target.x86_64-pc-windows-msvc]
+# linker = "C:\\dev\\msvc\\VC\\Tools\\MSVC\\14.50.35717\\bin\\Hostx64\\x64\\link.exe"
+# ar     = "C:\\dev\\msvc\\VC\\Tools\\MSVC\\14.50.35717\\bin\\Hostx64\\x64\\lib.exe"
+
+# [target.i686-pc-windows-msvc]
+# linker = "C:\\dev\\msvc\\VC\\Tools\\MSVC\\14.50.35717\\bin\\Hostx64\\x86\\link.exe"
+# ar     = "C:\\dev\\msvc\\VC\\Tools\\MSVC\\14.50.35717\\bin\\Hostx64\\x86\\lib.exe"
+
+[target.aarch64-pc-windows-msvc]
+linker = "C:\\dev\\msvc\\VC\\Tools\\MSVC\\14.50.35717\\bin\\Hostx64\\x64\\link.exe"
+ar     = "C:\\dev\\msvc\\VC\\Tools\\MSVC\\14.50.35717\\bin\\Hostx64\\x64\\lib.exe"
