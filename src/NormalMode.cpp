@@ -111,9 +111,9 @@ void NormalMode::setupKeyHandlers() {
 
     keyHandlers['z'] = [this](HWND hwnd, int c) { handleZCommand(hwnd, c); };
 
-    keyHandlers['>'] = [this](HWND hwnd, int c) { handleIndent(hwnd, c); };
-    keyHandlers['<'] = [this](HWND hwnd, int c) { handleIndent(hwnd, c); };
-    keyHandlers['='] = [this](HWND hwnd, int c) { handleAutoIndent(hwnd, c); };
+    keyHandlers['>'] = [this](HWND hwnd, int c) { Utils::handleIndent(hwnd, c); };
+    keyHandlers['<'] = [this](HWND hwnd, int c) { Utils::handleIndent(hwnd, c); };
+    keyHandlers['='] = [this](HWND hwnd, int c) { Utils::handleAutoIndent(hwnd, c); };
 
     keyHandlers['m'] = [this](HWND hwnd, int count) {
         state.awaitingMarkSet = true;
@@ -1011,51 +1011,4 @@ void NormalMode::handleZCommand(HWND hwndEdit, int count) {
 void NormalMode::handleToggleComment(HWND hwndEdit, int count) {
     ::SendMessage(nppData._nppHandle, WM_COMMAND, IDM_EDIT_BLOCK_COMMENT, 0);
     state.recordLastOp(OP_MOTION, count, 'c');
-}
-
-void NormalMode::handleIndent(HWND hwndEdit, int count) {
-    ::SendMessage(hwndEdit, SCI_BEGINUNDOACTION, 0, 0);
-
-    ::SendMessage(hwndEdit, SCI_TAB, 0, 0);
-
-    ::SendMessage(hwndEdit, SCI_ENDUNDOACTION, 0, 0);
-}
-
-void NormalMode::handleUnindent(HWND hwndEdit, int count) {
-    ::SendMessage(hwndEdit, SCI_BEGINUNDOACTION, 0, 0);
-
-    ::SendMessage(hwndEdit, SCI_BACKTAB, 0, 0);
-
-    ::SendMessage(hwndEdit, SCI_ENDUNDOACTION, 0, 0);
-}
-
-void NormalMode::handleAutoIndent(HWND hwndEdit, int count) {
-    ::SendMessage(hwndEdit, SCI_BEGINUNDOACTION, 0, 0);
-
-    int lineStart = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION,
-                      (int)::SendMessage(hwndEdit, SCI_GETSELECTIONSTART, 0, 0), 0);
-    int lineEnd = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION,
-                    (int)::SendMessage(hwndEdit, SCI_GETSELECTIONEND, 0, 0), 0);
-
-    for (int line = lineStart; line <= lineEnd; line++) {
-        int lineStartPos = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, line, 0);
-        int lineEndPos = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, line, 0);
-
-        int firstNonSpace = lineStartPos;
-        while (firstNonSpace < lineEndPos) {
-            char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, firstNonSpace, 0);
-            if (ch != ' ' && ch != '\t') break;
-            firstNonSpace++;
-        }
-
-        if (firstNonSpace > lineStartPos) {
-            ::SendMessage(hwndEdit, SCI_DELETERANGE, lineStartPos, firstNonSpace - lineStartPos);
-        }
-    }
-
-    ::SendMessage(hwndEdit, SCI_ENDUNDOACTION, 0, 0);
-
-    if (state.mode == VISUAL && g_normalMode) {
-        g_normalMode->enter();
-    }
 }

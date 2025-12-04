@@ -20,6 +20,10 @@ public:
 
     static int countSearchMatches(HWND hwndEdit, const std::string& searchTerm, bool useRegex);
 
+    static void handleIndent(HWND hwndEdit, int count);
+    static void handleUnindent(HWND hwndEdit, int count);
+    static void handleAutoIndent(HWND hwndEdit, int count);
+
 private:
     static NppData nppData;
     friend void setNppData(NppData data);

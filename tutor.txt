@@ -1,4 +1,5 @@
 # NppVim Quick Reference
+# Donate : https://paypal.me/h8imansh8u
 
 ## Mode Switching
 Esc - Normal mode

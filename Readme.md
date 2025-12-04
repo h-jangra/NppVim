@@ -1,5 +1,7 @@
 # NppVim – Vim Mode for Notepad++
 
+> Donate : (paypal)[https://paypal.me/h8imansh8u]
+
 NppVim brings **Vim-like modal editing** to Notepad++.
 
 ## Features
@@ -12,11 +14,11 @@ NppVim brings **Vim-like modal editing** to Notepad++.
  - Replace & overwrite mode ```r, R```
  - Operations like join, undo, repeat ```J ,u , .```
  - Repeat counts ```3w, d2d, 5p```
- - Text objects editing ```iw, aw, iW, aW, i", a", i', a', i`, a`, i(, a(, i[, a[, i{, a{, i<, a<, is, as, ip, ap, it, at``` (works in both Normal and Visual mode)
- - Character search ```f F ; ,```
+ - Text objects editing ```iw, aw, iW, aW, i", a", i', a', i`, a`, i(, a(, i[, a[, i{, a{, i<, a<, is, as, ip, ap, it, at```
+ - Character search ```f F ; , t T```
  - Command mode for file operations ```:w,:q,:wq,:number```
  - Real-time search match counting
- - Regex search capabilities ```:s```
+ - Regex search capabilities `:s` or `?`
  - Marks (local and global) ```:marks,:delm!'```
 
 ## Text Objects
@@ -44,10 +46,3 @@ Text objects allow you to operate on structured text. All text objects work in b
 
 ### Tags
 - `it` / `at` - inside/around HTML/XML tags
-
-### Examples
-- `diw` - delete inner word
-- `ci"` - change inside double quotes
-- `viw` - select inner word in visual mode
-- `vaw` - select a word (with space) in visual mode
-- `da(` - delete around parentheses (including the brackets)

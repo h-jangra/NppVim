@@ -3,6 +3,8 @@
 #include <map>
 #include <string>
 #include <fstream>
+#include <shellapi.h>
+#include <commctrl.h>
 
 #include "../plugin/PluginInterface.h"
 #include "../plugin/Scintilla.h"
@@ -29,6 +31,18 @@ const TCHAR PLUGIN_NAME[] = TEXT("NppVim");
 const int nbFunc = 4;
 FuncItem funcItem[nbFunc];
 
+#define COLOR_BG RGB(250, 250, 250)
+#define COLOR_ACCENT RGB(0, 120, 212)
+#define COLOR_DONATE RGB(0, 103, 184)
+#define COLOR_TEXT RGB(32, 32, 32)
+#define COLOR_TEXT_LIGHT RGB(96, 96, 96)
+
+static HBRUSH g_hBrushBg = NULL;
+static HBRUSH g_hBrushAccent = NULL;
+static HBRUSH g_hBrushDonate = NULL;
+static HFONT g_hFontTitle = NULL;
+static HFONT g_hFontNormal = NULL;
+static HFONT g_hFontButton = NULL;
 static std::map<HWND, WNDPROC> origProcMap;
 
 // Configuration
@@ -172,58 +186,226 @@ void saveConfig() {
     }
 }
 
-// Configuration dialog procedure
+void InitDialogResources() {
+    if (!g_hBrushBg) {
+        g_hBrushBg = CreateSolidBrush(COLOR_BG);
+        g_hBrushAccent = CreateSolidBrush(COLOR_ACCENT);
+        g_hBrushDonate = CreateSolidBrush(COLOR_DONATE);
+
+        LOGFONT lf = {};
+        lf.lfHeight = -22;
+        lf.lfWeight = FW_SEMIBOLD;
+        wcscpy_s(lf.lfFaceName, L"Segoe UI");
+        g_hFontTitle = CreateFontIndirect(&lf);
+
+        lf.lfHeight = -16;
+        lf.lfWeight = FW_NORMAL;
+        g_hFontNormal = CreateFontIndirect(&lf);
+
+        lf.lfHeight = -16;
+        lf.lfWeight = FW_SEMIBOLD;
+        g_hFontButton = CreateFontIndirect(&lf);
+    }
+}
+
+void CleanupDialogResources() {
+    if (g_hBrushBg) DeleteObject(g_hBrushBg);
+    if (g_hBrushAccent) DeleteObject(g_hBrushAccent);
+    if (g_hBrushDonate) DeleteObject(g_hBrushDonate);
+    if (g_hFontTitle) DeleteObject(g_hFontTitle);
+    if (g_hFontNormal) DeleteObject(g_hFontNormal);
+    if (g_hFontButton) DeleteObject(g_hFontButton);
+}
+
+void DrawModernButton(LPDRAWITEMSTRUCT pDIS, COLORREF bgColor, COLORREF textColor) {
+    HDC hdc = pDIS->hDC;
+    RECT rc = pDIS->rcItem;
+
+    // Fill background with rounded effect
+    HBRUSH hBrush = CreateSolidBrush(bgColor);
+    FillRect(hdc, &rc, hBrush);
+    DeleteObject(hBrush);
+
+    // Draw subtle border
+    HPEN hPen = CreatePen(PS_SOLID, 1, RGB(220, 220, 220));
+    HPEN hOldPen = (HPEN)SelectObject(hdc, hPen);
+    MoveToEx(hdc, rc.left, rc.top, NULL);
+    LineTo(hdc, rc.right - 1, rc.top);
+    LineTo(hdc, rc.right - 1, rc.bottom - 1);
+    LineTo(hdc, rc.left, rc.bottom - 1);
+    LineTo(hdc, rc.left, rc.top);
+    SelectObject(hdc, hOldPen);
+    DeleteObject(hPen);
+
+    // Draw text
+    TCHAR text[128];
+    GetWindowText(pDIS->hwndItem, text, 128);
+    SetBkMode(hdc, TRANSPARENT);
+    SetTextColor(hdc, textColor);
+    SelectObject(hdc, g_hFontButton);
+    DrawText(hdc, text, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+}
+
+INT_PTR CALLBACK AboutDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    switch(msg) {
+    case WM_INITDIALOG: {
+        InitDialogResources();
+
+        // Set fonts for static text
+        SendDlgItemMessage(hwnd, IDC_TITLE, WM_SETFONT, (WPARAM)g_hFontTitle, TRUE);
+        SendDlgItemMessage(hwnd, IDC_DESC1, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
+        SendDlgItemMessage(hwnd, IDC_DESC2, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
+
+        // Center dialog
+        RECT rc, rcOwner;
+        GetWindowRect(GetParent(hwnd), &rcOwner);
+        GetWindowRect(hwnd, &rc);
+        SetWindowPos(hwnd, NULL,
+            rcOwner.left + (rcOwner.right - rcOwner.left - (rc.right - rc.left)) / 2,
+            rcOwner.top + (rcOwner.bottom - rcOwner.top - (rc.bottom - rc.top)) / 2,
+            0, 0, SWP_NOSIZE | SWP_NOZORDER);
+
+        return TRUE;
+    }
+
+    case WM_CTLCOLORDLG:
+        return (INT_PTR)g_hBrushBg;
+
+    case WM_CTLCOLORSTATIC: {
+        HDC hdc = (HDC)wParam;
+        HWND hCtrl = (HWND)lParam;
+
+        if (hCtrl == GetDlgItem(hwnd, IDC_TITLE)) {
+            SetTextColor(hdc, COLOR_ACCENT);
+        } else {
+            SetTextColor(hdc, COLOR_TEXT_LIGHT);
+        }
+        SetBkColor(hdc, COLOR_BG);
+        return (INT_PTR)g_hBrushBg;
+    }
+
+    case WM_DRAWITEM: {
+        LPDRAWITEMSTRUCT pDIS = (LPDRAWITEMSTRUCT)lParam;
+
+        if (pDIS->CtlID == IDC_BTN_GITHUB) {
+            DrawModernButton(pDIS, RGB(240, 240, 240), COLOR_TEXT);
+        }
+        else if (pDIS->CtlID == IDC_BTN_DONATE) {
+            DrawModernButton(pDIS, COLOR_DONATE, RGB(255, 255, 255));
+        }
+        else if (pDIS->CtlID == IDOK) {
+            DrawModernButton(pDIS, RGB(240, 240, 240), COLOR_TEXT);
+        }
+        return TRUE;
+    }
+
+    case WM_COMMAND:
+        switch(LOWORD(wParam)) {
+        case IDC_BTN_GITHUB:
+            ShellExecute(NULL, L"open", L"https://github.com/h-jangra/nppvim", NULL, NULL, SW_SHOWNORMAL);
+            return TRUE;
+        case IDC_BTN_DONATE:
+            ShellExecute(NULL, L"open", L"https://paypal.me/h8imansh8u", NULL, NULL, SW_SHOWNORMAL);
+            return TRUE;
+        case IDOK:
+            EndDialog(hwnd, IDOK);
+            return TRUE;
+        }
+        break;
+    }
+    return FALSE;
+}
+
 INT_PTR CALLBACK ConfigDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
     switch (message) {
     case WM_INITDIALOG: {
-        HWND hEscapeCombo = GetDlgItem(hwnd, IDC_ESCAPE_KEY);
-        SendMessage(hEscapeCombo, CB_ADDSTRING, 0, (LPARAM)TEXT("Escape key only"));
-        SendMessage(hEscapeCombo, CB_ADDSTRING, 0, (LPARAM)TEXT("jj (double tap j)"));
-        SendMessage(hEscapeCombo, CB_ADDSTRING, 0, (LPARAM)TEXT("jk"));
-        SendMessage(hEscapeCombo, CB_ADDSTRING, 0, (LPARAM)TEXT("kj"));
+        InitDialogResources();
+
+        // Set fonts
+        SendDlgItemMessage(hwnd, IDC_ESCAPE_KEY, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
+        SendDlgItemMessage(hwnd, IDC_TIMEOUT, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
+
+        // Populate escape key combo
+        HWND hCombo = GetDlgItem(hwnd, IDC_ESCAPE_KEY);
+        SendMessage(hCombo, CB_ADDSTRING, 0, (LPARAM)TEXT("Escape key only"));
+        SendMessage(hCombo, CB_ADDSTRING, 0, (LPARAM)TEXT("jj (double tap j)"));
+        SendMessage(hCombo, CB_ADDSTRING, 0, (LPARAM)TEXT("jk"));
+        SendMessage(hCombo, CB_ADDSTRING, 0, (LPARAM)TEXT("kj"));
 
         int selIndex = 0;
         if (g_config.escapeKey == "jj") selIndex = 1;
         else if (g_config.escapeKey == "jk") selIndex = 2;
         else if (g_config.escapeKey == "kj") selIndex = 3;
-
-        SendMessage(hEscapeCombo, CB_SETCURSEL, selIndex, 0);
+        SendMessage(hCombo, CB_SETCURSEL, selIndex, 0);
 
         SetDlgItemInt(hwnd, IDC_TIMEOUT, g_config.escapeTimeout, FALSE);
-
-        // Set checkboxes
         CheckDlgButton(hwnd, IDC_CHECK_CTRL_D, g_config.overrideCtrlD ? BST_CHECKED : BST_UNCHECKED);
         CheckDlgButton(hwnd, IDC_CHECK_CTRL_U, g_config.overrideCtrlU ? BST_CHECKED : BST_UNCHECKED);
         CheckDlgButton(hwnd, IDC_CHECK_CTRL_R, g_config.overrideCtrlR ? BST_CHECKED : BST_UNCHECKED);
 
+        // Center dialog
+        RECT rc, rcOwner;
+        GetWindowRect(GetParent(hwnd), &rcOwner);
+        GetWindowRect(hwnd, &rc);
+        SetWindowPos(hwnd, NULL,
+            rcOwner.left + (rcOwner.right - rcOwner.left - (rc.right - rc.left)) / 2,
+            rcOwner.top + (rcOwner.bottom - rcOwner.top - (rc.bottom - rc.top)) / 2,
+            0, 0, SWP_NOSIZE | SWP_NOZORDER);
+
+        return TRUE;
+    }
+
+    case WM_CTLCOLORDLG:
+        return (INT_PTR)g_hBrushBg;
+
+    case WM_CTLCOLORSTATIC: {
+        HDC hdc = (HDC)wParam;
+        SetTextColor(hdc, COLOR_TEXT);
+        SetBkColor(hdc, COLOR_BG);
+        return (INT_PTR)g_hBrushBg;
+    }
+
+    case WM_DRAWITEM: {
+        LPDRAWITEMSTRUCT pDIS = (LPDRAWITEMSTRUCT)lParam;
+
+        if (pDIS->CtlID == IDOK) {
+            DrawModernButton(pDIS, COLOR_ACCENT, RGB(255, 255, 255));
+        }
+        else if (pDIS->CtlID == IDCANCEL || pDIS->CtlID == IDC_RESET_BUTTON) {
+            DrawModernButton(pDIS, RGB(240, 240, 240), COLOR_TEXT);
+        }
         return TRUE;
     }
 
     case WM_COMMAND:
         switch (LOWORD(wParam)) {
-        case IDOK: {
-            HWND hEscapeCombo = GetDlgItem(hwnd, IDC_ESCAPE_KEY);
-            int sel = SendMessage(hEscapeCombo, CB_GETCURSEL, 0, 0);
+        case IDC_RESET_BUTTON:
+            SendMessage(GetDlgItem(hwnd, IDC_ESCAPE_KEY), CB_SETCURSEL, 0, 0);
+            SetDlgItemInt(hwnd, IDC_TIMEOUT, 300, FALSE);
+            CheckDlgButton(hwnd, IDC_CHECK_CTRL_D, BST_UNCHECKED);
+            CheckDlgButton(hwnd, IDC_CHECK_CTRL_U, BST_UNCHECKED);
+            CheckDlgButton(hwnd, IDC_CHECK_CTRL_R, BST_UNCHECKED);
+            MessageBox(hwnd, TEXT("Settings reset to defaults."), TEXT("Reset"), MB_OK | MB_ICONINFORMATION);
+            break;
 
+        case IDOK: {
+            int sel = SendMessage(GetDlgItem(hwnd, IDC_ESCAPE_KEY), CB_GETCURSEL, 0, 0);
             switch (sel) {
-            case 1: g_config.escapeKey = "jj"; break;
-            case 2: g_config.escapeKey = "jk"; break;
-            case 3: g_config.escapeKey = "kj"; break;
-            default: g_config.escapeKey = "esc"; break;
+                case 1: g_config.escapeKey = "jj"; break;
+                case 2: g_config.escapeKey = "jk"; break;
+                case 3: g_config.escapeKey = "kj"; break;
+                default: g_config.escapeKey = "esc"; break;
             }
 
             BOOL success;
             int timeout = GetDlgItemInt(hwnd, IDC_TIMEOUT, &success, FALSE);
-            if (success && timeout >= 100 && timeout <= 1000) {
-                g_config.escapeTimeout = timeout;
-            }
-            else {
-                MessageBox(hwnd, TEXT("Timeout must be between 100 and 1000 milliseconds."),
-                    TEXT("Invalid Input"), MB_OK | MB_ICONWARNING);
+            if (sel != 0 && (!success || timeout < 100 || timeout > 1000)) {
+                MessageBox(hwnd, TEXT("Timeout must be between 100-1000 ms."),
+                          TEXT("Invalid Input"), MB_OK | MB_ICONWARNING);
                 return TRUE;
             }
+            if (sel != 0) g_config.escapeTimeout = timeout;
 
-            // Get checkbox states
             g_config.overrideCtrlD = (IsDlgButtonChecked(hwnd, IDC_CHECK_CTRL_D) == BST_CHECKED);
             g_config.overrideCtrlU = (IsDlgButtonChecked(hwnd, IDC_CHECK_CTRL_U) == BST_CHECKED);
             g_config.overrideCtrlR = (IsDlgButtonChecked(hwnd, IDC_CHECK_CTRL_R) == BST_CHECKED);
@@ -241,7 +423,6 @@ INT_PTR CALLBACK ConfigDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM
     }
     return FALSE;
 }
-
 void showConfigDialog() {
     DialogBox(g_hInstance, MAKEINTRESOURCE(IDD_CONFIG), nppData._nppHandle, ConfigDialogProc);
 }
@@ -273,17 +454,6 @@ bool checkEscapeSequence(char c) {
 
     g_firstKey = 0;
     return false;
-}
-
-void clearCtrlQShortcut() {
-    HWND editors[] = { nppData._scintillaMainHandle, nppData._scintillaSecondHandle };
-
-    for (HWND hEdit : editors) {
-        if (hEdit && IsWindow(hEdit)) {
-            // Clear Ctrl+Q mapping (Q = 81, Ctrl = SCMOD_CTRL = 16 << 16)
-            ::SendMessage(hEdit, SCI_CLEARCMDKEY, MAKEWPARAM(81, SCMOD_CTRL), 0);
-        }
-    }
 }
 
 LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
@@ -567,10 +737,7 @@ void toggleVimMode() {
 }
 
 void about() {
-    ::MessageBox(nppData._nppHandle,
-        TEXT("NppVim - A Vim emulation plugin for Notepad++\n\n")
-        TEXT("Explore features with :tut or :tutor\n"),
-        TEXT("About NppVim"), MB_OK | MB_ICONINFORMATION);
+    DialogBox(g_hInstance, MAKEINTRESOURCE(IDD_ABOUT), nppData._nppHandle, AboutDlgProc);
 }
 
 BOOL APIENTRY DllMain(HANDLE hModule, DWORD reasonForCall, LPVOID /*lpReserved*/) {
@@ -579,6 +746,7 @@ BOOL APIENTRY DllMain(HANDLE hModule, DWORD reasonForCall, LPVOID /*lpReserved*/
     }
     else if (reasonForCall == DLL_PROCESS_DETACH) {
         removeAllScintillaHooks();
+        CleanupDialogResources();
 
         if (g_normalMode) delete g_normalMode;
         if (g_visualMode) delete g_visualMode;
@@ -596,8 +764,6 @@ extern "C" __declspec(dllexport) void setInfo(NppData notpadPlusData) {
     g_normalMode = new NormalMode(state);
     g_visualMode = new VisualMode(state);
     g_commandMode = new CommandMode(state);
-
-    clearCtrlQShortcut();
 
     state.vimEnabled = true;
     ensureScintillaHooks();

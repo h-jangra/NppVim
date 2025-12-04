@@ -1,8 +1,14 @@
 // Utils.cpp
 #include "../include/Utils.h"
+#include "../include/NppVim.h"
+#include "../include/NormalMode.h"
+#include "../include/VisualMode.h"
 #include "../plugin/Notepad_plus_msgs.h"
 
 NppData Utils::nppData;
+
+extern NormalMode* g_normalMode;
+extern VisualMode* g_visualMode;
 
 HWND Utils::getCurrentScintillaHandle()
 {
@@ -297,4 +303,53 @@ int Utils::countSearchMatches(HWND hwndEdit, const std::string &searchTerm, bool
   }
 
   return count;
+}
+
+void Utils::handleIndent(HWND hwndEdit, int count) {
+    ::SendMessage(hwndEdit, SCI_BEGINUNDOACTION, 0, 0);
+
+    ::SendMessage(hwndEdit, SCI_TAB, 0, 0);
+
+    ::SendMessage(hwndEdit, SCI_ENDUNDOACTION, 0, 0);
+
+}
+
+void Utils::handleUnindent(HWND hwndEdit, int count) {
+    ::SendMessage(hwndEdit, SCI_BEGINUNDOACTION, 0, 0);
+
+    ::SendMessage(hwndEdit, SCI_BACKTAB, 0, 0);
+
+    ::SendMessage(hwndEdit, SCI_ENDUNDOACTION, 0, 0);
+
+}
+
+void Utils::handleAutoIndent(HWND hwndEdit, int count) {
+    ::SendMessage(hwndEdit, SCI_BEGINUNDOACTION, 0, 0);
+
+    int lineStart = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION,
+                      (int)::SendMessage(hwndEdit, SCI_GETSELECTIONSTART, 0, 0), 0);
+    int lineEnd = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION,
+                    (int)::SendMessage(hwndEdit, SCI_GETSELECTIONEND, 0, 0), 0);
+
+    for (int line = lineStart; line <= lineEnd; line++) {
+        int lineStartPos = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, line, 0);
+        int lineEndPos = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, line, 0);
+
+        int firstNonSpace = lineStartPos;
+        while (firstNonSpace < lineEndPos) {
+            char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, firstNonSpace, 0);
+            if (ch != ' ' && ch != '\t') break;
+            firstNonSpace++;
+        }
+
+        if (firstNonSpace > lineStartPos) {
+            ::SendMessage(hwndEdit, SCI_DELETERANGE, lineStartPos, firstNonSpace - lineStartPos);
+        }
+    }
+
+    ::SendMessage(hwndEdit, SCI_ENDUNDOACTION, 0, 0);
+
+    if (state.mode == VISUAL && g_normalMode) {
+        g_normalMode->enter();
+    }
 }
