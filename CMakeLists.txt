@@ -6,6 +6,7 @@ set(SOURCES
     src/Marks.cpp
     src/Motion.cpp
     src/NormalMode.cpp
+    src/Keymap.cpp
     src/NppVim.cpp
     src/TextObject.cpp
     src/Utils.cpp

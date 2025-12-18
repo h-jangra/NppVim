@@ -26,4 +26,7 @@ private:
     void handleCommand(HWND hwndEdit);
     void handleColonCommand(HWND hwndEdit, const std::string& cmd);
     void handleSearchCommand(HWND hwndEdit, const std::string& searchTerm, bool useRegex = false);
+    void handleSubstitutionCommand(HWND hwndEdit, const std::string& cmd);
+    void performSubstitution(HWND hwndEdit, const std::string& pattern, const std::string& replacement,
+         bool useRegex, bool caseInsensitive, bool replaceAll, bool confirmEach, bool globalReplace, int startPos, int endPos);
 };
