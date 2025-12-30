@@ -65,7 +65,8 @@ bool Keymap::processKey(HWND hwnd, char key, int count) {
         pendingKeys += key;
     }
 
-    if (currentNode->isLeaf && currentNode->handler) {
+    if (currentNode->isLeaf && currentNode->handler &&
+    (currentNode->children.empty() || key == 'y' || key == 'd' || key == 'c')) {
         currentNode->handler(hwnd, count);
 
         if (currentNode->motionChar) {

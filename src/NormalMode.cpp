@@ -1,3 +1,8 @@
+#include <windows.h>
+#include <shellapi.h>
+#include <shlwapi.h>
+#pragma comment(lib, "shlwapi.lib")
+
 #include "../include/NormalMode.h"
 #include "../include/CommandMode.h"
 #include "../include/VisualMode.h"
@@ -35,16 +40,74 @@ void NormalMode::setupKeyMaps() {
      .motion("0", '0', [](HWND h, int c) { Motion::lineStart(h, 1); })
      .motion("$", '$', [](HWND h, int c) { Motion::lineEnd(h, c); })
      .motion("^", '^', [](HWND h, int c) { Motion::lineStart(h, c); })
-     .motion("{", '{', [](HWND h, int c) { Motion::paragraphUp(h, c); })
-     .motion("}", '}', [](HWND h, int c) { Motion::paragraphDown(h, c); })
-     .motion("%", '%', [](HWND h, int c) {
-         int pos = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
-         int match = ::SendMessage(h, SCI_BRACEMATCH, pos, 0);
-         if (match != -1) ::SendMessage(h, SCI_GOTOPOS, match, 0);
+     .motion("{", '{', [this](HWND h, int c) {
+        long pos = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+        int line = ::SendMessage(h, SCI_LINEFROMPOSITION, pos, 0);
+        state.recordJump(pos, line);
+        Motion::paragraphUp(h, c);
+    })
+     .motion("}", '}', [this](HWND h, int c) {
+        long pos = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+        int line = ::SendMessage(h, SCI_LINEFROMPOSITION, pos, 0);
+        state.recordJump(pos, line);
+        Motion::paragraphDown(h, c);
      })
-     .motion("H", 'H', [](HWND h, int c) { Motion::pageUp(h); })
-     .motion("L", 'L', [](HWND h, int c) { Motion::pageDown(h); })
-     .motion("G", 'G', [](HWND h, int c) {
+     .motion(")", ')', [](HWND h, int c) {
+        for (int i = 0; i < c; i++) {
+            int pos = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+            int lineEnd = ::SendMessage(h, SCI_GETLINEENDPOSITION, 
+                ::SendMessage(h, SCI_LINEFROMPOSITION, pos, 0), 0);
+            if (pos < lineEnd) {
+                ::SendMessage(h, SCI_GOTOPOS, lineEnd, 0);
+            } else {
+                ::SendMessage(h, SCI_LINEDOWN, 0, 0);
+                ::SendMessage(h, SCI_VCHOME, 0, 0);
+            }
+        }
+    })
+    .motion("(", '(', [](HWND h, int c) {
+        for (int i = 0; i < c; i++) {
+            int pos = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+            int lineStart = ::SendMessage(h, SCI_POSITIONFROMLINE, 
+                ::SendMessage(h, SCI_LINEFROMPOSITION, pos, 0), 0);
+            if (pos > lineStart) {
+                ::SendMessage(h, SCI_GOTOPOS, lineStart, 0);
+            } else {
+                ::SendMessage(h, SCI_LINEUP, 0, 0);
+                ::SendMessage(h, SCI_VCHOME, 0, 0);
+            }
+        }
+    })
+     .motion("%", '%', [this](HWND h, int c) {
+        long pos = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+        int line = ::SendMessage(h, SCI_LINEFROMPOSITION, pos, 0);
+        state.recordJump(pos, line);
+        int match = ::SendMessage(h, SCI_BRACEMATCH, pos, 0);
+        if (match != -1) ::SendMessage(h, SCI_GOTOPOS, match, 0);
+     })
+     .motion("H", 'H', [this](HWND h, int c) {
+        long pos = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+        int line = ::SendMessage(h, SCI_LINEFROMPOSITION, pos, 0);
+        state.recordJump(pos, line);
+        Motion::pageUp(h);
+    })
+     .motion("L", 'L', [this](HWND h, int c) {
+        long pos = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+        int line = ::SendMessage(h, SCI_LINEFROMPOSITION, pos, 0);
+        state.recordJump(pos, line);
+        Motion::pageDown(h);
+     })
+    .set("M", [](HWND h, int c) {
+        int firstVisible = ::SendMessage(h, SCI_GETFIRSTVISIBLELINE, 0, 0);
+        int linesOnScreen = ::SendMessage(h, SCI_LINESONSCREEN, 0, 0);
+        int middleLine = firstVisible + linesOnScreen / 2;
+        ::SendMessage(h, SCI_GOTOLINE, middleLine, 0);
+        ::SendMessage(h, SCI_VCHOME, 0, 0);
+    })
+     .motion("G", 'G', [this](HWND h, int c) {
+        long pos = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+        int line = ::SendMessage(h, SCI_LINEFROMPOSITION, pos, 0);
+        state.recordJump(pos, line);
          if (c == 1) Motion::documentEnd(h);
          else Motion::gotoLine(h, c);
      })
@@ -57,7 +120,134 @@ void NormalMode::setupKeyMaps() {
          int caret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
          ::SendMessage(h, SCI_SETSEL, caret, caret);
          state.recordLastOp(OP_MOTION, c, 'g');
-     });
+     })
+     .set("ge", [](HWND h, int c) {
+        for (int i = 0; i < c; i++) {
+            int pos = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+            int start = ::SendMessage(h, SCI_WORDSTARTPOSITION, pos, 1);
+            if (start > 0) {
+                int prev = ::SendMessage(h, SCI_POSITIONBEFORE, start, 0);
+                int prevWordStart = ::SendMessage(h, SCI_WORDSTARTPOSITION, prev, 1);
+                int prevWordEnd = ::SendMessage(h, SCI_WORDENDPOSITION, prev, 1);
+                if (prevWordStart < prevWordEnd) {
+                    ::SendMessage(h, SCI_GOTOPOS, prevWordEnd, 0);
+                }
+            }
+        }
+    })
+    .set("gE", [](HWND h, int c) {
+        for (int i = 0; i < c; i++) {
+            int pos = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+            if (pos > 0) {
+                int prev = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
+                while (prev > 0) {
+                    char ch = ::SendMessage(h, SCI_GETCHARAT, prev, 0);
+                    if (std::isalnum(ch) || ch == '_') break;
+                    prev = ::SendMessage(h, SCI_POSITIONBEFORE, prev, 0);
+                }
+                if (prev > 0) {
+                    int start = prev;
+                    while (start > 0) {
+                        char ch = ::SendMessage(h, SCI_GETCHARAT, start - 1, 0);
+                        if (!std::isalnum(ch) && ch != '_') break;
+                        start--;
+                    }
+                    ::SendMessage(h, SCI_GOTOPOS, prev, 0);
+                }
+            }
+        }
+    })
+    .set("gf", [this](HWND h, int c) {
+        int pos = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+        int line = ::SendMessage(h, SCI_LINEFROMPOSITION, pos, 0);
+        int lineStart = ::SendMessage(h, SCI_POSITIONFROMLINE, line, 0);
+        int lineEnd = ::SendMessage(h, SCI_GETLINEENDPOSITION, line, 0);
+        
+        int left = pos;
+        while (left > lineStart) {
+            char ch = ::SendMessage(h, SCI_GETCHARAT, left - 1, 0);
+            if (ch == ' ' || ch == '\t' || ch == '"' || ch == '\'' || ch == '<' || ch == '(' || ch == '[') break;
+            left--;
+        }
+        
+        int right = pos;
+        while (right < lineEnd) {
+            char ch = ::SendMessage(h, SCI_GETCHARAT, right, 0);
+            if (ch == ' ' || ch == '\t' || ch == '"' || ch == '\'' || ch == '>' || ch == ')' || ch == ']' || ch == ',' || ch == ';') break;
+            right++;
+        }
+        
+        if (right > left) {
+            std::vector<char> pathBytes(right - left + 1);
+            Sci_TextRangeFull tr;
+            tr.chrg.cpMin = left;
+            tr.chrg.cpMax = right;
+            tr.lpstrText = pathBytes.data();
+            ::SendMessage(h, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
+            
+            int wideLen = MultiByteToWideChar(CP_UTF8, 0, pathBytes.data(), -1, NULL, 0);
+            if (wideLen > 0) {
+                std::vector<wchar_t> pathWide(wideLen);
+                MultiByteToWideChar(CP_UTF8, 0, pathBytes.data(), -1, pathWide.data(), wideLen);
+                
+                wchar_t currentFile[MAX_PATH] = {0};
+                ::SendMessageW(nppData._nppHandle, NPPM_GETFULLCURRENTPATH, MAX_PATH, (LPARAM)currentFile);
+                
+                wchar_t currentDir[MAX_PATH] = {0};
+                wcscpy_s(currentDir, currentFile);
+                PathRemoveFileSpecW(currentDir);
+                
+                wchar_t fullPath[MAX_PATH] = {0};
+                if (PathIsRelativeW(pathWide.data())) {
+                    PathCombineW(fullPath, currentDir, pathWide.data());
+                } else {
+                    wcscpy_s(fullPath, pathWide.data());
+                }
+                
+                if (PathFileExistsW(fullPath)) {
+                    ::SendMessageW(nppData._nppHandle, NPPM_DOOPEN, 0, (LPARAM)fullPath);
+                } else {
+                    ::SendMessageW(nppData._nppHandle, NPPM_DOOPEN, 0, (LPARAM)pathWide.data());
+                }
+            }
+        }
+    })
+    .set("gx", [this](HWND h, int c) {
+        int pos = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+        int line = ::SendMessage(h, SCI_LINEFROMPOSITION, pos, 0);
+        int lineStart = ::SendMessage(h, SCI_POSITIONFROMLINE, line, 0);
+        int lineEnd = ::SendMessage(h, SCI_GETLINEENDPOSITION, line, 0);
+        
+        int left = pos;
+        while (left > lineStart) {
+            char ch = ::SendMessage(h, SCI_GETCHARAT, left - 1, 0);
+            if (std::isspace(ch) || ch == '"' || ch == '\'' || ch == '<' || ch == '(' || ch == '[') break;
+            left--;
+        }
+        
+        int right = pos;
+        while (right < lineEnd) {
+            char ch = ::SendMessage(h, SCI_GETCHARAT, right, 0);
+            if (std::isspace(ch) || ch == '"' || ch == '\'' || ch == '>' || ch == ')' || ch == ']') break;
+            right++;
+        }
+        
+        if (right > left) {
+            std::vector<char> urlBytes(right - left + 1);
+            Sci_TextRangeFull tr;
+            tr.chrg.cpMin = left;
+            tr.chrg.cpMax = right;
+            tr.lpstrText = urlBytes.data();
+            ::SendMessage(h, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
+            
+            int wideLen = MultiByteToWideChar(CP_UTF8, 0, urlBytes.data(), -1, NULL, 0);
+            if (wideLen > 0) {
+                std::vector<wchar_t> urlWide(wideLen);
+                MultiByteToWideChar(CP_UTF8, 0, urlBytes.data(), -1, urlWide.data(), wideLen);
+                ShellExecuteW(NULL, L"open", urlWide.data(), NULL, NULL, SW_SHOWNORMAL);
+            }
+        }
+    });
     
     k.set("i", [this](HWND h, int c) { enterInsertMode(); })
      .set("a", [this](HWND h, int c) { Motion::charRight(h, 1); enterInsertMode(); })
@@ -79,12 +269,14 @@ void NormalMode::setupKeyMaps() {
      .set("y", [this](HWND h, int c) { state.opPending = 'y'; })
      .set("c", [this](HWND h, int c) { state.opPending = 'c'; })
      .set("dd", [this](HWND h, int c) {
+         state.lastYankLinewise = true;
          ::SendMessage(h, SCI_BEGINUNDOACTION, 0, 0);
          for (int i = 0; i < c; ++i) deleteLineOnce(h);
          ::SendMessage(h, SCI_ENDUNDOACTION, 0, 0);
          state.recordLastOp(OP_DELETE_LINE, c);
      })
      .set("yy", [this](HWND h, int c) {
+         state.lastYankLinewise = true;
          ::SendMessage(h, SCI_BEGINUNDOACTION, 0, 0);
          for (int i = 0; i < c; ++i) yankLineOnce(h);
          ::SendMessage(h, SCI_ENDUNDOACTION, 0, 0);
@@ -185,17 +377,19 @@ void NormalMode::setupKeyMaps() {
          if (::SendMessage(h, SCI_CANPASTE, 0, 0)) {
              int pos = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
              int line = ::SendMessage(h, SCI_LINEFROMPOSITION, pos, 0);
-             bool isLine = (state.lastOp.type == OP_YANK_LINE || state.lastOp.type == OP_DELETE_LINE);
+             bool isLine = state.lastYankLinewise;
              if (isLine) {
                  int total = ::SendMessage(h, SCI_GETLINECOUNT, 0, 0);
                  if (line == total - 1) {
-                     int end = ::SendMessage(h, SCI_GETLINEENDPOSITION, line, 0);
-                     ::SendMessage(h, SCI_GOTOPOS, end, 0);
+                     ::SendMessage(h, SCI_LINEEND, 0, 0);
                      ::SendMessage(h, SCI_NEWLINE, 0, 0);
                  }
                  int next = ::SendMessage(h, SCI_POSITIONFROMLINE, line + 1, 0);
                  ::SendMessage(h, SCI_GOTOPOS, next, 0);
-             }
+             }  else {
+                int next = ::SendMessage(h, SCI_POSITIONAFTER, pos, 0);
+                ::SendMessage(h, SCI_GOTOPOS, next, 0);
+            }
              for (int i = 0; i < c; i++) ::SendMessage(h, SCI_PASTE, 0, 0);
          }
          ::SendMessage(h, SCI_ENDUNDOACTION, 0, 0);
@@ -206,11 +400,16 @@ void NormalMode::setupKeyMaps() {
          if (::SendMessage(h, SCI_CANPASTE, 0, 0)) {
              int pos = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
              int line = ::SendMessage(h, SCI_LINEFROMPOSITION, pos, 0);
-             bool isLine = (state.lastOp.type == OP_YANK_LINE || state.lastOp.type == OP_DELETE_LINE);
+             bool isLine = state.lastYankLinewise;
              if (isLine) {
-                 int start = ::SendMessage(h, SCI_POSITIONFROMLINE, line, 0);
-                 ::SendMessage(h, SCI_GOTOPOS, start, 0);
-             }
+                int start = ::SendMessage(h, SCI_POSITIONFROMLINE, line, 0);
+                ::SendMessage(h, SCI_GOTOPOS, start, 0);
+                if (line = 0 ) {
+                    ::SendMessage(h, SCI_HOME, 0, 0);
+                    ::SendMessage(h, SCI_NEWLINE, 0, 0);
+                    Motion::lineUp(h, 1);
+                    };
+                }
              for (int i = 0; i < c; i++) ::SendMessage(h, SCI_PASTE, 0, 0);
          }
          ::SendMessage(h, SCI_ENDUNDOACTION, 0, 0);
@@ -375,18 +574,51 @@ void NormalMode::setupKeyMaps() {
          ::SendMessage(h, SCI_SETFIRSTVISIBLELINE,
              line - (::SendMessage(h, SCI_LINESONSCREEN, 0, 0) / 2), 0);
          state.recordLastOp(OP_MOTION, c, 'z');
-     });
+     })
+    .set("zt", [this](HWND h, int c) {
+        int pos = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+        int line = ::SendMessage(h, SCI_LINEFROMPOSITION, pos, 0);
+        ::SendMessage(h, SCI_SETFIRSTVISIBLELINE, line, 0);
+    })
+    .set("zb", [this](HWND h, int c) {
+        int pos = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+        int line = ::SendMessage(h, SCI_LINEFROMPOSITION, pos, 0);
+        int linesOnScreen = ::SendMessage(h, SCI_LINESONSCREEN, 0, 0);
+        ::SendMessage(h, SCI_SETFIRSTVISIBLELINE, line - linesOnScreen + 1, 0);
+    })
+    .set("zo", [](HWND h, int c) {
+        int line = ::SendMessage(h, SCI_LINEFROMPOSITION, 
+            ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0), 0);
+        for (int i = 0; i < c; i++) {
+            ::SendMessage(h, SCI_FOLDLINE, line, SC_FOLDACTION_EXPAND);
+        }
+    })
+    .set("zc", [](HWND h, int c) {
+        int line = ::SendMessage(h, SCI_LINEFROMPOSITION, 
+            ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0), 0);
+        for (int i = 0; i < c; i++) {
+            ::SendMessage(h, SCI_FOLDLINE, line, SC_FOLDACTION_CONTRACT);
+        }
+    });
     
     k.set("m", [this](HWND h, int c) {
          state.awaitingMarkSet = true;
          Utils::setStatus(TEXT("-- Set mark --"));
      })
-     .set("`", [this](HWND h, int c) {
-         state.awaitingMarkJump = true;
-         state.isBacktickJump = true;
-         state.pendingJumpCount = c;
-         Utils::setStatus(TEXT("-- Jump to mark (exact) --"));
-     })
+    .set("``", [this](HWND h, int c) {
+        if (state.jumpList.size() < 2) return;
+        int last = state.jumpList.size() - 1;
+        std::swap(state.jumpList[last], state.jumpList[last - 1]);
+        auto jump = state.jumpList[last];
+        if (jump.position != -1) {
+            long pos = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+            int line = ::SendMessage(h, SCI_LINEFROMPOSITION, pos, 0);
+            state.recordJump(pos, line);
+            ::SendMessage(h, SCI_GOTOPOS, jump.position, 0);
+            ::SendMessage(h, SCI_SETSEL, jump.position, jump.position);
+            ::SendMessage(h, SCI_SCROLLCARET, 0, 0);
+        }
+    })
      .set("'", [this](HWND h, int c) {
          if (c > 1) {
              if (state.jumpList.size() >= 2) {
@@ -415,17 +647,19 @@ void NormalMode::setupKeyMaps() {
          state.pendingJumpCount = c;
          Utils::setStatus(TEXT("-- Jump to mark (line start) --"));
      })
-     .set("``", [this](HWND h, int c) {
-         if (state.jumpList.size() < 2) return;
-         int last = state.jumpList.size() - 1;
-         std::swap(state.jumpList[last], state.jumpList[last - 1]);
-         auto jump = state.jumpList[last];
-         if (jump.position != -1) {
-             ::SendMessage(h, SCI_GOTOPOS, jump.position, 0);
-             ::SendMessage(h, SCI_SETSEL, jump.position, jump.position);
-             ::SendMessage(h, SCI_SCROLLCARET, 0, 0);
-         }
-     })
+    .set("``", [this](HWND h, int c) {
+        if (state.jumpList.empty()) return;
+        int last = state.jumpList.size() - 1;
+        auto jump = state.jumpList[last];
+        if (jump.position != -1) {
+            long pos = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+            int line = ::SendMessage(h, SCI_LINEFROMPOSITION, pos, 0);
+            state.recordJump(pos, line);
+            ::SendMessage(h, SCI_GOTOPOS, jump.position, 0);
+            ::SendMessage(h, SCI_SETSEL, jump.position, jump.position);
+            ::SendMessage(h, SCI_SCROLLCARET, 0, 0);
+        }
+    })
      .set("''", [this](HWND h, int c) {
          if (state.jumpList.size() < 2) return;
          int last = state.jumpList.size() - 1;
@@ -447,7 +681,7 @@ void NormalMode::setupKeyMaps() {
      });
     
     k.set(">", [](HWND h, int c) { Utils::handleIndent(h, c); })
-     .set("<", [](HWND h, int c) { Utils::handleIndent(h, c); })
+     .set("<", [](HWND h, int c) { Utils::handleUnindent(h, c); })
      .set("=", [](HWND h, int c) { Utils::handleAutoIndent(h, c); });
     
     k.set("gcc", [this](HWND h, int c) {
@@ -463,7 +697,30 @@ void NormalMode::setupKeyMaps() {
          for (int i = 0; i < c; i++)
              ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_VIEW_TAB_PREV);
          state.recordLastOp(OP_MOTION, c, 'T');
-     });
+     })
+    .set("gv", [this](HWND h, int c) {
+        if (state.lastVisualAnchor == -1 || state.lastVisualCaret == -1) return;
+
+        if (state.lastVisualWasBlock) {
+            g_visualMode->enterBlock(h);
+            ::SendMessage(h, SCI_SETRECTANGULARSELECTIONANCHOR, state.lastVisualAnchor, 0);
+            ::SendMessage(h, SCI_SETRECTANGULARSELECTIONCARET, state.lastVisualCaret, 0);
+        }
+        else if (state.lastVisualWasLine) {
+            g_visualMode->enterLine(h);
+            ::SendMessage(h, SCI_GOTOPOS, state.lastVisualCaret, 0);
+        }
+        else {
+            g_visualMode->enterChar(h);
+            ::SendMessage(h, SCI_SETANCHOR, state.lastVisualAnchor, 0);
+            ::SendMessage(h, SCI_SETCURRENTPOS, state.lastVisualCaret, 0);
+        }
+    })
+     .set("gi", [this](HWND h, int c) {
+        if (state.lastInsertPos == -1) return;
+        ::SendMessage(h, SCI_GOTOPOS, state.lastInsertPos, 0);
+        enterInsertMode();
+    });
     
     k.set("[ ", [](HWND h, int c) {
          ::SendMessage(h, SCI_HOME, 0, 0);
@@ -496,6 +753,8 @@ void NormalMode::enter() {
 }
 
 void NormalMode::enterInsertMode() {
+    state.lastInsertPos = ::SendMessage(nppData._scintillaMainHandle, SCI_GETCURRENTPOS, 0, 0);
+
     HWND hwnd = Utils::getCurrentScintillaHandle();
     state.mode = INSERT;
     state.reset();
@@ -665,7 +924,7 @@ void NormalMode::yankLineOnce(HWND hwnd) {
     int total = ::SendMessage(hwnd, SCI_GETLINECOUNT, 0, 0);
     int end = (line < total - 1)
         ? ::SendMessage(hwnd, SCI_POSITIONFROMLINE, line + 1, 0)
-        : ::SendMessage(hwnd, SCI_GETLINEENDPOSITION, line, 0);
+        : ::SendMessage(hwnd, SCI_GETLINEENDPOSITION, line, 0) + 1;
     
     ::SendMessage(hwnd, SCI_SETSEL, start, end);
     ::SendMessage(hwnd, SCI_COPY, 0, 0);

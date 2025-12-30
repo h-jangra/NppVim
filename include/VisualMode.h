@@ -19,8 +19,6 @@ private:
     Motion motion;
     
     void setupKeyMaps();
-    void setSelection(HWND hwnd);
-    void updateSelection(HWND hwnd);
     void exitToNormal(HWND hwnd);
     
     void handleCharSearchInput(HWND hwnd, char searchChar, char searchType, int count);
@@ -29,6 +27,11 @@ private:
     void handleBlockWordRight(HWND hwnd, bool bigWord);
     void handleBlockWordLeft(HWND hwnd, bool bigWord);
     void handleBlockWordEnd(HWND hwnd, bool bigWord);
+
+    void extendSelection(HWND hwndEdit, int newPos);
+    void setSelection(HWND hwndEdit, int startPos, int endPos);
+    void moveCursor(HWND hwndEdit, int newPos, bool extend = false);
+    void visualMoveCursor(HWND hwndEdit, int newPos);
 };
 
 extern VisualMode* g_visualMode;

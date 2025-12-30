@@ -330,6 +330,28 @@ void CommandMode::handleColonCommand(HWND hwndEdit, const std::string &cmd)
       Utils::setStatus(TEXT("Cannot open clipboard"));
     }
   }
+  else if (cmd == "wrap" || cmd == "wrapmode" || cmd == "wrap on")
+  {
+    ::SendMessage(hwndEdit, SCI_SETWRAPMODE, SC_WRAP_WORD, 0);
+    ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_VIEW_WRAP);
+    Utils::setStatus(TEXT("Word wrap enabled"));
+  }
+  else if (cmd == "nowrap" || cmd == "wrap off")
+  {
+    ::SendMessage(hwndEdit, SCI_SETWRAPMODE, SC_WRAP_NONE, 0);
+    ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_VIEW_WRAP);
+    Utils::setStatus(TEXT("Word wrap disabled"));
+  }
+  else if (cmd == "wrap char")
+  {
+    ::SendMessage(hwndEdit, SCI_SETWRAPMODE, SC_WRAP_CHAR, 0);
+    Utils::setStatus(TEXT("Character wrap enabled"));
+  }
+  else if (cmd == "wrap whitespace")
+  {
+    ::SendMessage(hwndEdit, SCI_SETWRAPMODE, SC_WRAP_WHITESPACE, 0);
+    Utils::setStatus(TEXT("Whitespace wrap enabled"));
+  }
   else
   {
     std::wstring wcmd(cmd.begin(), cmd.end());

@@ -51,6 +51,16 @@ struct VimState {
     bool commandMode = false;
     bool isLineVisual = false;
     bool isBlockVisual = false;
+    bool lastYankLinewise = false;
+
+    int lastVisualStart = -1;
+    int lastVisualEnd = -1;
+    int lastVisualAnchor = -1;
+    int lastVisualCaret = -1;
+    int lastInsertPos = -1;
+
+    bool lastVisualWasLine = false;
+    bool lastVisualWasBlock = false;
 
     int repeatCount = 0;
     char opPending = 0;

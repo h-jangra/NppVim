@@ -42,64 +42,95 @@ void VisualMode::setupKeyMaps() {
          state.recordLastOp(OP_MOTION, c, 'd');
          exitToNormal(h);
      })
-     .set("x", [this](HWND h, int c) { g_visualKeymap->handleKey(h, 'd'); })
-     .set("y", [this](HWND h, int c) {
-         if (state.isBlockVisual) {
-             int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
-             int caret = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONCARET, 0, 0);
-             int anchorLine = ::SendMessage(h, SCI_LINEFROMPOSITION, anchor, 0);
-             int caretLine = ::SendMessage(h, SCI_LINEFROMPOSITION, caret, 0);
-             int anchorCol = anchor - ::SendMessage(h, SCI_POSITIONFROMLINE, anchorLine, 0);
-             int caretCol = caret - ::SendMessage(h, SCI_POSITIONFROMLINE, caretLine, 0);
-             
-             int startLine = (std::min)(anchorLine, caretLine);
-             int endLine = (std::max)(anchorLine, caretLine);
-             int startCol = (std::min)(anchorCol, caretCol);
-             int endCol = (std::max)(anchorCol, caretCol);
-             
-             std::string clipText;
-             for (int line = startLine; line <= endLine; line++) {
-                 int lineStart = ::SendMessage(h, SCI_POSITIONFROMLINE, line, 0);
-                 int lineEnd = ::SendMessage(h, SCI_GETLINEENDPOSITION, line, 0);
-                 int colStart = lineStart + startCol;
-                 int colEnd = lineStart + endCol;
-                 if (colStart > lineEnd) colStart = lineEnd;
-                 if (colEnd > lineEnd) colEnd = lineEnd;
-                 
-                 if (colStart < colEnd) {
-                     std::vector<char> buffer(colEnd - colStart + 1);
-                     Sci_TextRangeFull tr;
-                     tr.chrg.cpMin = colStart;
-                     tr.chrg.cpMax = colEnd;
-                     tr.lpstrText = buffer.data();
-                     ::SendMessage(h, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
-                     clipText += buffer.data();
-                 }
-                 if (line < endLine) clipText += "\r\n";
-             }
-             
-             if (!clipText.empty()) {
-                 if (OpenClipboard(h)) {
-                     EmptyClipboard();
-                     HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, clipText.size() + 1);
-                     if (hMem) {
-                         char* pMem = (char*)GlobalLock(hMem);
-                         memcpy(pMem, clipText.c_str(), clipText.size() + 1);
-                         GlobalUnlock(hMem);
-                         SetClipboardData(CF_TEXT, hMem);
-                     }
-                     CloseClipboard();
-                 }
-             }
-             ::SendMessage(h, SCI_SETSELECTIONMODE, SC_SEL_STREAM, 0);
-         } else {
-             int start = ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
-             int end = ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
-             ::SendMessage(h, SCI_COPYRANGE, start, end);
-         }
-         state.recordLastOp(OP_MOTION, c, 'y');
-         exitToNormal(h);
-     })
+    .set("x", [this](HWND h, int c) { g_visualKeymap->handleKey(h, 'd'); })
+    .set("y", [this](HWND h, int c) {
+        if (state.isBlockVisual) {
+            int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
+            int caret = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONCARET, 0, 0);
+            
+            if (anchor == caret) {
+                state.recordLastOp(OP_MOTION, c, 'y');
+                exitToNormal(h);
+                return;
+            }
+            
+            int anchorLine = ::SendMessage(h, SCI_LINEFROMPOSITION, anchor, 0);
+            int caretLine = ::SendMessage(h, SCI_LINEFROMPOSITION, caret, 0);
+            
+            int anchorVirtualCol = ::SendMessage(h, SCI_GETCOLUMN, anchor, 0);
+            int caretVirtualCol = ::SendMessage(h, SCI_GETCOLUMN, caret, 0);
+            
+            int startLine = (std::min)(anchorLine, caretLine);
+            int endLine = (std::max)(anchorLine, caretLine);
+            int startCol = (std::min)(anchorVirtualCol, caretVirtualCol);
+            int endCol = (std::max)(anchorVirtualCol, caretVirtualCol);
+            
+            if (startCol == endCol) {
+                endCol = startCol + 1;
+            }
+            
+            std::string clipText;
+            for (int line = startLine; line <= endLine; line++) {
+                int lineStart = ::SendMessage(h, SCI_POSITIONFROMLINE, line, 0);
+                int lineEnd = ::SendMessage(h, SCI_GETLINEENDPOSITION, line, 0);
+                
+                int colStart = ::SendMessage(h, SCI_FINDCOLUMN, line, startCol);
+                int colEnd = ::SendMessage(h, SCI_FINDCOLUMN, line, endCol);
+                
+                if (colStart > lineEnd) colStart = lineEnd;
+                if (colEnd > lineEnd) colEnd = lineEnd;
+                
+                if (colStart < colEnd) {
+                    std::vector<char> buffer(colEnd - colStart + 1);
+                    Sci_TextRangeFull tr;
+                    tr.chrg.cpMin = colStart;
+                    tr.chrg.cpMax = colEnd;
+                    tr.lpstrText = buffer.data();
+                    ::SendMessage(h, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
+                    clipText += buffer.data();
+                }
+                if (line < endLine) clipText += "\r\n";
+            }
+            
+            if (!clipText.empty()) {
+                if (OpenClipboard(h)) {
+                    EmptyClipboard();
+                    HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, clipText.size() + 1);
+                    if (hMem) {
+                        char* pMem = (char*)GlobalLock(hMem);
+                        memcpy(pMem, clipText.c_str(), clipText.size() + 1);
+                        GlobalUnlock(hMem);
+                        SetClipboardData(CF_TEXT, hMem);
+                    }
+                    CloseClipboard();
+                }
+            }
+            ::SendMessage(h, SCI_SETSELECTIONMODE, SC_SEL_STREAM, 0);
+        } else if (state.isLineVisual) {
+            int startLine = ::SendMessage(h, SCI_LINEFROMPOSITION,
+                ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0), 0);
+            int endLine = ::SendMessage(h, SCI_LINEFROMPOSITION,
+                ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0), 0);
+
+            int start = ::SendMessage(h, SCI_POSITIONFROMLINE, startLine, 0);
+            int total = ::SendMessage(h, SCI_GETLINECOUNT, 0, 0);
+            int end = (endLine < total - 1)
+                ? ::SendMessage(h, SCI_POSITIONFROMLINE, endLine + 1, 0)
+                : ::SendMessage(h, SCI_GETLINEENDPOSITION, endLine, 0) + 1;
+
+            ::SendMessage(h, SCI_SETSEL, start, end);
+            ::SendMessage(h, SCI_COPY, 0, 0);
+            state.lastYankLinewise = true;
+        }
+        else {
+            int start = ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
+            int end = ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
+            ::SendMessage(h, SCI_COPYRANGE, start, end);
+            state.lastYankLinewise = false;
+        }
+        state.recordLastOp(OP_MOTION, c, 'y');
+        exitToNormal(h);
+    })
      .set("c", [this](HWND h, int c) {
          ::SendMessage(h, SCI_BEGINUNDOACTION, 0, 0);
          if (state.isBlockVisual) {
@@ -140,20 +171,21 @@ void VisualMode::setupKeyMaps() {
          state.recordLastOp(OP_MOTION, c, 'c');
          if (g_normalMode) g_normalMode->enterInsertMode();
      })
-     .set("o", [this](HWND h, int c) {
-         int pos = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
-         int anchor = ::SendMessage(h, SCI_GETANCHOR, 0, 0);
-         ::SendMessage(h, SCI_SETCURRENTPOS, anchor, 0);
-         ::SendMessage(h, SCI_SETANCHOR, pos, 0);
-         if (state.isLineVisual) {
-             state.visualAnchorLine = ::SendMessage(h, SCI_LINEFROMPOSITION, anchor, 0);
-             state.visualAnchor = ::SendMessage(h, SCI_POSITIONFROMLINE, state.visualAnchorLine, 0);
-         } else {
-             state.visualAnchor = anchor;
-             state.visualAnchorLine = ::SendMessage(h, SCI_LINEFROMPOSITION, anchor, 0);
-         }
-         updateSelection(h);
-     });
+    .set("o", [this](HWND h, int c) {
+        int pos = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+        int anchor = ::SendMessage(h, SCI_GETANCHOR, 0, 0);
+        
+        ::SendMessage(h, SCI_SETCURRENTPOS, anchor, 0);
+        ::SendMessage(h, SCI_SETANCHOR, pos, 0);
+        
+        if (state.isLineVisual) {
+            state.visualAnchorLine = ::SendMessage(h, SCI_LINEFROMPOSITION, pos, 0);
+            state.visualAnchor = ::SendMessage(h, SCI_POSITIONFROMLINE, state.visualAnchorLine, 0);
+        } else {
+            state.visualAnchor = pos;
+            state.visualAnchorLine = ::SendMessage(h, SCI_LINEFROMPOSITION, pos, 0);
+        }
+    });
     
     k.set("v", [this](HWND h, int c) {
          if (!state.isLineVisual && !state.isBlockVisual) exitToNormal(h);
@@ -246,171 +278,388 @@ void VisualMode::setupKeyMaps() {
          if (state.isBlockVisual) return;
          state.textObjectPending = 'a';
          Utils::setStatus(TEXT("-- around text object --"));
-     });
-
+        });
+        
     k.motion("h", 'h', [this](HWND h, int c) {
-    Motion::charLeft(h, c);
-    updateSelection(h);
-    })
-    .motion("j", 'j', [this](HWND h, int c) {
         if (state.isBlockVisual) {
-            int caret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
-            int line = ::SendMessage(h, SCI_LINEFROMPOSITION, caret, 0);
-            int col = caret - ::SendMessage(h, SCI_POSITIONFROMLINE, line, 0);
             for (int i = 0; i < c; i++) {
-                line++;
-                int total = ::SendMessage(h, SCI_GETLINECOUNT, 0, 0);
-                if (line >= total) break;
+                int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
+                int caret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+                
+                ::SendMessage(h, SCI_SETCURRENTPOS, caret - 1, 0);
+                int newCaret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+                
+                ::SendMessage(h, SCI_SETRECTANGULARSELECTIONANCHOR, anchor, 0);
+                ::SendMessage(h, SCI_SETRECTANGULARSELECTIONCARET, newCaret, 0);
             }
-            int lineStart = ::SendMessage(h, SCI_POSITIONFROMLINE, line, 0);
-            int lineEnd = ::SendMessage(h, SCI_GETLINEENDPOSITION, line, 0);
-            int target = lineStart + col;
-            if (target > lineEnd) target = lineEnd;
-            ::SendMessage(h, SCI_SETCURRENTPOS, target, 0);
-            ::SendMessage(h, SCI_SETRECTANGULARSELECTIONCARET, target, 0);
         } else {
-            Motion::lineDown(h, c);
+            Motion::charLeft(h, c);  
         }
-        updateSelection(h);
-    })
-    .motion("k", 'k', [this](HWND h, int c) {
-        if (state.isBlockVisual) {
-            int caret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
-            int line = ::SendMessage(h, SCI_LINEFROMPOSITION, caret, 0);
-            int col = caret - ::SendMessage(h, SCI_POSITIONFROMLINE, line, 0);
-            for (int i = 0; i < c; i++) {
-                line--;
-                if (line < 0) break;
-            }
-            if (line < 0) line = 0;
-            int lineStart = ::SendMessage(h, SCI_POSITIONFROMLINE, line, 0);
-            int lineEnd = ::SendMessage(h, SCI_GETLINEENDPOSITION, line, 0);
-            int target = lineStart + col;
-            if (target > lineEnd) target = lineEnd;
-            ::SendMessage(h, SCI_SETCURRENTPOS, target, 0);
-            ::SendMessage(h, SCI_SETRECTANGULARSELECTIONCARET, target, 0);
-        } else {
-            Motion::lineUp(h, c);
-        }
-        updateSelection(h);
     })
     .motion("l", 'l', [this](HWND h, int c) {
         if (state.isBlockVisual) {
-            for (int i = 0; i < c; i++) ::SendMessage(h, SCI_CHARRIGHT, 0, 0);
-            int pos = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
-            ::SendMessage(h, SCI_SETRECTANGULARSELECTIONCARET, pos, 0);
+            for (int i = 0; i < c; i++) {
+                int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
+                int caret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+                
+                ::SendMessage(h, SCI_SETCURRENTPOS, caret + 1, 0);
+                int newCaret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+                
+                ::SendMessage(h, SCI_SETRECTANGULARSELECTIONANCHOR, anchor, 0);
+                ::SendMessage(h, SCI_SETRECTANGULARSELECTIONCARET, newCaret, 0);
+            }
         } else {
-            Motion::charRight(h, c);
+           
         }
-        updateSelection(h);
+    })
+    .motion("j", 'j', [this](HWND h, int c) {
+        if (state.isLineVisual || state.isBlockVisual) {
+            int currentPos = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+            int line = ::SendMessage(h, SCI_LINEFROMPOSITION, currentPos, 0);
+            int newLine = line + c;
+            if (newLine >= ::SendMessage(h, SCI_GETLINECOUNT, 0, 0)) {
+                newLine = ::SendMessage(h, SCI_GETLINECOUNT, 0, 0) - 1;
+            }
+            if (newLine < 0) newLine = 0;
+            
+            int newPos = ::SendMessage(h, SCI_POSITIONFROMLINE, newLine, 0);
+            visualMoveCursor(h, newPos);
+        } else {
+            Motion::lineDown(h, c);
+        }
+    })
+    .motion("k", 'k', [this](HWND h, int c) {
+        if (state.isLineVisual || state.isBlockVisual) {
+            int pos = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+            int line = ::SendMessage(h, SCI_LINEFROMPOSITION, pos, 0);
+            int newLine = line - c;
+            if (newLine < 0) newLine = 0;
+
+            int newPos = ::SendMessage(h, SCI_POSITIONFROMLINE, newLine, 0);
+            visualMoveCursor(h, newPos);
+        } else {
+            Motion::lineUp(h, c);
+        }
     })
     .motion("w", 'w', [this](HWND h, int c) {
         if (state.isBlockVisual) {
-            for (int i = 0; i < c; i++) handleBlockWordRight(h, false);
+            for (int i = 0; i < c; i++) {
+                int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
+                int caret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+                int line = ::SendMessage(h, SCI_LINEFROMPOSITION, caret, 0);
+                int lineEnd = ::SendMessage(h, SCI_GETLINEENDPOSITION, line, 0);
+                
+                while (caret < lineEnd) {
+                    char ch = (char)::SendMessage(h, SCI_GETCHARAT, caret, 0);
+                    if (!std::isalnum(static_cast<unsigned char>(ch))) break;
+                    caret++;
+                }
+                
+                while (caret < lineEnd) {
+                    char ch = (char)::SendMessage(h, SCI_GETCHARAT, caret, 0);
+                    if (ch == ' ' || ch == '\t') break;
+                    caret++;
+                }
+                
+                ::SendMessage(h, SCI_SETCURRENTPOS, caret, 0);
+                ::SendMessage(h, SCI_SETRECTANGULARSELECTIONANCHOR, anchor, 0);
+                ::SendMessage(h, SCI_SETRECTANGULARSELECTIONCARET, caret, 0);
+            }
         } else {
             Motion::wordRight(h, c);
         }
-        updateSelection(h);
     })
     .motion("W", 'W', [this](HWND h, int c) {
         if (state.isBlockVisual) {
-            for (int i = 0; i < c; i++) handleBlockWordRight(h, true);
+            for (int i = 0; i < c; i++) {
+                int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
+                int caret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+                int line = ::SendMessage(h, SCI_LINEFROMPOSITION, caret, 0);
+                int lineEnd = ::SendMessage(h, SCI_GETLINEENDPOSITION, line, 0);
+                
+                while (caret < lineEnd) {
+                    char ch = (char)::SendMessage(h, SCI_GETCHARAT, caret, 0);
+                    if (ch == ' ' || ch == '\t') break;
+                    caret++;
+                }
+                
+                while (caret < lineEnd) {
+                    char ch = (char)::SendMessage(h, SCI_GETCHARAT, caret, 0);
+                    if (ch != ' ' && ch != '\t') break;
+                    caret++;
+                }
+                
+                ::SendMessage(h, SCI_SETCURRENTPOS, caret, 0);
+                ::SendMessage(h, SCI_SETRECTANGULARSELECTIONANCHOR, anchor, 0);
+                ::SendMessage(h, SCI_SETRECTANGULARSELECTIONCARET, caret, 0);
+            }
         } else {
             Motion::wordRightBig(h, c);
         }
-        updateSelection(h);
     })
     .motion("b", 'b', [this](HWND h, int c) {
         if (state.isBlockVisual) {
-            for (int i = 0; i < c; i++) handleBlockWordLeft(h, false);
+            for (int i = 0; i < c; i++) {
+                int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
+                int caret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+                int line = ::SendMessage(h, SCI_LINEFROMPOSITION, caret, 0);
+                int lineStart = ::SendMessage(h, SCI_POSITIONFROMLINE, line, 0);
+                
+                if (caret > lineStart) caret--;
+                
+                while (caret > lineStart) {
+                    char ch = (char)::SendMessage(h, SCI_GETCHARAT, caret - 1, 0);
+                    if (!std::isalnum(static_cast<unsigned char>(ch))) break;
+                    caret--;
+                }
+                
+                while (caret > lineStart) {
+                    char ch = (char)::SendMessage(h, SCI_GETCHARAT, caret - 1, 0);
+                    if (ch != ' ' && ch != '\t') break;
+                    caret--;
+                }
+                
+                ::SendMessage(h, SCI_SETCURRENTPOS, caret, 0);
+                ::SendMessage(h, SCI_SETRECTANGULARSELECTIONANCHOR, anchor, 0);
+                ::SendMessage(h, SCI_SETRECTANGULARSELECTIONCARET, caret, 0);
+            }
         } else {
             Motion::wordLeft(h, c);
         }
-        updateSelection(h);
     })
     .motion("B", 'B', [this](HWND h, int c) {
         if (state.isBlockVisual) {
-            for (int i = 0; i < c; i++) handleBlockWordLeft(h, true);
+            for (int i = 0; i < c; i++) {
+                int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
+                int caret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+                int line = ::SendMessage(h, SCI_LINEFROMPOSITION, caret, 0);
+                int lineStart = ::SendMessage(h, SCI_POSITIONFROMLINE, line, 0);
+                
+                if (caret > lineStart) caret--;
+                
+                while (caret > lineStart) {
+                    char ch = (char)::SendMessage(h, SCI_GETCHARAT, caret - 1, 0);
+                    if (ch == ' ' || ch == '\t') break;
+                    caret--;
+                }
+                
+                ::SendMessage(h, SCI_SETCURRENTPOS, caret, 0);
+                ::SendMessage(h, SCI_SETRECTANGULARSELECTIONANCHOR, anchor, 0);
+                ::SendMessage(h, SCI_SETRECTANGULARSELECTIONCARET, caret, 0);
+            }
         } else {
             Motion::wordLeftBig(h, c);
         }
-        updateSelection(h);
     })
     .motion("e", 'e', [this](HWND h, int c) {
         if (state.isBlockVisual) {
-            for (int i = 0; i < c; i++) handleBlockWordEnd(h, false);
+            for (int i = 0; i < c; i++) {
+                int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
+                int caret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+                int line = ::SendMessage(h, SCI_LINEFROMPOSITION, caret, 0);
+                int lineEnd = ::SendMessage(h, SCI_GETLINEENDPOSITION, line, 0);
+                
+                if (caret < lineEnd) caret++;
+                
+                while (caret < lineEnd) {
+                    char ch = (char)::SendMessage(h, SCI_GETCHARAT, caret, 0);
+                    if (!std::isalnum(static_cast<unsigned char>(ch))) break;
+                    caret++;
+                }
+                
+                caret--;
+                
+                ::SendMessage(h, SCI_SETCURRENTPOS, caret, 0);
+                ::SendMessage(h, SCI_SETRECTANGULARSELECTIONANCHOR, anchor, 0);
+                ::SendMessage(h, SCI_SETRECTANGULARSELECTIONCARET, caret, 0);
+            }
         } else {
             Motion::wordEnd(h, c);
         }
-        updateSelection(h);
     })
     .motion("E", 'E', [this](HWND h, int c) {
         if (state.isBlockVisual) {
-            for (int i = 0; i < c; i++) handleBlockWordEnd(h, true);
+            for (int i = 0; i < c; i++) {
+                int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
+                int caret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+                int line = ::SendMessage(h, SCI_LINEFROMPOSITION, caret, 0);
+                int lineEnd = ::SendMessage(h, SCI_GETLINEENDPOSITION, line, 0);
+                
+                if (caret < lineEnd) caret++;
+                
+                while (caret < lineEnd) {
+                    char ch = (char)::SendMessage(h, SCI_GETCHARAT, caret, 0);
+                    if (ch == ' ' || ch == '\t') break;
+                    caret++;
+                }
+                
+                caret--;
+                
+                ::SendMessage(h, SCI_SETCURRENTPOS, caret, 0);
+                ::SendMessage(h, SCI_SETRECTANGULARSELECTIONANCHOR, anchor, 0);
+                ::SendMessage(h, SCI_SETRECTANGULARSELECTIONCARET, caret, 0);
+            }
         } else {
             Motion::wordEndBig(h, c);
         }
-        updateSelection(h);
     })
-     .motion("$", '$', [this](HWND h, int c) {
-         if (state.isBlockVisual) ::SendMessage(h, SCI_LINEEND, 0, 0);
-         else Motion::lineEnd(h, c);
-         updateSelection(h);
-     })
-     .motion("^", '^', [this](HWND h, int c) {
-         if (state.isBlockVisual) ::SendMessage(h, SCI_VCHOME, 0, 0);
-         else Motion::lineStart(h, c);
-         updateSelection(h);
-     })
-     .motion("0", '0', [this](HWND h, int c) {
-         if (state.isBlockVisual) ::SendMessage(h, SCI_VCHOME, 0, 0);
-         else Motion::lineStart(h, 1);
-         updateSelection(h);
-     })
-     .motion("{", '{', [this](HWND h, int c) {
-         if (state.isBlockVisual) {
-             for (int i = 0; i < c; i++) ::SendMessage(h, SCI_PARAUP, 0, 0);
-         } else {
-             Motion::paragraphUp(h, c);
-         }
-         updateSelection(h);
-     })
-     .motion("}", '}', [this](HWND h, int c) {
-         if (state.isBlockVisual) {
-             for (int i = 0; i < c; i++) ::SendMessage(h, SCI_PARADOWN, 0, 0);
-         } else {
-             Motion::paragraphDown(h, c);
-         }
-         updateSelection(h);
-     })
-     .motion("%", '%', [this](HWND h, int c) {
-         int pos = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
-         int match = ::SendMessage(h, SCI_BRACEMATCH, pos, 0);
-         if (match != -1) {
-             ::SendMessage(h, SCI_GOTOPOS, match, 0);
-             updateSelection(h);
-         }
-     })
-     .motion("G", 'G', [this](HWND h, int c) {
-         if (c == 1) Motion::documentEnd(h);
-         else Motion::gotoLine(h, c);
-         updateSelection(h);
-     })
-     .set("gg", [this](HWND h, int c) {
-         if (c > 1) Motion::gotoLine(h, c);
-         else Motion::documentStart(h);
-         updateSelection(h);
-     })
-     .motion("H", 'H', [this](HWND h, int c) {
-         if (state.isBlockVisual) ::SendMessage(h, SCI_PAGEUP, 0, 0);
-         else Motion::pageUp(h);
-         updateSelection(h);
-     })
-     .motion("L", 'L', [this](HWND h, int c) {
-         if (state.isBlockVisual) ::SendMessage(h, SCI_PAGEDOWN, 0, 0);
-         else Motion::pageDown(h);
-         updateSelection(h);
-     })
+    .motion("$", '$', [this](HWND h, int c) {
+        if (state.isBlockVisual) {
+            int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
+            int caret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+            int line = ::SendMessage(h, SCI_LINEFROMPOSITION, caret, 0);
+            int lineEnd = ::SendMessage(h, SCI_GETLINEENDPOSITION, line, 0);
+            
+            ::SendMessage(h, SCI_SETCURRENTPOS, lineEnd, 0);
+            ::SendMessage(h, SCI_SETRECTANGULARSELECTIONANCHOR, anchor, 0);
+            ::SendMessage(h, SCI_SETRECTANGULARSELECTIONCARET, lineEnd, 0);
+        } else {
+            Motion::lineEnd(h, c);
+        }
+    })
+    .motion("^", '^', [this](HWND h, int c) {
+        if (state.isBlockVisual) {
+            int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
+            int caret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+            int line = ::SendMessage(h, SCI_LINEFROMPOSITION, caret, 0);
+            int lineStart = ::SendMessage(h, SCI_POSITIONFROMLINE, line, 0);
+            
+            ::SendMessage(h, SCI_SETCURRENTPOS, lineStart, 0);
+            ::SendMessage(h, SCI_SETRECTANGULARSELECTIONANCHOR, anchor, 0);
+            ::SendMessage(h, SCI_SETRECTANGULARSELECTIONCARET, lineStart, 0);
+        } else {
+            Motion::lineStart(h, c);
+        }
+    })
+    .motion("0", '0', [this](HWND h, int c) {
+        if (state.isBlockVisual) {
+            int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
+            int caret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+            int line = ::SendMessage(h, SCI_LINEFROMPOSITION, caret, 0);
+            int lineStart = ::SendMessage(h, SCI_POSITIONFROMLINE, line, 0);
+            
+            ::SendMessage(h, SCI_SETCURRENTPOS, lineStart, 0);
+            ::SendMessage(h, SCI_SETRECTANGULARSELECTIONANCHOR, anchor, 0);
+            ::SendMessage(h, SCI_SETRECTANGULARSELECTIONCARET, lineStart, 0);
+        } else {
+            Motion::lineStart(h, 1);
+        }
+    })
+    .motion("{", '{', [this](HWND h, int c) {
+        if (state.isBlockVisual) {
+            for (int i = 0; i < c; i++) {
+                int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
+                int caret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+                
+                ::SendMessage(h, SCI_PARAUP, 0, 0);
+                int newCaret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+                
+                ::SendMessage(h, SCI_SETRECTANGULARSELECTIONANCHOR, anchor, 0);
+                ::SendMessage(h, SCI_SETRECTANGULARSELECTIONCARET, newCaret, 0);
+            }
+        } else {
+            Motion::paragraphUp(h, c);
+        }
+    })
+    .motion("}", '}', [this](HWND h, int c) {
+        if (state.isBlockVisual) {
+            for (int i = 0; i < c; i++) {
+                int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
+                int caret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+                
+                ::SendMessage(h, SCI_PARADOWN, 0, 0);
+                int newCaret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+                
+                ::SendMessage(h, SCI_SETRECTANGULARSELECTIONANCHOR, anchor, 0);
+                ::SendMessage(h, SCI_SETRECTANGULARSELECTIONCARET, newCaret, 0);
+            }
+        } else {
+            Motion::paragraphDown(h, c);
+        }
+    })
+    .motion("%", '%', [this](HWND h, int c) {
+        if (state.isBlockVisual) {
+            int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
+            int caret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+            
+            int match = ::SendMessage(h, SCI_BRACEMATCH, caret, 0);
+            if (match != -1) {
+                ::SendMessage(h, SCI_GOTOPOS, match, 0);
+                int newCaret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+                
+                ::SendMessage(h, SCI_SETRECTANGULARSELECTIONANCHOR, anchor, 0);
+                ::SendMessage(h, SCI_SETRECTANGULARSELECTIONCARET, newCaret, 0);
+            }
+        } else {
+            int pos = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+            int match = ::SendMessage(h, SCI_BRACEMATCH, pos, 0);
+            if (match != -1) {
+                ::SendMessage(h, SCI_GOTOPOS, match, 0);
+            }
+        }
+    })
+    .motion("G", 'G', [this](HWND h, int c) {
+        if (state.isBlockVisual) {
+            int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
+            
+            if (c == 1) {
+                ::SendMessage(h, SCI_DOCUMENTEND, 0, 0);
+            } else {
+                ::SendMessage(h, SCI_GOTOLINE, c - 1, 0);
+            }
+            
+            int newCaret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+            ::SendMessage(h, SCI_SETRECTANGULARSELECTIONANCHOR, anchor, 0);
+            ::SendMessage(h, SCI_SETRECTANGULARSELECTIONCARET, newCaret, 0);
+        } else {
+            if (c == 1) Motion::documentEnd(h);
+            else Motion::gotoLine(h, c);
+        }
+    })
+    .set("gg", [this](HWND h, int c) {
+        if (state.isBlockVisual) {
+            int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
+            
+            if (c > 1) {
+                ::SendMessage(h, SCI_GOTOLINE, c - 1, 0);
+            } else {
+                ::SendMessage(h, SCI_DOCUMENTSTART, 0, 0);
+            }
+            
+            int newCaret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+            ::SendMessage(h, SCI_SETRECTANGULARSELECTIONANCHOR, anchor, 0);
+            ::SendMessage(h, SCI_SETRECTANGULARSELECTIONCARET, newCaret, 0);
+        } else {
+            if (c > 1) Motion::gotoLine(h, c);
+            else Motion::documentStart(h);
+        }
+    })
+    .motion("H", 'H', [this](HWND h, int c) {
+        if (state.isBlockVisual) {
+            int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
+            
+            ::SendMessage(h, SCI_PAGEUP, 0, 0);
+            int newCaret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+            
+            ::SendMessage(h, SCI_SETRECTANGULARSELECTIONANCHOR, anchor, 0);
+            ::SendMessage(h, SCI_SETRECTANGULARSELECTIONCARET, newCaret, 0);
+        } else {
+            ::SendMessage(h, SCI_PAGEUP, 0, 0);
+        }
+    })
+    .motion("L", 'L', [this](HWND h, int c) {
+        if (state.isBlockVisual) {
+            int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
+            
+            ::SendMessage(h, SCI_PAGEDOWN, 0, 0);
+            int newCaret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+            
+            ::SendMessage(h, SCI_SETRECTANGULARSELECTIONANCHOR, anchor, 0);
+            ::SendMessage(h, SCI_SETRECTANGULARSELECTIONCARET, newCaret, 0);
+        } else {
+            ::SendMessage(h, SCI_PAGEDOWN, 0, 0);
+        }
+    })
      .set("~", [this](HWND h, int c) {
          motion.toggleCase(h, 1);
          exitToNormal(h);
@@ -448,7 +697,7 @@ void VisualMode::setupKeyMaps() {
              if (fwd) Motion::nextChar(h, c, ch);
              else Motion::prevChar(h, c, ch);
          }
-         updateSelection(h);
+         
      })
      .set(",", [this](HWND h, int c) {
          if (state.lastSearchChar == 0) return;
@@ -462,7 +711,7 @@ void VisualMode::setupKeyMaps() {
              if (fwd) Motion::prevChar(h, c, ch);
              else Motion::nextChar(h, c, ch);
          }
-         updateSelection(h);
+         
      });
     
     k.set("/", [this](HWND h, int c) {
@@ -475,14 +724,14 @@ void VisualMode::setupKeyMaps() {
          if (g_commandMode) {
              if (state.visualSearchAnchor == -1) state.visualSearchAnchor = state.visualAnchor;
              for (int i = 0; i < c; i++) g_commandMode->searchNext(h);
-             updateSelection(h);
+             
          }
      })
      .set("N", [this](HWND h, int c) {
          if (g_commandMode) {
              if (state.visualSearchAnchor == -1) state.visualSearchAnchor = state.visualAnchor;
              for (int i = 0; i < c; i++) g_commandMode->searchPrevious(h);
-             updateSelection(h);
+             
          }
      });
     
@@ -520,12 +769,22 @@ void VisualMode::enterLine(HWND hwnd) {
     state.isBlockVisual = false;
     
     int caret = ::SendMessage(hwnd, SCI_GETCURRENTPOS, 0, 0);
-    state.visualAnchorLine = ::SendMessage(hwnd, SCI_LINEFROMPOSITION, caret, 0);
+    int line = ::SendMessage(hwnd, SCI_LINEFROMPOSITION, caret, 0);
+    
+    state.visualAnchorLine = line;
     state.visualAnchor = ::SendMessage(hwnd, SCI_POSITIONFROMLINE, state.visualAnchorLine, 0);
     state.visualSearchAnchor = -1;
-    
+
+    ::SendMessage(hwnd, SCI_SETSELECTIONMODE, SC_SEL_STREAM, 0);
+
+    int lineStart = ::SendMessage(hwnd, SCI_POSITIONFROMLINE, line, 0);
+    int lineEnd   = ::SendMessage(hwnd, SCI_POSITIONFROMLINE, line + 1, 0);
+
+    ::SendMessage(hwnd, SCI_SETANCHOR, lineStart, 0);
+    ::SendMessage(hwnd, SCI_SETCURRENTPOS, lineEnd, 0);
+    ::SendMessage(hwnd, SCI_SETSEL, lineStart, lineEnd);
+
     Utils::setStatus(TEXT("-- VISUAL LINE --"));
-    setSelection(hwnd);
 }
 
 void VisualMode::enterBlock(HWND hwnd) {
@@ -539,59 +798,22 @@ void VisualMode::enterBlock(HWND hwnd) {
     state.visualSearchAnchor = -1;
     
     ::SendMessage(hwnd, SCI_SETSELECTIONMODE, SC_SEL_RECTANGLE, 0);
+    
+    int nextPos = ::SendMessage(hwnd, SCI_POSITIONAFTER, caret, 0);
+    
     ::SendMessage(hwnd, SCI_SETRECTANGULARSELECTIONANCHOR, caret, 0);
-    ::SendMessage(hwnd, SCI_SETRECTANGULARSELECTIONCARET, caret, 0);
+    ::SendMessage(hwnd, SCI_SETRECTANGULARSELECTIONCARET, nextPos, 0);
+    ::SendMessage(hwnd, SCI_SETCURRENTPOS, nextPos, 0);
     
     Utils::setStatus(TEXT("-- VISUAL BLOCK --"));
 }
 
-void VisualMode::setSelection(HWND hwnd) {
-    int caret = ::SendMessage(hwnd, SCI_GETCURRENTPOS, 0, 0);
-    
-    if (state.isLineVisual) {
-        int currentLine = ::SendMessage(hwnd, SCI_LINEFROMPOSITION, caret, 0);
-        int anchorLine = state.visualAnchorLine;
-        
-        int startLine = (std::min)(anchorLine, currentLine);
-        int endLine = (std::max)(anchorLine, currentLine);
-        
-        int startPos = ::SendMessage(hwnd, SCI_POSITIONFROMLINE, startLine, 0);
-        int endPos;
-        
-        int totalLines = ::SendMessage(hwnd, SCI_GETLINECOUNT, 0, 0);
-        if (endLine < totalLines - 1) {
-            endPos = ::SendMessage(hwnd, SCI_POSITIONFROMLINE, endLine + 1, 0);
-        } else {
-            endPos = ::SendMessage(hwnd, SCI_GETTEXTLENGTH, 0, 0);
-        }
-        
-        if (anchorLine <= currentLine) {
-            ::SendMessage(hwnd, SCI_SETSEL, startPos, endPos);
-        } else {
-            ::SendMessage(hwnd, SCI_SETSEL, endPos, startPos);
-        }
-    } else if (state.isBlockVisual) {
-        ::SendMessage(hwnd, SCI_SETSELECTIONMODE, SC_SEL_RECTANGLE, 0);
-        ::SendMessage(hwnd, SCI_SETRECTANGULARSELECTIONANCHOR, state.visualAnchor, 0);
-        ::SendMessage(hwnd, SCI_SETRECTANGULARSELECTIONCARET, caret, 0);
-    } else {
-        ::SendMessage(hwnd, SCI_SETSELECTIONMODE, SC_SEL_STREAM, 0);
-        int start = state.visualAnchor;
-        int end = caret;
-        if (start < end) {
-            end = ::SendMessage(hwnd, SCI_POSITIONAFTER, end, 0);
-        } else if (end < start) {
-            end = ::SendMessage(hwnd, SCI_POSITIONAFTER, end, 0);
-        }
-        ::SendMessage(hwnd, SCI_SETSEL, start, end);
-    }
-}
-
-void VisualMode::updateSelection(HWND hwnd) {
-    setSelection(hwnd);
-}
-
 void VisualMode::exitToNormal(HWND hwnd) {
+    state.lastVisualAnchor = state.visualAnchor;
+    state.lastVisualCaret  = ::SendMessage(hwnd, SCI_GETCURRENTPOS, 0, 0);
+    state.lastVisualWasLine  = state.isLineVisual;
+    state.lastVisualWasBlock = state.isBlockVisual;
+
     if (g_normalMode) g_normalMode->enter();
 }
 
@@ -644,7 +866,6 @@ void VisualMode::handleCharSearchInput(HWND hwnd, char searchChar, char searchTy
     
     state.opPending = 0;
     state.textObjectPending = 0;
-    updateSelection(hwnd);
 }
 
 void VisualMode::handleBlockWordRight(HWND hwnd, bool bigWord) {
@@ -726,4 +947,159 @@ void VisualMode::handleBlockWordEnd(HWND hwnd, bool bigWord) {
     if (pos > 0) pos--;
     
     ::SendMessage(hwnd, SCI_SETCURRENTPOS, pos, 0);
+}
+
+void VisualMode::extendSelection(HWND hwndEdit, int newPos) {
+    if (state.mode != VISUAL) {
+        ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, newPos, 0);
+        ::SendMessage(hwndEdit, SCI_SETSEL, newPos, newPos);
+        return;
+    }
+    
+    int anchor = state.visualAnchor;
+    
+    if (state.isLineVisual) {
+        int anchorLine = state.visualAnchorLine;
+        int newLine = ::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, newPos, 0);
+        
+        int startLine = (std::min)(anchorLine, newLine);
+        int endLine = (std::max)(anchorLine, newLine);
+        
+        int startPos = ::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, startLine, 0);
+        int total = ::SendMessage(hwndEdit, SCI_GETLINECOUNT, 0, 0);
+        int endPos = (endLine < total - 1)
+            ? ::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, endLine + 1, 0)
+            : ::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, endLine, 0) + 1;
+        
+        if (endPos < startPos) {
+            int temp = startPos;
+            startPos = endPos;
+            endPos = temp;
+        }
+        
+        int docLength = ::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
+        if (endPos > docLength) {
+            endPos = docLength;
+        }
+        
+        ::SendMessage(hwndEdit, SCI_SETSEL, startPos, endPos);
+        ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, newPos, 0);
+    }
+    else if (state.isBlockVisual) {
+        ::SendMessage(hwndEdit, SCI_SETSELECTIONMODE, SC_SEL_RECTANGLE, 0);
+        ::SendMessage(hwndEdit, SCI_SETRECTANGULARSELECTIONANCHOR, anchor, 0);
+        ::SendMessage(hwndEdit, SCI_SETRECTANGULARSELECTIONCARET, newPos, 0);
+        ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, newPos, 0);
+    }
+    else {
+        if (newPos >= anchor) {
+            ::SendMessage(hwndEdit, SCI_SETSEL, anchor, newPos);
+        } else {
+            ::SendMessage(hwndEdit, SCI_SETSEL, newPos, anchor);
+        }
+        ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, newPos, 0);
+    }
+}
+
+void VisualMode::setSelection(HWND hwndEdit, int startPos, int endPos) {
+    if (state.mode != VISUAL) {
+        ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, endPos, 0);
+        ::SendMessage(hwndEdit, SCI_SETSEL, endPos, endPos);
+        return;
+    }
+    
+    int anchor = state.visualAnchor;
+    
+    if (state.isLineVisual) {
+        int anchorLine = state.visualAnchorLine;
+        int startLine = ::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, startPos, 0);
+        int endLine = ::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, endPos, 0);
+        
+        if ((anchor >= startPos && anchor <= endPos) || 
+            (anchorLine >= startLine && anchorLine <= endLine)) {
+            ::SendMessage(hwndEdit, SCI_SETSEL, startPos, endPos);
+        } else if (anchor < startPos) {
+            ::SendMessage(hwndEdit, SCI_SETSEL, anchor, endPos);
+        } else {
+            ::SendMessage(hwndEdit, SCI_SETSEL, startPos, anchor);
+        }
+        ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, endPos, 0);
+    }
+    else if (state.isBlockVisual) {
+        ::SendMessage(hwndEdit, SCI_SETRECTANGULARSELECTIONANCHOR, anchor, 0);
+        ::SendMessage(hwndEdit, SCI_SETRECTANGULARSELECTIONCARET, endPos, 0);
+        ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, endPos, 0);
+    }
+    else {
+        if (endPos >= anchor) {
+            ::SendMessage(hwndEdit, SCI_SETSEL, anchor, endPos);
+        } else {
+            ::SendMessage(hwndEdit, SCI_SETSEL, endPos, anchor);
+        }
+        ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, endPos, 0);
+    }
+}
+
+void VisualMode::moveCursor(HWND hwndEdit, int newPos, bool extend) {
+    if (extend) {
+        extendSelection(hwndEdit, newPos);
+    } else {
+        ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, newPos, 0);
+        ::SendMessage(hwndEdit, SCI_SETSEL, newPos, newPos);
+    }
+}
+
+void VisualMode::visualMoveCursor(HWND hwndEdit, int newPos) {
+    if (state.mode != VISUAL) return;
+    
+    if (state.isLineVisual) {
+        int anchor = state.visualAnchor;
+        int anchorLine = state.visualAnchorLine;
+        int newLine = ::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, newPos, 0);
+        
+        if (anchorLine < 0) {
+            anchorLine = ::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, anchor, 0);
+            state.visualAnchorLine = anchorLine;
+        }
+        
+        int startLine = (std::min)(anchorLine, newLine);
+        int endLine = (std::max)(anchorLine, newLine);
+        
+        int startPos = ::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, startLine, 0);
+        int totalLines = ::SendMessage(hwndEdit, SCI_GETLINECOUNT, 0, 0);
+        int endPos = (endLine < totalLines - 1)
+            ? ::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, endLine + 1, 0)
+            : ::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, endLine, 0) + 1;
+        
+        int docLength = ::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
+        if (endPos > docLength) {
+            endPos = docLength;
+        }
+        
+        ::SendMessage(hwndEdit, SCI_SETSEL, startPos, endPos);
+        ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, newPos, 0);
+        
+        if (newPos < anchor) {
+            ::SendMessage(hwndEdit, SCI_SETANCHOR, endPos, 0);
+        } else {
+            ::SendMessage(hwndEdit, SCI_SETANCHOR, startPos, 0);
+        }
+    }
+    else if (state.isBlockVisual) {
+        int anchor = state.visualAnchor;
+        ::SendMessage(hwndEdit, SCI_SETSELECTIONMODE, SC_SEL_RECTANGLE, 0);
+        ::SendMessage(hwndEdit, SCI_SETRECTANGULARSELECTIONANCHOR, anchor, 0);
+        ::SendMessage(hwndEdit, SCI_SETRECTANGULARSELECTIONCARET, newPos, 0);
+        ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, newPos, 0);
+    }
+    else {
+        int anchor = state.visualAnchor;
+        
+        if (newPos >= anchor) {
+            ::SendMessage(hwndEdit, SCI_SETSEL, anchor, newPos);
+        } else {
+            ::SendMessage(hwndEdit, SCI_SETSEL, newPos, anchor);
+        }
+        ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, newPos, 0);
+    }
 }
