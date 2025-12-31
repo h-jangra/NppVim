@@ -45,8 +45,8 @@ jobs:
           path: build/${{ matrix.arch }}
       - name: Prepare plugin folder
         run: |
-          mkdir ${{ matrix.arch.folder }}
-          copy build\${{ matrix.arch.name }}\*.dll ${{ matrix.arch.folder }}\
+          New-Item -ItemType Directory -Force -Path ${{ matrix.folder }}
+          Copy-Item build\${{ matrix.arch }}\*.dll ${{ matrix.folder }}\
 
       - name: Zip artifact
         run: |
