@@ -770,8 +770,8 @@ void VisualMode::setupKeyMaps() {
          }
      });
     
-    k.set("<", [](HWND h, int c) { Utils::handleIndent(h, c); })
-     .set(">", [](HWND h, int c) { Utils::handleUnindent(h, c); })
+    k.set("<", [](HWND h, int c) { Utils::handleUnindent(h, c); })
+     .set(">", [](HWND h, int c) { Utils::handleIndent(h, c); })
      .set("=", [](HWND h, int c) { Utils::handleAutoIndent(h, c); });
     
     k.set("gcc", [this](HWND h, int c) {
