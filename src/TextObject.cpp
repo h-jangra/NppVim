@@ -306,14 +306,14 @@ void TextObject::handleWordTextObject(HWND hwndEdit, VimState& state, char op, b
 }
 
 std::pair<int, int> TextObject::findSentenceBounds(HWND h, int pos, bool) {
-    int line = ::SendMessage(h, SCI_LINEFROMPOSITION, pos, 0);
-    int start = ::SendMessage(h, SCI_POSITIONFROMLINE, line, 0);
-    int end = ::SendMessage(h, SCI_GETLINEENDPOSITION, line, 0);
+    int line = Utils::caretLine(h);
+    int start = Utils::lineStart(h, line);
+    int end = Utils::lineEnd(h, line);
     return { start, end };
 }
 
 std::pair<int, int> TextObject::findParagraphBounds(HWND h, int pos, bool inner) {
-    int line = ::SendMessage(h, SCI_LINEFROMPOSITION, pos, 0);
+    int line = Utils::caretLine(h);
     int total = ::SendMessage(h, SCI_GETLINECOUNT, 0, 0);
 
     auto blank = [&](int l) {
@@ -397,12 +397,12 @@ void TextObject::executeTextObjectOperation(HWND h, VimState& state, char op, in
             state.visualAnchorLine = ::SendMessage(h, SCI_LINEFROMPOSITION, start, 0);
             ::SendMessage(h, SCI_SETANCHOR, start, 0);
             ::SendMessage(h, SCI_SETCURRENTPOS, end, 0);
-            ::SendMessage(h, SCI_SETSEL, start, end);
+            Utils::select(h, start, end);
         }
         return;
     }
 
-    ::SendMessage(h, SCI_SETSEL, start, end);
+    Utils::select(h, start, end);
 
     switch (op) {
     case 'd':

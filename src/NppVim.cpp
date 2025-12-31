@@ -716,7 +716,7 @@ void toggleVimMode() {
                 ::SendMessage(hwnd, SCI_SETCARETSTYLE, CARETSTYLE_LINE, 0);
                 ::SendMessage(hwnd, SCI_SETOVERTYPE, false, 0);
 
-                int pos = (int)::SendMessage(hwnd, SCI_GETCURRENTPOS, 0, 0);
+                int pos = (int)Utils::caretPos(hwnd);
                 ::SendMessage(hwnd, SCI_SETSEL, pos, pos);
 
                 ::InvalidateRect(hwnd, NULL, TRUE);

@@ -296,3 +296,211 @@ void Utils::handleAutoIndent(HWND hwndEdit, int count) {
         g_normalMode->enter();
     }
 }
+
+int Utils::caretPos(HWND hwnd) {
+    return (int)::SendMessage(hwnd, SCI_GETCURRENTPOS, 0, 0);
+}
+
+int Utils::caretLine(HWND hwnd) {
+    int pos = caretPos(hwnd);
+    return (int)::SendMessage(hwnd, SCI_LINEFROMPOSITION, pos, 0);
+}
+
+int Utils::lineStart(HWND hwnd, int line) {
+    return (int)::SendMessage(hwnd, SCI_POSITIONFROMLINE, line, 0);
+}
+
+int Utils::lineEnd(HWND hwnd, int line) {
+    return (int)::SendMessage(hwnd, SCI_GETLINEENDPOSITION, line, 0);
+}
+
+int Utils::lineCount(HWND hwnd) {
+    return (int)::SendMessage(hwnd, SCI_GETLINECOUNT, 0, 0);
+}
+
+std::pair<int,int> Utils::lineRange(HWND hwnd, int line, bool includeNewline) {
+    int start = lineStart(hwnd, line);
+    int total = lineCount(hwnd);
+    int end = (line < total - 1)
+        ? lineStart(hwnd, line + 1)
+        : lineEnd(hwnd, line) + 1;
+    if (!includeNewline && end > start) end--;
+    return {start, end};
+}
+
+std::pair<int,int> Utils::lineRangeFromPos(HWND hwnd, int pos, bool includeNewline) {
+    int line = (int)::SendMessage(hwnd, SCI_LINEFROMPOSITION, pos, 0);
+    return lineRange(hwnd, line, includeNewline);
+}
+
+void Utils::beginUndo(HWND hwnd) {
+    ::SendMessage(hwnd, SCI_BEGINUNDOACTION, 0, 0);
+}
+
+void Utils::endUndo(HWND hwnd) {
+    ::SendMessage(hwnd, SCI_ENDUNDOACTION, 0, 0);
+}
+
+void Utils::select(HWND hwnd, int a, int b) {
+    ::SendMessage(hwnd, SCI_SETSEL, a, b);
+}
+
+void Utils::cut(HWND hwnd, int a, int b) {
+    select(hwnd, a, b);
+    ::SendMessage(hwnd, SCI_CUT, 0, 0);
+}
+
+void Utils::copy(HWND hwnd, int a, int b) {
+    select(hwnd, a, b);
+    ::SendMessage(hwnd, SCI_COPY, 0, 0);
+}
+
+void Utils::clear(HWND hwnd, int a, int b) {
+    select(hwnd, a, b);
+    ::SendMessage(hwnd, SCI_CLEAR, 0, 0);
+}
+
+void Utils::toUpper(HWND hwnd, int a, int b) {
+    for (int i = a; i < b; i++) {
+        char ch = (char)::SendMessage(hwnd, SCI_GETCHARAT, i, 0);
+        if (std::islower((unsigned char)ch)) {
+            ::SendMessage(hwnd, SCI_SETTARGETRANGE, i, i + 1);
+            char c = (char)std::toupper(ch);
+            ::SendMessage(hwnd, SCI_REPLACETARGET, 1, (LPARAM)&c);
+        }
+    }
+}
+
+void Utils::toLower(HWND hwnd, int a, int b) {
+    for (int i = a; i < b; i++) {
+        char ch = (char)::SendMessage(hwnd, SCI_GETCHARAT, i, 0);
+        if (std::isupper((unsigned char)ch)) {
+            ::SendMessage(hwnd, SCI_SETTARGETRANGE, i, i + 1);
+            char c = (char)std::tolower(ch);
+            ::SendMessage(hwnd, SCI_REPLACETARGET, 1, (LPARAM)&c);
+        }
+    }
+}
+
+void Utils::replaceChar(HWND hwnd, int pos, char ch) {
+    ::SendMessage(hwnd, SCI_SETTARGETRANGE, pos, pos + 1);
+    ::SendMessage(hwnd, SCI_REPLACETARGET, 1, (LPARAM)&ch);
+}
+
+void Utils::replaceRange(HWND hwnd, int a, int b, char ch) {
+    for (int i = a; i < b; i++) {
+        char c = (char)::SendMessage(hwnd, SCI_GETCHARAT, i, 0);
+        if (c != '\r' && c != '\n') {
+            replaceChar(hwnd, i, ch);
+        }
+    }
+}
+
+BlockSelection Utils::blockSelection(HWND hwnd) {
+    int a = (int)::SendMessage(hwnd, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
+    int c = (int)::SendMessage(hwnd, SCI_GETRECTANGULARSELECTIONCARET, 0, 0);
+
+    int la = (int)::SendMessage(hwnd, SCI_LINEFROMPOSITION, a, 0);
+    int lc = (int)::SendMessage(hwnd, SCI_LINEFROMPOSITION, c, 0);
+
+    int ca = (int)::SendMessage(hwnd, SCI_GETCOLUMN, a, 0);
+    int cc = (int)::SendMessage(hwnd, SCI_GETCOLUMN, c, 0);
+
+    return {
+        (std::min)(la, lc),
+        (std::max)(la, lc),
+        (std::min)(ca, cc),
+        (std::max)(ca, cc)
+    };
+}
+
+void Utils::setBlockSelection(HWND hwnd, int anchor, int caret) {
+    ::SendMessage(hwnd, SCI_SETSELECTIONMODE, SC_SEL_RECTANGLE, 0);
+    ::SendMessage(hwnd, SCI_SETRECTANGULARSELECTIONANCHOR, anchor, 0);
+    ::SendMessage(hwnd, SCI_SETRECTANGULARSELECTIONCARET, caret, 0);
+    ::SendMessage(hwnd, SCI_SETCURRENTPOS, caret, 0);
+}
+
+void Utils::clearBlockSelection(HWND hwnd) {
+    ::SendMessage(hwnd, SCI_SETSELECTIONMODE, SC_SEL_STREAM, 0);
+}
+
+void Utils::forEachBlockCell(HWND hwnd, const BlockSelection& blk, void (*fn)(HWND,int)) {
+    for (int line = blk.startLine; line <= blk.endLine; line++) {
+        int ls = lineStart(hwnd, line);
+        int le = lineEnd(hwnd, line);
+        int cs = (int)::SendMessage(hwnd, SCI_FINDCOLUMN, line, blk.startCol);
+        int ce = (int)::SendMessage(hwnd, SCI_FINDCOLUMN, line, blk.endCol);
+        if (cs > le) cs = le;
+        if (ce > le) ce = le;
+        for (int p = cs; p < ce; p++) fn(hwnd, p);
+    }
+}
+
+void Utils::pasteAfter(HWND hwnd, int count, bool linewise) {
+    int pos = caretPos(hwnd);
+    int line = caretLine(hwnd);
+    if (linewise) {
+        auto r = lineRange(hwnd, line, true);
+        ::SendMessage(hwnd, SCI_GOTOPOS, r.second, 0);
+    } else {
+        ::SendMessage(hwnd, SCI_GOTOPOS,
+            (int)::SendMessage(hwnd, SCI_POSITIONAFTER, pos, 0), 0);
+    }
+    for (int i = 0; i < count; i++) {
+        ::SendMessage(hwnd, SCI_PASTE, 0, 0);
+    }
+}
+
+void Utils::pasteBefore(HWND hwnd, int count, bool linewise) {
+    int pos = caretPos(hwnd);
+    int line = caretLine(hwnd);
+    if (linewise) {
+        ::SendMessage(hwnd, SCI_GOTOPOS, lineStart(hwnd, line), 0);
+    } else {
+        ::SendMessage(hwnd, SCI_GOTOPOS, pos, 0);
+    }
+    for (int i = 0; i < count; i++) {
+        ::SendMessage(hwnd, SCI_PASTE, 0, 0);
+    }
+}
+
+void Utils::joinLines(HWND hwnd, int startLine, int count, bool withSpace) {
+    for (int i = 0; i < count; i++) {
+        int end = lineEnd(hwnd, startLine);
+        int next = lineStart(hwnd, startLine + 1);
+        if (next <= end) break;
+        select(hwnd, end, next);
+        ::SendMessage(hwnd, SCI_REPLACESEL, 0, (LPARAM)(withSpace ? " " : ""));
+    }
+}
+
+void Utils::charSearch(HWND hwnd, VimState& state, char type, char ch, int count) {
+    bool forward = (type == 'f' || type == 't');
+    bool till = (type == 't' || type == 'T');
+
+    if (till) {
+        if (forward) Motion::tillChar(hwnd, count, ch);
+        else Motion::tillCharBack(hwnd, count, ch);
+    } else {
+        if (forward) Motion::nextChar(hwnd, count, ch);
+        else Motion::prevChar(hwnd, count, ch);
+    }
+
+    state.lastSearchChar = ch;
+    state.lastSearchForward = forward;
+    state.lastSearchTill = till;
+}
+
+void Utils::setClipboardText(const std::string& text) {
+    if (!OpenClipboard(nullptr)) return;
+    EmptyClipboard();
+    HGLOBAL h = GlobalAlloc(GMEM_MOVEABLE, text.size() + 1);
+    if (h) {
+        char* p = (char*)GlobalLock(h);
+        memcpy(p, text.c_str(), text.size() + 1);
+        GlobalUnlock(h);
+        SetClipboardData(CF_TEXT, h);
+    }
+    CloseClipboard();
+}

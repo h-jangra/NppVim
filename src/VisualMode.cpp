@@ -28,17 +28,17 @@ void VisualMode::setupKeyMaps() {
     auto& k = *g_visualKeymap;
     
     k.set("d", [this](HWND h, int c) {
-         ::SendMessage(h, SCI_BEGINUNDOACTION, 0, 0);
+         Utils::beginUndo(h);
          if (state.isBlockVisual) {
              ::SendMessage(h, SCI_CLEAR, 0, 0);
              ::SendMessage(h, SCI_SETSELECTIONMODE, SC_SEL_STREAM, 0);
-             int pos = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+             int pos = Utils::caretPos(h);
              ::SendMessage(h, SCI_SETCURRENTPOS, pos, 0);
              ::SendMessage(h, SCI_SETANCHOR, pos, 0);
          } else {
              ::SendMessage(h, SCI_CLEAR, 0, 0);
          }
-         ::SendMessage(h, SCI_ENDUNDOACTION, 0, 0);
+         Utils::endUndo(h);
          state.recordLastOp(OP_MOTION, c, 'd');
          exitToNormal(h);
      })
@@ -71,8 +71,8 @@ void VisualMode::setupKeyMaps() {
             
             std::string clipText;
             for (int line = startLine; line <= endLine; line++) {
-                int lineStart = ::SendMessage(h, SCI_POSITIONFROMLINE, line, 0);
-                int lineEnd = ::SendMessage(h, SCI_GETLINEENDPOSITION, line, 0);
+                int lineStart = Utils::lineStart(h, line);
+                int lineEnd = Utils::lineEnd(h, line);
                 
                 int colStart = ::SendMessage(h, SCI_FINDCOLUMN, line, startCol);
                 int colEnd = ::SendMessage(h, SCI_FINDCOLUMN, line, endCol);
@@ -118,7 +118,7 @@ void VisualMode::setupKeyMaps() {
                 ? ::SendMessage(h, SCI_POSITIONFROMLINE, endLine + 1, 0)
                 : ::SendMessage(h, SCI_GETLINEENDPOSITION, endLine, 0) + 1;
 
-            ::SendMessage(h, SCI_SETSEL, start, end);
+            Utils::select(h, start, end);
             ::SendMessage(h, SCI_COPY, 0, 0);
             state.lastYankLinewise = true;
         }
@@ -132,7 +132,7 @@ void VisualMode::setupKeyMaps() {
         exitToNormal(h);
     })
      .set("c", [this](HWND h, int c) {
-         ::SendMessage(h, SCI_BEGINUNDOACTION, 0, 0);
+         Utils::beginUndo(h);
          if (state.isBlockVisual) {
              int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
              int caret = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONCARET, 0, 0);
@@ -151,8 +151,8 @@ void VisualMode::setupKeyMaps() {
              
              bool first = true;
              for (int line = startLine; line <= endLine; line++) {
-                 int lineStart = ::SendMessage(h, SCI_POSITIONFROMLINE, line, 0);
-                 int lineEnd = ::SendMessage(h, SCI_GETLINEENDPOSITION, line, 0);
+                 int lineStart = Utils::lineStart(h, line);
+                 int lineEnd = Utils::lineEnd(h, line);
                  int pos = lineStart + startCol;
                  if (pos > lineEnd) pos = lineEnd;
                  
@@ -167,23 +167,23 @@ void VisualMode::setupKeyMaps() {
          } else {
              ::SendMessage(h, SCI_CLEAR, 0, 0);
          }
-         ::SendMessage(h, SCI_ENDUNDOACTION, 0, 0);
+         Utils::endUndo(h);
          state.recordLastOp(OP_MOTION, c, 'c');
          if (g_normalMode) g_normalMode->enterInsertMode();
      })
     .set("o", [this](HWND h, int c) {
-        int pos = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+        int pos = Utils::caretPos(h);
         int anchor = ::SendMessage(h, SCI_GETANCHOR, 0, 0);
         
         ::SendMessage(h, SCI_SETCURRENTPOS, anchor, 0);
         ::SendMessage(h, SCI_SETANCHOR, pos, 0);
         
         if (state.isLineVisual) {
-            state.visualAnchorLine = ::SendMessage(h, SCI_LINEFROMPOSITION, pos, 0);
+            state.visualAnchorLine = Utils::caretLine(h);
             state.visualAnchor = ::SendMessage(h, SCI_POSITIONFROMLINE, state.visualAnchorLine, 0);
         } else {
             state.visualAnchor = pos;
-            state.visualAnchorLine = ::SendMessage(h, SCI_LINEFROMPOSITION, pos, 0);
+            state.visualAnchorLine = Utils::caretLine(h);
         }
     });
     
@@ -218,8 +218,8 @@ void VisualMode::setupKeyMaps() {
             
             bool first = true;
             for (int line = startLine; line <= endLine; line++) {
-                int lineStart = ::SendMessage(h, SCI_POSITIONFROMLINE, line, 0);
-                int lineEnd = ::SendMessage(h, SCI_GETLINEENDPOSITION, line, 0);
+                int lineStart = Utils::lineStart(h, line);
+                int lineEnd = Utils::lineEnd(h, line);
                 int pos = lineStart + startCol;
                 if (pos > lineEnd) pos = lineEnd;
                 
@@ -257,8 +257,8 @@ void VisualMode::setupKeyMaps() {
             
             bool first = true;
             for (int line = startLine; line <= endLine; line++) {
-                int lineStart = ::SendMessage(h, SCI_POSITIONFROMLINE, line, 0);
-                int lineEnd = ::SendMessage(h, SCI_GETLINEENDPOSITION, line, 0);
+                int lineStart = Utils::lineStart(h, line);
+                int lineEnd = Utils::lineEnd(h, line);
                 int pos = lineStart + endCol;
                 if (pos > lineEnd) pos = lineEnd;
                 
@@ -294,10 +294,10 @@ void VisualMode::setupKeyMaps() {
         if (state.isBlockVisual) {
             for (int i = 0; i < c; i++) {
                 int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
-                int caret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+                int caret = Utils::caretPos(h);
                 
                 ::SendMessage(h, SCI_SETCURRENTPOS, caret - 1, 0);
-                int newCaret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+                int newCaret = Utils::caretPos(h);
                 
                 ::SendMessage(h, SCI_SETRECTANGULARSELECTIONANCHOR, anchor, 0);
                 ::SendMessage(h, SCI_SETRECTANGULARSELECTIONCARET, newCaret, 0);
@@ -310,10 +310,10 @@ void VisualMode::setupKeyMaps() {
         if (state.isBlockVisual) {
             for (int i = 0; i < c; i++) {
                 int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
-                int caret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+                int caret = Utils::caretPos(h);
                 
                 ::SendMessage(h, SCI_SETCURRENTPOS, caret + 1, 0);
-                int newCaret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+                int newCaret = Utils::caretPos(h);
                 
                 ::SendMessage(h, SCI_SETRECTANGULARSELECTIONANCHOR, anchor, 0);
                 ::SendMessage(h, SCI_SETRECTANGULARSELECTIONCARET, newCaret, 0);
@@ -324,7 +324,7 @@ void VisualMode::setupKeyMaps() {
     })
     .motion("j", 'j', [this](HWND h, int c) {
         if (state.isLineVisual || state.isBlockVisual) {
-            int currentPos = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+            int currentPos = Utils::caretPos(h);
             int line = ::SendMessage(h, SCI_LINEFROMPOSITION, currentPos, 0);
             int newLine = line + c;
             if (newLine >= ::SendMessage(h, SCI_GETLINECOUNT, 0, 0)) {
@@ -340,8 +340,8 @@ void VisualMode::setupKeyMaps() {
     })
     .motion("k", 'k', [this](HWND h, int c) {
         if (state.isLineVisual || state.isBlockVisual) {
-            int pos = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
-            int line = ::SendMessage(h, SCI_LINEFROMPOSITION, pos, 0);
+            int pos = Utils::caretPos(h);
+            int line = Utils::caretLine(h);
             int newLine = line - c;
             if (newLine < 0) newLine = 0;
 
@@ -355,9 +355,9 @@ void VisualMode::setupKeyMaps() {
         if (state.isBlockVisual) {
             for (int i = 0; i < c; i++) {
                 int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
-                int caret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+                int caret = Utils::caretPos(h);
                 int line = ::SendMessage(h, SCI_LINEFROMPOSITION, caret, 0);
-                int lineEnd = ::SendMessage(h, SCI_GETLINEENDPOSITION, line, 0);
+                int lineEnd = Utils::lineEnd(h, line);
                 
                 while (caret < lineEnd) {
                     char ch = (char)::SendMessage(h, SCI_GETCHARAT, caret, 0);
@@ -383,9 +383,9 @@ void VisualMode::setupKeyMaps() {
         if (state.isBlockVisual) {
             for (int i = 0; i < c; i++) {
                 int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
-                int caret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+                int caret = Utils::caretPos(h);
                 int line = ::SendMessage(h, SCI_LINEFROMPOSITION, caret, 0);
-                int lineEnd = ::SendMessage(h, SCI_GETLINEENDPOSITION, line, 0);
+                int lineEnd = Utils::lineEnd(h, line);
                 
                 while (caret < lineEnd) {
                     char ch = (char)::SendMessage(h, SCI_GETCHARAT, caret, 0);
@@ -411,9 +411,9 @@ void VisualMode::setupKeyMaps() {
         if (state.isBlockVisual) {
             for (int i = 0; i < c; i++) {
                 int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
-                int caret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+                int caret = Utils::caretPos(h);
                 int line = ::SendMessage(h, SCI_LINEFROMPOSITION, caret, 0);
-                int lineStart = ::SendMessage(h, SCI_POSITIONFROMLINE, line, 0);
+                int lineStart = Utils::lineStart(h, line);
                 
                 if (caret > lineStart) caret--;
                 
@@ -441,9 +441,9 @@ void VisualMode::setupKeyMaps() {
         if (state.isBlockVisual) {
             for (int i = 0; i < c; i++) {
                 int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
-                int caret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+                int caret = Utils::caretPos(h);
                 int line = ::SendMessage(h, SCI_LINEFROMPOSITION, caret, 0);
-                int lineStart = ::SendMessage(h, SCI_POSITIONFROMLINE, line, 0);
+                int lineStart = Utils::lineStart(h, line);
                 
                 if (caret > lineStart) caret--;
                 
@@ -465,9 +465,9 @@ void VisualMode::setupKeyMaps() {
         if (state.isBlockVisual) {
             for (int i = 0; i < c; i++) {
                 int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
-                int caret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+                int caret = Utils::caretPos(h);
                 int line = ::SendMessage(h, SCI_LINEFROMPOSITION, caret, 0);
-                int lineEnd = ::SendMessage(h, SCI_GETLINEENDPOSITION, line, 0);
+                int lineEnd = Utils::lineEnd(h, line);
                 
                 if (caret < lineEnd) caret++;
                 
@@ -491,9 +491,9 @@ void VisualMode::setupKeyMaps() {
         if (state.isBlockVisual) {
             for (int i = 0; i < c; i++) {
                 int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
-                int caret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+                int caret = Utils::caretPos(h);
                 int line = ::SendMessage(h, SCI_LINEFROMPOSITION, caret, 0);
-                int lineEnd = ::SendMessage(h, SCI_GETLINEENDPOSITION, line, 0);
+                int lineEnd = Utils::lineEnd(h, line);
                 
                 if (caret < lineEnd) caret++;
                 
@@ -516,9 +516,9 @@ void VisualMode::setupKeyMaps() {
     .motion("$", '$', [this](HWND h, int c) {
         if (state.isBlockVisual) {
             int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
-            int caret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+            int caret = Utils::caretPos(h);
             int line = ::SendMessage(h, SCI_LINEFROMPOSITION, caret, 0);
-            int lineEnd = ::SendMessage(h, SCI_GETLINEENDPOSITION, line, 0);
+            int lineEnd = Utils::lineEnd(h, line);
             
             ::SendMessage(h, SCI_SETCURRENTPOS, lineEnd, 0);
             ::SendMessage(h, SCI_SETRECTANGULARSELECTIONANCHOR, anchor, 0);
@@ -530,9 +530,9 @@ void VisualMode::setupKeyMaps() {
     .motion("^", '^', [this](HWND h, int c) {
         if (state.isBlockVisual) {
             int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
-            int caret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+            int caret = Utils::caretPos(h);
             int line = ::SendMessage(h, SCI_LINEFROMPOSITION, caret, 0);
-            int lineStart = ::SendMessage(h, SCI_POSITIONFROMLINE, line, 0);
+            int lineStart = Utils::lineStart(h, line);
             
             ::SendMessage(h, SCI_SETCURRENTPOS, lineStart, 0);
             ::SendMessage(h, SCI_SETRECTANGULARSELECTIONANCHOR, anchor, 0);
@@ -544,9 +544,9 @@ void VisualMode::setupKeyMaps() {
     .motion("0", '0', [this](HWND h, int c) {
         if (state.isBlockVisual) {
             int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
-            int caret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+            int caret = Utils::caretPos(h);
             int line = ::SendMessage(h, SCI_LINEFROMPOSITION, caret, 0);
-            int lineStart = ::SendMessage(h, SCI_POSITIONFROMLINE, line, 0);
+            int lineStart = Utils::lineStart(h, line);
             
             ::SendMessage(h, SCI_SETCURRENTPOS, lineStart, 0);
             ::SendMessage(h, SCI_SETRECTANGULARSELECTIONANCHOR, anchor, 0);
@@ -559,10 +559,10 @@ void VisualMode::setupKeyMaps() {
         if (state.isBlockVisual) {
             for (int i = 0; i < c; i++) {
                 int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
-                int caret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+                int caret = Utils::caretPos(h);
                 
                 ::SendMessage(h, SCI_PARAUP, 0, 0);
-                int newCaret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+                int newCaret = Utils::caretPos(h);
                 
                 ::SendMessage(h, SCI_SETRECTANGULARSELECTIONANCHOR, anchor, 0);
                 ::SendMessage(h, SCI_SETRECTANGULARSELECTIONCARET, newCaret, 0);
@@ -575,10 +575,10 @@ void VisualMode::setupKeyMaps() {
         if (state.isBlockVisual) {
             for (int i = 0; i < c; i++) {
                 int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
-                int caret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+                int caret = Utils::caretPos(h);
                 
                 ::SendMessage(h, SCI_PARADOWN, 0, 0);
-                int newCaret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+                int newCaret = Utils::caretPos(h);
                 
                 ::SendMessage(h, SCI_SETRECTANGULARSELECTIONANCHOR, anchor, 0);
                 ::SendMessage(h, SCI_SETRECTANGULARSELECTIONCARET, newCaret, 0);
@@ -590,18 +590,18 @@ void VisualMode::setupKeyMaps() {
     .motion("%", '%', [this](HWND h, int c) {
         if (state.isBlockVisual) {
             int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
-            int caret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+            int caret = Utils::caretPos(h);
             
             int match = ::SendMessage(h, SCI_BRACEMATCH, caret, 0);
             if (match != -1) {
                 ::SendMessage(h, SCI_GOTOPOS, match, 0);
-                int newCaret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+                int newCaret = Utils::caretPos(h);
                 
                 ::SendMessage(h, SCI_SETRECTANGULARSELECTIONANCHOR, anchor, 0);
                 ::SendMessage(h, SCI_SETRECTANGULARSELECTIONCARET, newCaret, 0);
             }
         } else {
-            int pos = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+            int pos = Utils::caretPos(h);
             int match = ::SendMessage(h, SCI_BRACEMATCH, pos, 0);
             if (match != -1) {
                 ::SendMessage(h, SCI_GOTOPOS, match, 0);
@@ -618,7 +618,7 @@ void VisualMode::setupKeyMaps() {
                 ::SendMessage(h, SCI_GOTOLINE, c - 1, 0);
             }
             
-            int newCaret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+            int newCaret = Utils::caretPos(h);
             ::SendMessage(h, SCI_SETRECTANGULARSELECTIONANCHOR, anchor, 0);
             ::SendMessage(h, SCI_SETRECTANGULARSELECTIONCARET, newCaret, 0);
         } else {
@@ -636,7 +636,7 @@ void VisualMode::setupKeyMaps() {
                 ::SendMessage(h, SCI_DOCUMENTSTART, 0, 0);
             }
             
-            int newCaret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+            int newCaret = Utils::caretPos(h);
             ::SendMessage(h, SCI_SETRECTANGULARSELECTIONANCHOR, anchor, 0);
             ::SendMessage(h, SCI_SETRECTANGULARSELECTIONCARET, newCaret, 0);
         } else {
@@ -649,7 +649,7 @@ void VisualMode::setupKeyMaps() {
             int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
             
             ::SendMessage(h, SCI_PAGEUP, 0, 0);
-            int newCaret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+            int newCaret = Utils::caretPos(h);
             
             ::SendMessage(h, SCI_SETRECTANGULARSELECTIONANCHOR, anchor, 0);
             ::SendMessage(h, SCI_SETRECTANGULARSELECTIONCARET, newCaret, 0);
@@ -662,7 +662,7 @@ void VisualMode::setupKeyMaps() {
             int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
             
             ::SendMessage(h, SCI_PAGEDOWN, 0, 0);
-            int newCaret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+            int newCaret = Utils::caretPos(h);
             
             ::SendMessage(h, SCI_SETRECTANGULARSELECTIONANCHOR, anchor, 0);
             ::SendMessage(h, SCI_SETRECTANGULARSELECTIONCARET, newCaret, 0);
@@ -795,11 +795,11 @@ void VisualMode::setupKeyMaps() {
         int textWidth = ::SendMessage(h, SCI_GETEDGECOLUMN, 0, 0);
         if (textWidth <= 0) textWidth = 80;
         
-        ::SendMessage(h, SCI_BEGINUNDOACTION, 0, 0);
+        Utils::beginUndo(h);
         
         for (int line = startLine; line <= endLine; line++) {
-            int lineStart = ::SendMessage(h, SCI_POSITIONFROMLINE, line, 0);
-            int lineEnd = ::SendMessage(h, SCI_GETLINEENDPOSITION, line, 0);
+            int lineStart = Utils::lineStart(h, line);
+            int lineEnd = Utils::lineEnd(h, line);
             int lineLength = lineEnd - lineStart;
             
             if (lineLength > textWidth) {
@@ -822,7 +822,7 @@ void VisualMode::setupKeyMaps() {
             }
         }
         
-        ::SendMessage(h, SCI_ENDUNDOACTION, 0, 0);
+        Utils::endUndo(h);
         
         state.recordLastOp(OP_MOTION, c, 'g', 'q');
         exitToNormal(h);
@@ -836,7 +836,7 @@ void VisualMode::setupKeyMaps() {
             return;
         }
         
-        int cursorPos = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+        int cursorPos = Utils::caretPos(h);
         
         g_visualKeymap->handleKey(h, 'g');
         g_visualKeymap->handleKey(h, 'q');
@@ -875,14 +875,14 @@ void VisualMode::setupKeyMaps() {
         int startLine = ::SendMessage(h, SCI_LINEFROMPOSITION, ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0), 0);
         int endLine = ::SendMessage(h, SCI_LINEFROMPOSITION, ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0), 0);
         
-        ::SendMessage(h, SCI_BEGINUNDOACTION, 0, 0);
+        Utils::beginUndo(h);
         for (int line = startLine; line < endLine; line++) {
             int lineEnd = ::SendMessage(h, SCI_GETLINEENDPOSITION, startLine, 0);
             int nextLine = ::SendMessage(h, SCI_POSITIONFROMLINE, startLine + 1, 0);
             ::SendMessage(h, SCI_SETSEL, lineEnd, nextLine);
             ::SendMessage(h, SCI_REPLACESEL, 0, (LPARAM)" ");
         }
-        ::SendMessage(h, SCI_ENDUNDOACTION, 0, 0);
+        Utils::endUndo(h);
         exitToNormal(h);
     })
     .set("r", [this](HWND h, int c) {
@@ -890,9 +890,9 @@ void VisualMode::setupKeyMaps() {
         Utils::setStatus(TEXT("-- VISUAL REPLACE --"));
     })
     .set("S", [this](HWND h, int c) {
-        ::SendMessage(h, SCI_BEGINUNDOACTION, 0, 0);
+        Utils::beginUndo(h);
         ::SendMessage(h, SCI_CLEAR, 0, 0);
-        ::SendMessage(h, SCI_ENDUNDOACTION, 0, 0);
+        Utils::endUndo(h);
         if (g_normalMode) g_normalMode->enterInsertMode();
     });
 
@@ -903,7 +903,7 @@ void VisualMode::enterChar(HWND hwnd) {
     state.isLineVisual = false;
     state.isBlockVisual = false;
     
-    int caret = ::SendMessage(hwnd, SCI_GETCURRENTPOS, 0, 0);
+    int caret = Utils::caretPos(hwnd);
     state.visualAnchor = caret;
     state.visualAnchorLine = ::SendMessage(hwnd, SCI_LINEFROMPOSITION, caret, 0);
     state.visualSearchAnchor = -1;
@@ -920,7 +920,7 @@ void VisualMode::enterLine(HWND hwnd) {
     state.isLineVisual = true;
     state.isBlockVisual = false;
     
-    int caret = ::SendMessage(hwnd, SCI_GETCURRENTPOS, 0, 0);
+    int caret = Utils::caretPos(hwnd);
     int line = ::SendMessage(hwnd, SCI_LINEFROMPOSITION, caret, 0);
     
     state.visualAnchorLine = line;
@@ -944,7 +944,7 @@ void VisualMode::enterBlock(HWND hwnd) {
     state.isLineVisual = false;
     state.isBlockVisual = true;
     
-    int caret = ::SendMessage(hwnd, SCI_GETCURRENTPOS, 0, 0);
+    int caret = Utils::caretPos(hwnd);
     state.visualAnchor = caret;
     state.visualAnchorLine = ::SendMessage(hwnd, SCI_LINEFROMPOSITION, caret, 0);
     state.visualSearchAnchor = -1;
@@ -1040,7 +1040,7 @@ void VisualMode::handleCharSearchInput(HWND hwnd, char searchChar, char searchTy
 }
 
 void VisualMode::handleBlockWordRight(HWND hwnd, bool bigWord) {
-    int pos = ::SendMessage(hwnd, SCI_GETCURRENTPOS, 0, 0);
+    int pos = Utils::caretPos(hwnd);
     int line = ::SendMessage(hwnd, SCI_LINEFROMPOSITION, pos, 0);
     int lineEnd = ::SendMessage(hwnd, SCI_GETLINEENDPOSITION, line, 0);
     
@@ -1070,7 +1070,7 @@ void VisualMode::handleBlockWordRight(HWND hwnd, bool bigWord) {
 }
 
 void VisualMode::handleBlockWordLeft(HWND hwnd, bool bigWord) {
-    int pos = ::SendMessage(hwnd, SCI_GETCURRENTPOS, 0, 0);
+    int pos = Utils::caretPos(hwnd);
     int line = ::SendMessage(hwnd, SCI_LINEFROMPOSITION, pos, 0);
     int lineStart = ::SendMessage(hwnd, SCI_POSITIONFROMLINE, line, 0);
     
@@ -1101,7 +1101,7 @@ void VisualMode::handleBlockWordLeft(HWND hwnd, bool bigWord) {
 }
 
 void VisualMode::handleBlockWordEnd(HWND hwnd, bool bigWord) {
-    int pos = ::SendMessage(hwnd, SCI_GETCURRENTPOS, 0, 0);
+    int pos = Utils::caretPos(hwnd);
     int line = ::SendMessage(hwnd, SCI_LINEFROMPOSITION, pos, 0);
     int lineEnd = ::SendMessage(hwnd, SCI_GETLINEENDPOSITION, line, 0);
     
