@@ -1,5 +1,8 @@
 name: Build NppVim Release
 
+permissions:
+  contents: write
+
 on:
   push:
     tags:
@@ -71,4 +74,4 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*.zip
+          files: artifacts/**/**/*.zip
