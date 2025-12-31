@@ -671,7 +671,7 @@ void VisualMode::setupKeyMaps() {
         }
     })
      .set("~", [this](HWND h, int c) {
-         motion.toggleCase(h, 1);
+         motion.toggleCase(h, c);
          exitToNormal(h);
      });
     
@@ -771,7 +771,7 @@ void VisualMode::setupKeyMaps() {
      });
     
     k.set("<", [](HWND h, int c) { Utils::handleIndent(h, c); })
-     .set(">", [](HWND h, int c) { Utils::handleIndent(h, c); })
+     .set(">", [](HWND h, int c) { Utils::handleUnindent(h, c); })
      .set("=", [](HWND h, int c) { Utils::handleAutoIndent(h, c); });
     
     k.set("gcc", [this](HWND h, int c) {
@@ -877,8 +877,8 @@ void VisualMode::setupKeyMaps() {
         
         Utils::beginUndo(h);
         for (int line = startLine; line < endLine; line++) {
-            int lineEnd = ::SendMessage(h, SCI_GETLINEENDPOSITION, startLine, 0);
-            int nextLine = ::SendMessage(h, SCI_POSITIONFROMLINE, startLine + 1, 0);
+            int lineEnd = ::SendMessage(h, SCI_GETLINEENDPOSITION, line, 0);
+            int nextLine = ::SendMessage(h, SCI_POSITIONFROMLINE, line + 1, 0);
             ::SendMessage(h, SCI_SETSEL, lineEnd, nextLine);
             ::SendMessage(h, SCI_REPLACESEL, 0, (LPARAM)" ");
         }
@@ -1305,7 +1305,7 @@ void VisualMode::handleVisualReplaceInput(HWND hwnd, char replaceChar) {
             return;
         }
         
-        ::SendMessage(hwnd, SCI_BEGINUNDOACTION, 0, 0);
+        Utils::beginUndo(hwnd);
         
         for (int line = startLine; line <= endLine; line++) {
             int lineStart = ::SendMessage(hwnd, SCI_POSITIONFROMLINE, line, 0);
@@ -1326,7 +1326,7 @@ void VisualMode::handleVisualReplaceInput(HWND hwnd, char replaceChar) {
             }
         }
         
-        ::SendMessage(hwnd, SCI_ENDUNDOACTION, 0, 0);
+        Utils::endUndo(hwnd);
         Utils::setStatus(TEXT("Block selection replaced"));
         
     } else if (state.isLineVisual) {
@@ -1340,7 +1340,7 @@ void VisualMode::handleVisualReplaceInput(HWND hwnd, char replaceChar) {
             return;
         }
         
-        ::SendMessage(hwnd, SCI_BEGINUNDOACTION, 0, 0);
+        Utils::beginUndo(hwnd);
         
         for (int pos = startPos; pos < endPos; pos++) {
             char ch = ::SendMessage(hwnd, SCI_GETCHARAT, pos, 0);
@@ -1350,7 +1350,7 @@ void VisualMode::handleVisualReplaceInput(HWND hwnd, char replaceChar) {
             }
         }
         
-        ::SendMessage(hwnd, SCI_ENDUNDOACTION, 0, 0);
+        Utils::endUndo(hwnd);
         Utils::setStatus(TEXT("Line selection replaced"));
         
     } else {
@@ -1364,14 +1364,14 @@ void VisualMode::handleVisualReplaceInput(HWND hwnd, char replaceChar) {
             return;
         }
         
-        ::SendMessage(hwnd, SCI_BEGINUNDOACTION, 0, 0);
+        Utils::beginUndo(hwnd);
         
         for (int pos = startPos; pos < endPos; pos++) {
             ::SendMessage(hwnd, SCI_SETTARGETRANGE, pos, pos + 1);
             ::SendMessage(hwnd, SCI_REPLACETARGET, 1, (LPARAM)&replaceChar);
         }
         
-        ::SendMessage(hwnd, SCI_ENDUNDOACTION, 0, 0);
+        Utils::endUndo(hwnd);
         Utils::setStatus(TEXT("Selection replaced"));
     }
     
