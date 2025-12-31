@@ -11,11 +11,11 @@ jobs:
 
     strategy:
       matrix:
-        arch:
-          - name: x64
+        include:
+          - arch: x64
             folder: NppVim.x64
             msvc: x64
-          - name: win32
+          - arch: win32
             folder: NppVim
             msvc: x86
 
