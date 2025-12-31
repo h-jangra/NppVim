@@ -1,25 +1,39 @@
-name: Release
+name: Build NppVim Release
 
 on:
   push:
     tags:
-      - "v*"
+      - "*.*.*.*"
 
 jobs:
   build:
     runs-on: windows-latest
 
+    strategy:
+      matrix:
+        arch: [x64, win32, arm64]
+
     steps:
       - uses: actions/checkout@v4
 
-      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Setup Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v4
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.arch }}
+
+      - name: Configure
+        run: |
+          cmake -S . -B build/${{ matrix.arch }} -G Ninja -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
         run: |
-          msbuild nppvim.sln /p:Configuration=Release /p:Platform=x64
+          cmake --build build/${{ matrix.arch }}
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
         with:
-          files: |
-            Release/x64/NppVim.dll
+          name: NppVim-${{ matrix.arch }}
+          path: build/${{ matrix.arch }}
