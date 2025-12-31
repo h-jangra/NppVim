@@ -49,18 +49,13 @@ jobs:
       - name: Prepare plugin folder
         run: |
           New-Item -ItemType Directory -Force -Path ${{ matrix.folder }}
-          Copy-Item build\${{ matrix.arch }}\*.dll ${{ matrix.folder }}\
-
-      - name: Zip artifact
-        run: |
-          Compress-Archive -Path "${{ matrix.folder }}" -DestinationPath "${{ matrix.folder }}.zip" -Force
-
+          Copy-Item build\${{ matrix.arch }}\*.dll ${{ matrix.folder }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.arch.folder }}
-          path: ${{ matrix.arch.folder }}.zip
+          name: ${{ matrix.folder }}
+          path: ${{ matrix.folder }}
 
   release:
     needs: build
@@ -71,7 +66,14 @@ jobs:
         with:
           path: artifacts
 
+      - name: Zip release assets
+        run: |
+          Compress-Archive -Path artifacts/NppVim.x64 -DestinationPath NppVim.x64.zip -Force
+          Compress-Archive -Path artifacts/NppVim -DestinationPath NppVim.zip -Force
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/**/*.zip
+          files: |
+            NppVim.x64.zip
+            NppVim.zip
