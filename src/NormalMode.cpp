@@ -699,21 +699,35 @@ void NormalMode::setupKeyMaps() {
          state.recordLastOp(OP_MOTION, c, 'T');
      })
     .set("gv", [this](HWND h, int c) {
-        if (state.lastVisualAnchor == -1 || state.lastVisualCaret == -1) return;
+        if (state.lastVisualAnchor < 0 || state.lastVisualCaret < 0) return;
+
+        state.restoringVisual = true;
+
+        int a = state.lastVisualAnchor;
+        int b = state.lastVisualCaret;
 
         if (state.lastVisualWasBlock) {
             g_visualMode->enterBlock(h);
-            ::SendMessage(h, SCI_SETRECTANGULARSELECTIONANCHOR, state.lastVisualAnchor, 0);
-            ::SendMessage(h, SCI_SETRECTANGULARSELECTIONCARET, state.lastVisualCaret, 0);
+            ::SendMessage(h, SCI_SETRECTANGULARSELECTIONANCHOR, a, 0);
+            ::SendMessage(h, SCI_SETRECTANGULARSELECTIONCARET, b, 0);
+            ::SendMessage(h, SCI_SETCURRENTPOS, b, 0);
         }
         else if (state.lastVisualWasLine) {
             g_visualMode->enterLine(h);
-            ::SendMessage(h, SCI_GOTOPOS, state.lastVisualCaret, 0);
+
+            int la = ::SendMessage(h, SCI_LINEFROMPOSITION, a, 0);
+            int lb = ::SendMessage(h, SCI_LINEFROMPOSITION, b, 0);
+
+            int start = ::SendMessage(h, SCI_POSITIONFROMLINE, (std::min)(la, lb), 0);
+            int end   = ::SendMessage(h, SCI_POSITIONFROMLINE, (std::max)(la, lb) + 1, 0);
+
+            ::SendMessage(h, SCI_SETSEL, start, end);
+            ::SendMessage(h, SCI_SETCURRENTPOS, b, 0);
         }
         else {
             g_visualMode->enterChar(h);
-            ::SendMessage(h, SCI_SETANCHOR, state.lastVisualAnchor, 0);
-            ::SendMessage(h, SCI_SETCURRENTPOS, state.lastVisualCaret, 0);
+            ::SendMessage(h, SCI_SETANCHOR, a, 0);
+            ::SendMessage(h, SCI_SETCURRENTPOS, b, 0);
         }
     })
      .set("gi", [this](HWND h, int c) {
@@ -731,24 +745,251 @@ void NormalMode::setupKeyMaps() {
          ::SendMessage(h, SCI_LINEEND, 0, 0);
          ::SendMessage(h, SCI_NEWLINE, 0, 0);
      });
+
+     k.set("gU", [this](HWND h, int c) { 
+        state.opPending = 'U'; 
+        Utils::setStatus(TEXT("-- UPPERCASE --"));
+    })
+    .set("gu", [this](HWND h, int c) { 
+        state.opPending = 'u'; 
+        Utils::setStatus(TEXT("-- lowercase --"));
+    })
+    .set("gUU", [this](HWND h, int c) {
+        int line = ::SendMessage(h, SCI_LINEFROMPOSITION, ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0), 0);
+        int start = ::SendMessage(h, SCI_POSITIONFROMLINE, line, 0);
+        int end = ::SendMessage(h, SCI_GETLINEENDPOSITION, line, 0);
+        for (int pos = start; pos < end; pos++) {
+            char ch = ::SendMessage(h, SCI_GETCHARAT, pos, 0);
+            if (std::islower(ch)) {
+                ::SendMessage(h, SCI_SETTARGETRANGE, pos, pos + 1);
+                std::string upper(1, std::toupper(ch));
+                ::SendMessage(h, SCI_REPLACETARGET, 1, (LPARAM)upper.c_str());
+            }
+        }
+    })
+    .set("guu", [this](HWND h, int c) {
+        int line = ::SendMessage(h, SCI_LINEFROMPOSITION, ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0), 0);
+        int start = ::SendMessage(h, SCI_POSITIONFROMLINE, line, 0);
+        int end = ::SendMessage(h, SCI_GETLINEENDPOSITION, line, 0);
+        for (int pos = start; pos < end; pos++) {
+            char ch = ::SendMessage(h, SCI_GETCHARAT, pos, 0);
+            if (std::isupper(ch)) {
+                ::SendMessage(h, SCI_SETTARGETRANGE, pos, pos + 1);
+                std::string lower(1, std::tolower(ch));
+                ::SendMessage(h, SCI_REPLACETARGET, 1, (LPARAM)lower.c_str());
+            }
+        }
+    });
+
+    // Increment/decrement numbers
+    k.set("\x01", [this](HWND h, int c) { // Ctrl+A
+        int pos = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+        int line = ::SendMessage(h, SCI_LINEFROMPOSITION, pos, 0);
+        int lineStart = ::SendMessage(h, SCI_POSITIONFROMLINE, line, 0);
+        int lineEnd = ::SendMessage(h, SCI_GETLINEENDPOSITION, line, 0);
+        
+        int numStart = pos;
+        while (numStart > lineStart) {
+            char ch = ::SendMessage(h, SCI_GETCHARAT, numStart - 1, 0);
+            if (!std::isdigit(ch) && ch != '-') break;
+            numStart--;
+        }
+        
+        int numEnd = pos;
+        while (numEnd < lineEnd) {
+            char ch = ::SendMessage(h, SCI_GETCHARAT, numEnd, 0);
+            if (!std::isdigit(ch)) break;
+            numEnd++;
+        }
+        
+        if (numStart < numEnd) {
+            std::vector<char> buffer(numEnd - numStart + 1);
+            Sci_TextRangeFull tr;
+            tr.chrg.cpMin = numStart;
+            tr.chrg.cpMax = numEnd;
+            tr.lpstrText = buffer.data();
+            ::SendMessage(h, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
+            
+            try {
+                int num = std::stoi(buffer.data());
+                num += c;
+                std::string newNum = std::to_string(num);
+                ::SendMessage(h, SCI_SETTARGETRANGE, numStart, numEnd);
+                ::SendMessage(h, SCI_REPLACETARGET, newNum.length(), (LPARAM)newNum.c_str());
+            } catch (...) {}
+        }
+    })
+    .set("\x18", [this](HWND h, int c) { // Ctrl+X
+        g_normalKeymap->handleKey(h, '\x01'); // Reuse Ctrl+A logic with negative count
+    });
+
+    // Undo/Redo
+    k.set("\x12", [this](HWND h, int c) { // Ctrl+R - Redo
+        for (int i = 0; i < c; i++) {
+            ::SendMessage(h, SCI_REDO, 0, 0);
+        }
+        state.recordLastOp(OP_MOTION, c, 'R');
+    });
+
+    // Repeat f/F/t/T in opposite direction
+    k.set(",", [this](HWND h, int c) {
+        if (state.lastSearchChar == 0) return;
+        bool fwd = !state.lastSearchForward; // Opposite direction
+        bool till = state.lastSearchTill;
+        char ch = state.lastSearchChar;
+        if (till) {
+            if (fwd) Motion::tillChar(h, c, ch);
+            else Motion::tillCharBack(h, c, ch);
+        } else {
+            if (fwd) Motion::nextChar(h, c, ch);
+            else Motion::prevChar(h, c, ch);
+        }
+    });
+
+    // Search from beginning for first occurrence
+    k.set("gd", [this](HWND h, int c) {
+        int pos = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+        auto bounds = Utils::findWordBounds(h, pos);
+        if (bounds.first != bounds.second) {
+            int len = bounds.second - bounds.first;
+            std::vector<char> word(len + 1);
+            Sci_TextRangeFull tr;
+            tr.chrg.cpMin = bounds.first;
+            tr.chrg.cpMax = bounds.second;
+            tr.lpstrText = word.data();
+            ::SendMessage(h, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
+ 
+            ::SendMessage(h, SCI_SETTARGETRANGE, 0, pos);
+            ::SendMessage(h, SCI_SETSEARCHFLAGS, SCFIND_WHOLEWORD, 0);
+            int found = ::SendMessage(h, SCI_SEARCHINTARGET, len, (LPARAM)word.data());
+            if (found != -1) {
+                ::SendMessage(h, SCI_GOTOPOS, found, 0);
+            }
+        }
+    });
+
+    // Marks - backtick for exact position
+    k.set("`", [this](HWND h, int c) {
+        state.awaitingMarkJump = true;
+        state.isBacktickJump = true;
+        state.pendingJumpCount = c;
+        Utils::setStatus(TEXT("-- Jump to mark (exact) --"));
+    });
+
+    // Auto-indent
+    k.set("==", [this](HWND h, int c) {
+        int line = ::SendMessage(h, SCI_LINEFROMPOSITION, ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0), 0);
+        for (int i = 0; i < c; i++) {
+            if (line + i < ::SendMessage(h, SCI_GETLINECOUNT, 0, 0)) {
+                ::SendMessage(h, SCI_SETSEL, 
+                    ::SendMessage(h, SCI_POSITIONFROMLINE, line + i, 0),
+                    ::SendMessage(h, SCI_GETLINEENDPOSITION, line + i, 0));
+                Utils::handleAutoIndent(h, 1);
+            }
+        }
+    });
+
+    // Scroll without moving cursor
+    k.set("\x05", [](HWND h, int c) { // Ctrl+E - scroll down
+        ::SendMessage(h, SCI_LINESCROLL, 0, c);
+    })
+    .set("\x19", [](HWND h, int c) { // Ctrl+Y - scroll up
+        ::SendMessage(h, SCI_LINESCROLL, 0, -c);
+    })
+    .set("\x04", [](HWND h, int c) { // Ctrl+D - half page down
+        int lines = ::SendMessage(h, SCI_LINESONSCREEN, 0, 0) / 2;
+        for (int i = 0; i < c; i++) {
+            Motion::lineDown(h, lines);
+        }
+    })
+    .set("\x15", [](HWND h, int c) { // Ctrl+U - half page up
+        int lines = ::SendMessage(h, SCI_LINESONSCREEN, 0, 0) / 2;
+        for (int i = 0; i < c; i++) {
+            Motion::lineUp(h, lines);
+        }
+    })
+    .set("\x06", [](HWND h, int c) { // Ctrl+F - page forward
+        for (int i = 0; i < c; i++) {
+            Motion::pageDown(h);
+        }
+    })
+    .set("\x02", [](HWND h, int c) { // Ctrl+B - page backward
+        for (int i = 0; i < c; i++) {
+            Motion::pageUp(h);
+        }
+    });
+
+    // Join lines without space
+    k.set("gJ", [this](HWND h, int c) {
+        ::SendMessage(h, SCI_BEGINUNDOACTION, 0, 0);
+        for (int i = 0; i < c; i++) {
+            int line = ::SendMessage(h, SCI_LINEFROMPOSITION, ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0), 0);
+            int endLine = ::SendMessage(h, SCI_GETLINEENDPOSITION, line, 0);
+            int nextLine = ::SendMessage(h, SCI_POSITIONFROMLINE, line + 1, 0);
+            if (nextLine > endLine) {
+                ::SendMessage(h, SCI_SETSEL, endLine, nextLine);
+                ::SendMessage(h, SCI_REPLACESEL, 0, (LPARAM)"");
+            }
+        }
+        ::SendMessage(h, SCI_ENDUNDOACTION, 0, 0);
+    });
+
+    // Change inner/around line
+    k.set("S", [this](HWND h, int c) {
+        ::SendMessage(h, SCI_BEGINUNDOACTION, 0, 0);
+        int pos = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+        int line = ::SendMessage(h, SCI_LINEFROMPOSITION, pos, 0);
+        int start = ::SendMessage(h, SCI_POSITIONFROMLINE, line, 0);
+        int end = ::SendMessage(h, SCI_GETLINEENDPOSITION, line, 0);
+        ::SendMessage(h, SCI_SETSEL, start, end);
+        ::SendMessage(h, SCI_CLEAR, 0, 0);
+        ::SendMessage(h, SCI_ENDUNDOACTION, 0, 0);
+        enterInsertMode();
+    });
+
+    // Go to column
+    k.set("|", [](HWND h, int c) {
+        int pos = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+        int line = ::SendMessage(h, SCI_LINEFROMPOSITION, pos, 0);
+        int lineStart = ::SendMessage(h, SCI_POSITIONFROMLINE, line, 0);
+        int lineEnd = ::SendMessage(h, SCI_GETLINEENDPOSITION, line, 0);
+        int targetCol = (c > 0 ? c - 1 : 0);
+        int targetPos = lineStart + targetCol;
+        if (targetPos > lineEnd) targetPos = lineEnd;
+        ::SendMessage(h, SCI_GOTOPOS, targetPos, 0);
+    });
+
+    // Insert at beginning/end of line multiple times
+    k.set("gI", [this](HWND h, int c) {
+        int pos = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+        int line = ::SendMessage(h, SCI_LINEFROMPOSITION, pos, 0);
+        int lineStart = ::SendMessage(h, SCI_POSITIONFROMLINE, line, 0);
+        ::SendMessage(h, SCI_GOTOPOS, lineStart, 0);
+        enterInsertMode();
+    });
 }
 
 void NormalMode::enter() {
     HWND hwnd = Utils::getCurrentScintillaHandle();
+    
     state.mode = NORMAL;
     state.isLineVisual = false;
     state.visualAnchor = -1;
     state.visualAnchorLine = -1;
     state.reset();
     state.lastSearchMatchCount = -1;
-    
+
     if (g_normalKeymap) g_normalKeymap->reset();
-    
+
     Utils::setStatus(TEXT("-- NORMAL --"));
     ::SendMessage(hwnd, SCI_SETCARETSTYLE, CARETSTYLE_BLOCK, 0);
-    
-    int caret = ::SendMessage(hwnd, SCI_GETCURRENTPOS, 0, 0);
-    ::SendMessage(hwnd, SCI_SETSEL, caret, caret);
+
+    if (!state.restoringVisual) {
+        int caret = ::SendMessage(hwnd, SCI_GETCURRENTPOS, 0, 0);
+        ::SendMessage(hwnd, SCI_SETSEL, caret, caret);
+    }
+
+    state.restoringVisual = false;
     Utils::clearSearchHighlights(hwnd);
 }
 
@@ -784,8 +1025,8 @@ void NormalMode::handleKey(HWND hwnd, char c) {
         handleCharSearchInput(hwnd, c, searchType, count);
         return;
     }
-    
-    if (state.textObjectPending && (state.opPending == 'd' || state.opPending == 'c' || state.opPending == 'y')) {
+
+    if (state.textObjectPending) {
         char modifier = state.textObjectPending;
         char op = state.opPending;
         
@@ -798,12 +1039,14 @@ void NormalMode::handleKey(HWND hwnd, char c) {
         return;
     }
     
-    if (state.opPending && !state.textObjectPending) {
-        if (c == 'i' || c == 'a') {
-            state.textObjectPending = c;
-            return;
-        }
-        
+    if ((state.opPending == 'd' || state.opPending == 'c' || state.opPending == 'y' || 
+         (state.mode == VISUAL && state.opPending == 'v')) && 
+        (c == 'i' || c == 'a')) {
+        state.textObjectPending = c;
+        return;
+    }
+    
+     if (state.opPending && !state.textObjectPending) {
         if (c == 'w' || c == 'W' || c == 'b' || c == 'B' || c == 'e' || c == 'E' ||
             c == 'h' || c == 'l' || c == 'j' || c == 'k' || 
             c == '$' || c == '^' || c == '0' || c == 'G' || c == '%' ||
@@ -816,6 +1059,40 @@ void NormalMode::handleKey(HWND hwnd, char c) {
             
             state.opPending = 0;
             state.repeatCount = 0;
+            return;
+        }
+    }
+
+    if (state.mode == VISUAL && (c == 'i' || c == 'a')) {
+        state.opPending = 'v';
+        state.textObjectPending = c;
+        return;
+    }
+
+    if (state.mode == VISUAL) {
+        if (state.opPending == 'v' && (c == 'i' || c == 'a')) {
+            state.textObjectPending = c;
+            return;
+        }
+        
+        if (state.textObjectPending && state.opPending == 'v') {
+            char modifier = state.textObjectPending;
+            char op = state.opPending;
+            
+            state.textObjectPending = 0;
+            state.opPending = 0;
+            
+            TextObject textObj;
+            textObj.apply(hwnd, state, op, modifier, c);
+            state.repeatCount = 0;
+            
+            int anchor = (int)::SendMessage(hwnd, SCI_GETANCHOR, 0, 0);
+            int caret = (int)::SendMessage(hwnd, SCI_GETCURRENTPOS, 0, 0);
+            state.lastVisualAnchor = anchor;
+            state.lastVisualCaret = caret;
+            state.lastVisualWasBlock = false;
+            state.lastVisualWasLine = false;
+            
             return;
         }
     }

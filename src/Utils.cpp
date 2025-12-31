@@ -38,73 +38,16 @@ std::pair<int, int> Utils::findWordBounds(HWND hwndEdit, int pos)
   return findWordBoundsEx(hwndEdit, pos, false);
 }
 
-std::pair<int, int> Utils::findWordBoundsEx(HWND hwndEdit, int pos, bool bigWord)
-{
-  int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
-  if (pos >= docLen)
-    return {pos, pos};
-
-  char charAtPos = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, pos, 0);
-
-  if (charAtPos == ' ' || charAtPos == '\t' || charAtPos == '\r' || charAtPos == '\n')
-  {
-    return {pos, pos};
-  }
-
-  int start = pos;
-  int end = pos;
-
-  if (bigWord)
-  {
-    // Find start
-    while (start > 0)
-    {
-      char prevChar = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, start - 1, 0);
-      if (prevChar == ' ' || prevChar == '\t' || prevChar == '\r' || prevChar == '\n')
-      {
-        break;
-      }
-      start--;
-    }
-
-    // Find end
-    while (end < docLen)
-    {
-      char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, end, 0);
-      if (ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n')
-      {
-        break;
-      }
-      end++;
-    }
-  }
-  else
-  {
-    // For w: only alphanumeric and underscore
-    // Find start
-    while (start > 0)
-    {
-      char prevChar = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, start - 1, 0);
-      if (!(std::isalnum(static_cast<unsigned char>(prevChar)) || prevChar == '_'))
-      {
-        break;
-      }
-      start--;
-    }
-
-    // Find end
-    while (end < docLen)
-    {
-      char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, end, 0);
-      if (!(std::isalnum(static_cast<unsigned char>(ch)) || ch == '_'))
-      {
-        break;
-      }
-      end++;
-    }
-  }
-
-  return {start, end};
+std::pair<int, int> Utils::findWordBoundsEx(HWND hwndEdit, int pos, bool bigWord) {
+    int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
+    if (pos >= docLen) return {pos, pos};
+    
+    int style = bigWord ? 1 : 0;
+    
+    int wordStart = (int)::SendMessage(hwndEdit, SCI_WORDSTARTPOSITION, pos, style);
+    int wordEnd = (int)::SendMessage(hwndEdit, SCI_WORDENDPOSITION, pos, style);
+    
+    return {wordStart, wordEnd};
 }
 
 int Utils::findMatchingBracket(HWND hwndEdit, int pos, char openChar, char closeChar)

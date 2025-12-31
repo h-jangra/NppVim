@@ -267,6 +267,29 @@ void CommandMode::handleColonCommand(HWND hwndEdit, const std::string &cmd)
     return;
   }
 
+   if (cmd.find("sort") == 0) {
+        if (cmd == "sort") {
+            ::SendMessage(nppData._nppHandle, WM_COMMAND, IDM_EDIT_SORTLINES_LEXICOGRAPHIC_ASCENDING, 0);
+            Utils::setStatus(TEXT("Lines sorted"));
+        }
+        else if (cmd == "sort!") {
+            ::SendMessage(nppData._nppHandle, WM_COMMAND, IDM_EDIT_SORTLINES_LEXICOGRAPHIC_DESCENDING, 0);
+            Utils::setStatus(TEXT("Lines sorted (descending)"));
+        }
+        else if (cmd == "sort n") {
+            ::SendMessage(nppData._nppHandle, WM_COMMAND, IDM_EDIT_SORTLINES_INTEGER_ASCENDING, 0);
+            Utils::setStatus(TEXT("Lines sorted (numeric)"));
+        }
+        else if (cmd == "sort n!") {
+            ::SendMessage(nppData._nppHandle, WM_COMMAND, IDM_EDIT_SORTLINES_INTEGER_DESCENDING, 0);
+            Utils::setStatus(TEXT("Lines sorted (numeric descending)"));
+        }
+        else {
+            Utils::setStatus(TEXT("Use: sort, sort!, sort n, sort n!"));
+        }
+        return;
+    }
+
   if (cmd.find('s') != std::string::npos)
   {
     handleSubstitutionCommand(hwndEdit, cmd);
@@ -357,7 +380,78 @@ void CommandMode::handleColonCommand(HWND hwndEdit, const std::string &cmd)
     std::wstring wcmd(cmd.begin(), cmd.end());
     std::wstring msg = L"Not an editor command: " + wcmd;
     Utils::setStatus(msg.c_str());
+  };
+
+  if (cmd == "noh" || cmd == "nohl" || cmd == "nohlsearch") {
+      Utils::clearSearchHighlights(hwndEdit);
+      Utils::setStatus(TEXT("Search highlight cleared"));
   }
+  else if (cmd == "set nu" || cmd == "set number") {
+      ::SendMessage(hwndEdit, SCI_SETMARGINWIDTHN, 0, 50);
+      Utils::setStatus(TEXT("Line numbers enabled"));
+  }
+  else if (cmd == "set nonu" || cmd == "set nonumber") {
+      ::SendMessage(hwndEdit, SCI_SETMARGINWIDTHN, 0, 0);
+      Utils::setStatus(TEXT("Line numbers disabled"));
+  }
+  else if (cmd.find("set tw=") == 0) {
+      int width = std::stoi(cmd.substr(7));
+      ::SendMessage(hwndEdit, SCI_SETEDGECOLUMN, width, 0);
+      Utils::setStatus(TEXT("Text width set"));
+  }
+  else if (cmd == "wa" || cmd == "wall") {
+      ::SendMessage(nppData._nppHandle, NPPM_SAVEALLFILES, 0, 0);
+      Utils::setStatus(TEXT("All files saved"));
+  }
+  else if (cmd == "qa" || cmd == "qall") {
+      ::SendMessage(nppData._nppHandle, WM_COMMAND, IDM_FILE_EXIT, 0);
+  }
+  else if (cmd == "wqa" || cmd == "xa" || cmd == "xall") {
+      ::SendMessage(nppData._nppHandle, NPPM_SAVEALLFILES, 0, 0);
+      ::SendMessage(nppData._nppHandle, WM_COMMAND, IDM_FILE_EXIT, 0);
+  }
+  else if (cmd == "e" || cmd == "edit") {
+      ::SendMessage(nppData._nppHandle, NPPM_RELOADFILE, 0, 0);
+      Utils::setStatus(TEXT("File reloaded"));
+  }
+  else if (cmd == "bn" || cmd == "bnext") {
+      ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_VIEW_TAB_NEXT);
+  }
+  else if (cmd == "bp" || cmd == "bprev" || cmd == "bprevious") {
+      ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_VIEW_TAB_PREV);
+  }
+  else if (cmd == "bd" || cmd == "bdelete") {
+      ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_FILE_CLOSE);
+  }
+  else if (cmd == "sp" || cmd == "split") {
+      ::SendMessage(nppData._nppHandle, WM_COMMAND, IDM_VIEW_CLONE_TO_ANOTHER_VIEW, 0);
+      Utils::setStatus(TEXT("Split window"));
+  }
+  else if (cmd == "vs" || cmd == "vsplit") {
+      ::SendMessage(nppData._nppHandle, WM_COMMAND, IDM_VIEW_CLONE_TO_ANOTHER_VIEW, 0);
+      Utils::setStatus(TEXT("Vertical split"));
+  }
+  else if (cmd.find("tabn") == 0) {
+      int n = (cmd.length() > 4) ? std::stoi(cmd.substr(4)) : 1;
+      for (int i = 0; i < n; i++) {
+          ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_VIEW_TAB_NEXT);
+      }
+  }
+  else if (cmd.find("tabp") == 0) {
+      int n = (cmd.length() > 4) ? std::stoi(cmd.substr(4)) : 1;
+      for (int i = 0; i < n; i++) {
+          ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_VIEW_TAB_PREV);
+      }
+  }
+  else if (cmd == "tabnew") {
+      ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_FILE_NEW);
+  }
+  else if (cmd == "tabclose") {
+      ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_FILE_CLOSE);
+  } else {
+      Utils::setStatus(TEXT("Unknown command"));
+  }
+
 }
 
 void CommandMode::handleSubstitutionCommand(HWND hwndEdit, const std::string &cmd)

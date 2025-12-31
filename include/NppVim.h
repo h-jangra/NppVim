@@ -59,6 +59,7 @@ struct VimState {
     int lastVisualCaret = -1;
     int lastInsertPos = -1;
 
+    bool restoringVisual = false;
     bool lastVisualWasLine = false;
     bool lastVisualWasBlock = false;
 
@@ -66,6 +67,7 @@ struct VimState {
     char opPending = 0;
     char textObjectPending = 0;
     bool replacePending = false;
+    bool visualReplacePending = false;
 
     bool awaitingBracketAbove = false;
     bool awaitingBracketBelow = false;
@@ -98,6 +100,7 @@ struct VimState {
         opPending = 0;
         textObjectPending = 0;
         replacePending = false;
+        visualReplacePending = false;
         awaitingMarkSet = false;
         awaitingMarkJump = false;
         isBacktickJump = false;

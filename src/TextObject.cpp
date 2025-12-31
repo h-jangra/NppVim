@@ -2,10 +2,12 @@
 #include "../include/TextObject.h"
 #include "../include/Utils.h"
 #include "../include/NormalMode.h"
+#include "../include/VisualMode.h"
 #include "../plugin/Scintilla.h"
 #include <cctype>
 
 extern NormalMode* g_normalMode;
+extern VisualMode* g_visualMode;
 
 void TextObject::apply(HWND hwndEdit, VimState& state, char op, char modifier, char object) {
     bool inner = (modifier == 'i');
@@ -98,33 +100,51 @@ void TextObject::apply(HWND hwndEdit, VimState& state, char op, char modifier, c
 std::pair<int, int> TextObject::getTextObjectBounds(HWND hwndEdit, TextObjectType objType, bool inner, int count) {
     int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
 
+    std::pair<int, int> bounds;
+    
     switch (objType) {
-    case TEXT_OBJECT_WORD: {
-        auto bounds = Utils::findWordBounds(hwndEdit, pos);
-        return inner ? trimWhitespaceBounds(hwndEdit, bounds) : expandToWordBoundaries(hwndEdit, bounds);
-    }
-    case TEXT_OBJECT_BIG_WORD: {
-        int start = (int)::SendMessage(hwndEdit, SCI_WORDSTARTPOSITION, pos, 1);
-        int end = (int)::SendMessage(hwndEdit, SCI_WORDENDPOSITION, pos, 1);
-        return inner ? std::make_pair(start, end) : expandToWordBoundaries(hwndEdit, { start, end });
-    }
-    case TEXT_OBJECT_SENTENCE: {
-        return TextObject::findSentenceBounds(hwndEdit, pos, inner);
-    }
-    case TEXT_OBJECT_PARAGRAPH: {
-        return TextObject::findParagraphBounds(hwndEdit, pos, inner);
-    }
+    case TEXT_OBJECT_WORD:
+        bounds = Utils::findWordBounds(hwndEdit, pos);
+        bounds = inner ? trimWhitespaceBounds(hwndEdit, bounds) : expandToWordBoundaries(hwndEdit, bounds);
+        break;
+    case TEXT_OBJECT_BIG_WORD:
+        bounds = std::make_pair(
+            (int)::SendMessage(hwndEdit, SCI_WORDSTARTPOSITION, pos, 1),
+            (int)::SendMessage(hwndEdit, SCI_WORDENDPOSITION, pos, 1)
+        );
+        bounds = inner ? trimWhitespaceBounds(hwndEdit, bounds) : expandToWordBoundaries(hwndEdit, bounds);
+        break;
+    case TEXT_OBJECT_SENTENCE:
+        bounds = findSentenceBounds(hwndEdit, pos, inner);
+        break;
+    case TEXT_OBJECT_PARAGRAPH:
+        bounds = findParagraphBounds(hwndEdit, pos, inner);
+        break;
     case TEXT_OBJECT_PAREN:
-        return findBracketBounds(hwndEdit, pos, '(', ')', inner);
+        bounds = findBracketBounds(hwndEdit, pos, '(', ')', inner);
+        break;
     case TEXT_OBJECT_BRACKET:
-        return findBracketBounds(hwndEdit, pos, '[', ']', inner);
+        bounds = findBracketBounds(hwndEdit, pos, '[', ']', inner);
+        break;
     case TEXT_OBJECT_BRACE:
-        return findBracketBounds(hwndEdit, pos, '{', '}', inner);
+        bounds = findBracketBounds(hwndEdit, pos, '{', '}', inner);
+        break;
     case TEXT_OBJECT_ANGLE:
-        return findBracketBounds(hwndEdit, pos, '<', '>', inner);
+        bounds = findBracketBounds(hwndEdit, pos, '<', '>', inner);
+        break;
     default:
-        return { pos, pos };
+        bounds = { pos, pos };
     }
+
+    if (count > 1 && (objType == TEXT_OBJECT_SENTENCE || objType == TEXT_OBJECT_PARAGRAPH)) {
+        for (int i = 1; i < count; i++) {
+            auto nextBounds = getTextObjectBounds(hwndEdit, objType, inner, 1);
+            if (nextBounds.first >= nextBounds.second) break;
+            bounds.second = nextBounds.second;
+        }
+    }
+
+    return bounds;
 }
 
 std::pair<int, int> TextObject::findBracketBounds(HWND hwndEdit, int pos, char openChar, char closeChar, bool inner) {
@@ -195,58 +215,88 @@ void TextObject::handleWordTextObject(HWND hwndEdit, VimState& state, char op, b
 
     if (pos >= docLen) return;
 
-    char charAtPos = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, pos, 0);
-    while (pos < docLen && (charAtPos == ' ' || charAtPos == '\t' || charAtPos == '\r' || charAtPos == '\n')) {
-        pos++;
-        if (pos < docLen) {
-            charAtPos = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, pos, 0);
+    if (bigWord) {
+        int len = docLen;
+        int start = pos;
+        int end = pos;
+
+        auto is_space = [&](int p) {
+            return std::isspace((unsigned char)::SendMessage(hwndEdit, SCI_GETCHARAT, p, 0));
+        };
+
+        while (start > 0 && !is_space(start - 1))
+            start--;
+
+        end = start;
+        while (end < len && !is_space(end))
+            end++;
+
+        if (count > 1) {
+            int remaining = count - 1;
+            while (remaining > 0 && end < len) {
+                int temp = end;
+                while (temp < len && is_space(temp))
+                    temp++;
+                
+                if (temp >= len) break;
+                
+                while (temp < len && !is_space(temp))
+                    temp++;
+                
+                end = temp;
+                remaining--;
+            }
+        }
+
+        if (inner) {
+            while (start < end && is_space(start)) start++;
+            while (end > start && is_space(end - 1)) end--;
+        }
+
+        executeTextObjectOperation(hwndEdit, state, op, start, end, count);
+        return;
+    }
+
+    int start = (int)::SendMessage(hwndEdit, SCI_WORDSTARTPOSITION, pos, 0);
+    int end = (int)::SendMessage(hwndEdit, SCI_WORDENDPOSITION, pos, 0);
+    
+    if (start == end && pos < docLen) {
+        int nextPos = (int)::SendMessage(hwndEdit, SCI_POSITIONAFTER, pos, 0);
+        if (nextPos < docLen) {
+            start = (int)::SendMessage(hwndEdit, SCI_WORDSTARTPOSITION, nextPos, 0);
+            end = (int)::SendMessage(hwndEdit, SCI_WORDENDPOSITION, nextPos, 0);
         }
     }
 
-    if (pos >= docLen) return;
-
-    auto bounds = Utils::findWordBoundsEx(hwndEdit, pos, bigWord);
-    int start = bounds.first;
-    int end = bounds.second;
-
-    if (start >= end) return;
+    if (inner) {
+        while (start < end && std::isspace((unsigned char)::SendMessage(hwndEdit, SCI_GETCHARAT, start, 0))) start++;
+        while (end > start && std::isspace((unsigned char)::SendMessage(hwndEdit, SCI_GETCHARAT, end - 1, 0))) end--;
+    } else {
+        int origStart = start;
+        int origEnd = end;
+        
+        while (start > 0 && std::isspace((unsigned char)::SendMessage(hwndEdit, SCI_GETCHARAT, start - 1, 0))) start--;
+        while (end < docLen && std::isspace((unsigned char)::SendMessage(hwndEdit, SCI_GETCHARAT, end, 0))) end++;
+        
+        if (start == origStart && end == origEnd && start > 0) {
+            while (start > 0 && std::isspace((unsigned char)::SendMessage(hwndEdit, SCI_GETCHARAT, start - 1, 0))) start--;
+        }
+    }
 
     for (int i = 1; i < count; i++) {
         int nextPos = end;
-        while (nextPos < docLen) {
-            char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, nextPos, 0);
-            if (!(ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n')) {
-                break;
-            }
-            nextPos++;
-        }
-
+        while (nextPos < docLen && std::isspace((unsigned char)::SendMessage(hwndEdit, SCI_GETCHARAT, nextPos, 0))) nextPos++;
         if (nextPos >= docLen) break;
-
-        auto nextBounds = Utils::findWordBoundsEx(hwndEdit, nextPos, bigWord);
-        if (nextBounds.first >= nextBounds.second) break;
-        end = nextBounds.second;
-    }
-
-    if (!inner) {
-        int originalEnd = end;
-
-        while (end < docLen) {
-            char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, end, 0);
-            if (!(ch == ' ' || ch == '\t')) {
-                break;
-            }
-            end++;
-        }
-
-        if (end == originalEnd && start > 0) {
-            while (start > 0) {
-                char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, start - 1, 0);
-                if (!(ch == ' ' || ch == '\t')) {
-                    break;
-                }
-                start--;
-            }
+        
+        int nextStart = (int)::SendMessage(hwndEdit, SCI_WORDSTARTPOSITION, nextPos, 0);
+        int nextEnd = (int)::SendMessage(hwndEdit, SCI_WORDENDPOSITION, nextPos, 0);
+        
+        if (nextStart >= nextEnd) break;
+        
+        end = nextEnd;
+        
+        if (!inner) {
+            while (end < docLen && std::isspace((unsigned char)::SendMessage(hwndEdit, SCI_GETCHARAT, end, 0))) end++;
         }
     }
 
@@ -255,56 +305,41 @@ void TextObject::handleWordTextObject(HWND hwndEdit, VimState& state, char op, b
     }
 }
 
-std::pair<int, int> TextObject::findSentenceBounds(HWND hwndEdit, int pos, bool inner) {
-    int line = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, pos, 0);
-    int lineStart = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, line, 0);
-    int lineEnd = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, line, 0);
-    return { lineStart, lineEnd };
+std::pair<int, int> TextObject::findSentenceBounds(HWND h, int pos, bool) {
+    int line = ::SendMessage(h, SCI_LINEFROMPOSITION, pos, 0);
+    int start = ::SendMessage(h, SCI_POSITIONFROMLINE, line, 0);
+    int end = ::SendMessage(h, SCI_GETLINEENDPOSITION, line, 0);
+    return { start, end };
 }
 
-std::pair<int, int> TextObject::findParagraphBounds(HWND hwndEdit, int pos, bool inner) {
-    int currentLine = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, pos, 0);
-    int lineCount = (int)::SendMessage(hwndEdit, SCI_GETLINECOUNT, 0, 0);
+std::pair<int, int> TextObject::findParagraphBounds(HWND h, int pos, bool inner) {
+    int line = ::SendMessage(h, SCI_LINEFROMPOSITION, pos, 0);
+    int total = ::SendMessage(h, SCI_GETLINECOUNT, 0, 0);
 
-    auto isBlankLine = [&](int line) -> bool {
-        if (line < 0 || line >= lineCount) return true;
-        int lineStart = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, line, 0);
-        int lineEnd = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, line, 0);
-        if (lineStart >= lineEnd) return true;
-        for (int i = lineStart; i < lineEnd; i++) {
-            char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, i, 0);
-            if (!std::isspace((unsigned char)ch)) {
+    auto blank = [&](int l) {
+        int s = ::SendMessage(h, SCI_POSITIONFROMLINE, l, 0);
+        int e = ::SendMessage(h, SCI_GETLINEENDPOSITION, l, 0);
+        for (int i = s; i < e; i++)
+            if (!std::isspace(::SendMessage(h, SCI_GETCHARAT, i, 0)))
                 return false;
-            }
-        }
         return true;
-        };
+    };
 
-    int startLine = currentLine;
-    while (startLine > 0 && !isBlankLine(startLine - 1)) {
-        startLine--;
-    }
+    int s = line;
+    while (s > 0 && !blank(s - 1)) s--;
 
-    int endLine = currentLine;
-    while (endLine < lineCount - 1 && !isBlankLine(endLine + 1)) {
-        endLine++;
-    }
-
-    int start = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, startLine, 0);
-    int end = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, endLine, 0);
+    int e = line;
+    while (e < total - 1 && !blank(e + 1)) e++;
 
     if (!inner) {
-        if (endLine < lineCount - 1 && isBlankLine(endLine + 1)) {
-            endLine++;
-            end = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, endLine, 0);
-        }
-        else if (startLine > 0 && isBlankLine(startLine - 1)) {
-            startLine--;
-            start = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, startLine, 0);
-        }
+        if (s > 0 && blank(s - 1)) s--;
+        if (e < total - 1 && blank(e + 1)) e++;
     }
 
-    return { start, end };
+    return {
+        (int)::SendMessage(h, SCI_POSITIONFROMLINE, s, 0),
+        (int)::SendMessage(h, SCI_GETLINEENDPOSITION, e, 0)
+    };
 }
 
 std::pair<int, int> TextObject::findTagBounds(HWND hwndEdit, int pos, bool inner) {
@@ -345,44 +380,47 @@ bool TextObject::handleCustomTextObject(HWND hwndEdit, VimState& state, char op,
     return false;
 }
 
-void TextObject::executeTextObjectOperation(HWND hwndEdit, VimState& state, char op, int start, int end, int count) {
+void TextObject::executeTextObjectOperation(HWND h, VimState& state, char op, int start, int end, int count) {
     if (start >= end) return;
 
-    ::SendMessage(hwndEdit, SCI_SETSEL, start, end);
+    if (op == 'v') {
+        if (state.mode != VISUAL) {
+            state.mode = VISUAL;
+            state.isLineVisual = false;
+            state.isBlockVisual = false;
+            state.visualAnchor = start;
+            state.visualAnchorLine = ::SendMessage(h, SCI_LINEFROMPOSITION, start, 0);
+            ::SendMessage(h, SCI_SETANCHOR, start, 0);
+            ::SendMessage(h, SCI_SETCURRENTPOS, end, 0);
+        } else {
+            state.visualAnchor = start;
+            state.visualAnchorLine = ::SendMessage(h, SCI_LINEFROMPOSITION, start, 0);
+            ::SendMessage(h, SCI_SETANCHOR, start, 0);
+            ::SendMessage(h, SCI_SETCURRENTPOS, end, 0);
+            ::SendMessage(h, SCI_SETSEL, start, end);
+        }
+        return;
+    }
+
+    ::SendMessage(h, SCI_SETSEL, start, end);
 
     switch (op) {
     case 'd':
-        for (int i = 0; i < count; i++) {
-            ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0);
-        }
-        ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, start, 0);
+        ::SendMessage(h, SCI_CLEAR, 0, 0);
+        ::SendMessage(h, SCI_SETCURRENTPOS, start, 0);
         state.recordLastOp(OP_MOTION, count, 'd');
-        if (state.mode == VISUAL && g_normalMode) {
-            g_normalMode->enter();
-        }
         break;
 
     case 'c':
-        for (int i = 0; i < count; i++) {
-            ::SendMessage(hwndEdit, SCI_CLEAR, 0, 0);
-        }
+        ::SendMessage(h, SCI_CLEAR, 0, 0);
         state.recordLastOp(OP_MOTION, count, 'c');
         if (g_normalMode) g_normalMode->enterInsertMode();
         break;
 
     case 'y':
-        for (int i = 0; i < count; i++) {
-            ::SendMessage(hwndEdit, SCI_COPYRANGE, start, end);
-        }
-        ::SendMessage(hwndEdit, SCI_SETSEL, start, start);
+        ::SendMessage(h, SCI_COPY, 0, 0);
+        ::SendMessage(h, SCI_SETSEL, start, start);
         state.recordLastOp(OP_MOTION, count, 'y');
-        if (state.mode == VISUAL && g_normalMode) {
-            g_normalMode->enter();
-        }
-        break;
-
-    case 'v':
-        ::SendMessage(hwndEdit, SCI_SETSEL, start, end);
         break;
     }
 }

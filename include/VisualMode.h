@@ -32,6 +32,7 @@ private:
     void setSelection(HWND hwndEdit, int startPos, int endPos);
     void moveCursor(HWND hwndEdit, int newPos, bool extend = false);
     void visualMoveCursor(HWND hwndEdit, int newPos);
+    void handleVisualReplaceInput(HWND hwnd, char replaceChar);
 };
 
 extern VisualMode* g_visualMode;
