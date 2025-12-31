@@ -290,8 +290,7 @@ void CommandMode::handleColonCommand(HWND hwndEdit, const std::string &cmd)
         return;
     }
 
-  if (cmd.find('s') != std::string::npos)
-  {
+  if (cmd.size() >= 2 && cmd[0] == 's' && !std::isalnum(cmd[1])) {
     handleSubstitutionCommand(hwndEdit, cmd);
     return;
   }
@@ -389,15 +388,19 @@ void CommandMode::handleColonCommand(HWND hwndEdit, const std::string &cmd)
   else if (cmd == "set nu" || cmd == "set number") {
       ::SendMessage(hwndEdit, SCI_SETMARGINWIDTHN, 0, 50);
       Utils::setStatus(TEXT("Line numbers enabled"));
+      return;
   }
   else if (cmd == "set nonu" || cmd == "set nonumber") {
       ::SendMessage(hwndEdit, SCI_SETMARGINWIDTHN, 0, 0);
       Utils::setStatus(TEXT("Line numbers disabled"));
+      return;
   }
   else if (cmd.find("set tw=") == 0) {
       int width = std::stoi(cmd.substr(7));
       ::SendMessage(hwndEdit, SCI_SETEDGECOLUMN, width, 0);
+      ::SendMessage(hwndEdit, SCI_SETEDGEMODE, EDGE_LINE, 0);
       Utils::setStatus(TEXT("Text width set"));
+      return;
   }
   else if (cmd == "wa" || cmd == "wall") {
       ::SendMessage(nppData._nppHandle, NPPM_SAVEALLFILES, 0, 0);
@@ -426,13 +429,21 @@ void CommandMode::handleColonCommand(HWND hwndEdit, const std::string &cmd)
   else if (cmd == "sp" || cmd == "split") {
       ::SendMessage(nppData._nppHandle, WM_COMMAND, IDM_VIEW_CLONE_TO_ANOTHER_VIEW, 0);
       Utils::setStatus(TEXT("Split window"));
+      return;
   }
   else if (cmd == "vs" || cmd == "vsplit") {
       ::SendMessage(nppData._nppHandle, WM_COMMAND, IDM_VIEW_CLONE_TO_ANOTHER_VIEW, 0);
       Utils::setStatus(TEXT("Vertical split"));
+      return;
   }
   else if (cmd.find("tabn") == 0) {
-      int n = (cmd.length() > 4) ? std::stoi(cmd.substr(4)) : 1;
+      int n = 1;
+      if (cmd.length() > 4) {
+          std::string num = cmd.substr(4);
+          bool ok = !num.empty();
+          for (char ch : num) if (!isdigit(ch)) ok = false;
+          if (ok) n = std::stoi(num);
+      }
       for (int i = 0; i < n; i++) {
           ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_VIEW_TAB_NEXT);
       }
@@ -445,9 +456,11 @@ void CommandMode::handleColonCommand(HWND hwndEdit, const std::string &cmd)
   }
   else if (cmd == "tabnew") {
       ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_FILE_NEW);
+      return;
   }
   else if (cmd == "tabclose") {
       ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_FILE_CLOSE);
+      return;
   } else {
       Utils::setStatus(TEXT("Unknown command"));
   }

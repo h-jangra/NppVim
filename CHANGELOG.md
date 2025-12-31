@@ -48,7 +48,7 @@
 - `wa` / `wall` – Write all buffers
 - `qa` / `qall` – Quit all buffers
 - `wqa` / `xa` / `xall` – Save and quit all
-- `e` / `edit` – Edit file
+- `e` / `edit` Refresh file
 - `bp` / `bprev` / `bprevious` – Go to previous buffer
 - `bd` / `bdelete` – Delete buffer
 - `sp` / `split` – Horizontal split
