@@ -169,7 +169,7 @@ void VisualMode::setupKeyMaps() {
          state.recordLastOp(OP_MOTION, c, 'c');
          if (g_normalMode) g_normalMode->enterInsertMode();
      })
-    .set("o", "Switch cursor in selection", [this](HWND h, int c) {
+    .set("o", "Switch cursor", [this](HWND h, int c) {
         int pos = Utils::caretPos(h);
         int anchor = ::SendMessage(h, SCI_GETANCHOR, 0, 0);
         
@@ -185,20 +185,20 @@ void VisualMode::setupKeyMaps() {
         }
     });
     
-    k.set("v", "Visual char selection", [this](HWND h, int c) {
+    k.set("v", "Character visual", [this](HWND h, int c) {
          if (!state.isLineVisual && !state.isBlockVisual) exitToNormal(h);
          else enterChar(h);
      })
-     .set("V", "Visual line selection", [this](HWND h, int c) {
+     .set("V", "Line visual", [this](HWND h, int c) {
          if (state.isLineVisual) exitToNormal(h);
          else enterLine(h);
      })
-     .set("\x16", "Visual block selection", [this](HWND h, int c) {
+     .set("\x16", "Block visual", [this](HWND h, int c) {
          if (state.isBlockVisual) exitToNormal(h);
          else enterBlock(h);
      });
     
-    k.set("I", "Insert before selection", [this](HWND h, int c) {
+    k.set("I", "Insert before", [this](HWND h, int c) {
         if (state.isBlockVisual) {
             int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
             int caret = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONCARET, 0, 0);
@@ -237,7 +237,7 @@ void VisualMode::setupKeyMaps() {
         }
         if (g_normalMode) g_normalMode->enterInsertMode();
     })
-    .set("A", "Insert after selection", [this](HWND h, int c) {
+    .set("A", "Insert after", [this](HWND h, int c) {
         if (state.isBlockVisual) {
             int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
             int caret = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONCARET, 0, 0);

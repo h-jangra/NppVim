@@ -110,6 +110,14 @@ struct VimState {
         lastSearchMatchCount = -1;
     }
 
+    void resetPending() {
+        repeatCount = 0;
+        opPending = 0;
+        textObjectPending = 0;
+        replacePending = false;
+        visualReplacePending = false;
+    }
+
     void recordLastOp(OperationType type, int count, char motion = 0, char searchChar = 0) {
         lastOp.type = type;
         lastOp.count = count;
