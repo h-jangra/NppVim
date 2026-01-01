@@ -3,6 +3,8 @@
 #include "../include/Utils.h"
 
 std::unique_ptr<Keymap> g_normalKeymap;
+std::unique_ptr<Keymap> g_visualKeymap;
+std::unique_ptr<Keymap> g_commandKeymap;
 
 Keymap::Keymap(VimState& state) 
     : state(state), root(std::make_shared<KeymapNode>()), currentNode(root) {}
@@ -12,9 +14,7 @@ Keymap& Keymap::set(const std::string& keys, KeyHandler handler) {
     return *this;
 }
 
-Keymap& Keymap::set(const std::string& keys,
-                    const std::string& desc,
-                    KeyHandler handler) {
+Keymap& Keymap::set(const std::string& keys, const std::string& desc, KeyHandler handler) {
     insertKeySequence(keys, handler);
     bindings.push_back({ keys, desc });
     return *this;
@@ -30,6 +30,12 @@ const std::vector<KeyBinding>& Keymap::getBindings() const {
 
 Keymap& Keymap::motion(const std::string& keys, char motionChar, KeyHandler handler) {
     insertKeySequence(keys, handler, motionChar);
+    return *this;
+}
+
+Keymap& Keymap::motion(const std::string& keys, char motionChar, const std::string& desc, KeyHandler handler) {
+    insertKeySequence(keys, handler, motionChar);
+    bindings.push_back({ keys, desc });
     return *this;
 }
 

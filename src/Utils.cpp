@@ -504,3 +504,59 @@ void Utils::setClipboardText(const std::string& text) {
     }
     CloseClipboard();
 }
+
+static void appendSection(std::string& out, const std::string& title, const Keymap& km) {
+    out += "\n";
+    out += title;
+    out += "\n";
+    out += std::string(title.size(), '-');
+    out += "\n";
+
+    size_t maxKey = 0;
+    for (const auto& b : km.getBindings())
+        maxKey = (std::max)(maxKey, b.keys.size());
+
+    for (const auto& b : km.getBindings()) {
+        out += ":";
+        out += b.keys;
+        out += std::string(maxKey - b.keys.size() + 2, ' ');
+        out += "- ";
+        out += b.desc;
+        out += "\n";
+    }
+}
+
+std::string Utils::buildTutorText() {
+    std::string out;
+
+    out += "NppVim Tutor\n";
+    out += "============\n\n";
+
+    auto append = [&](const char* title, const Keymap* km) {
+        if (!km) return;
+
+        out += title;
+        out += "\n";
+        out += std::string(strlen(title), '-') + "\n";
+
+        size_t pad = 0;
+        for (const auto& b : km->getBindings())
+            pad = (std::max)(pad, b.keys.size());
+
+        for (const auto& b : km->getBindings()) {
+            out += "  ";
+            out += b.keys;
+            out += std::string(pad - b.keys.size() + 2, ' ');
+            out += "- ";
+            out += b.desc;
+            out += "\n";
+        }
+        out += "\n";
+    };
+
+    append("Normal Mode", g_normalKeymap.get());
+    append("Visual Mode", g_visualKeymap.get());
+    append("Command Mode", g_commandKeymap.get());
+
+    return out;
+}

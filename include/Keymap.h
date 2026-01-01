@@ -5,8 +5,14 @@
 #include <string>
 #include <unordered_map>
 #include <memory>
+#include <vector>
 
 struct VimState;
+class Keymap;
+
+extern std::unique_ptr<Keymap> g_normalKeymap;
+extern std::unique_ptr<Keymap> g_visualKeymap;
+extern std::unique_ptr<Keymap> g_commandKeymap;
 
 using KeyHandler = std::function<void(HWND, int)>;
 
@@ -31,6 +37,7 @@ public:
     Keymap& set(const std::string& keys, const std::string& desc, KeyHandler handler);
 
     Keymap& motion(const std::string& keys, char motionChar, KeyHandler handler);
+    Keymap& motion(const std::string& keys, char motionChar, const std::string& desc, KeyHandler handler);
 
     void setAllowCount(bool v);
     const std::vector<KeyBinding>& getBindings() const;
@@ -53,5 +60,3 @@ private:
     void insertKeySequence(const std::string& keys, KeyHandler handler, char motionChar = 0);
     bool processKey(HWND hwnd, char key, int count);
 };
-
-extern std::unique_ptr<Keymap> g_normalKeymap;

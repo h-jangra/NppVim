@@ -1,8 +1,10 @@
 #include "../include/CommandMode.h"
 #include "../include/Utils.h"
 #include "../include/NormalMode.h"
+#include "../include/Keymap.h"
 #include "../include/NppVim.h"
 #include "../include/Marks.h"
+#include "../include/Utils.h"
 #include "../plugin/Scintilla.h"
 #include "../plugin/Notepad_plus_msgs.h"
 #include "../plugin/PluginInterface.h"
@@ -12,7 +14,6 @@ extern NormalMode *g_normalMode;
 extern NppData nppData;
 
 static void appendNonKeymapHelp(std::string& help);
-static std::unique_ptr<Keymap> g_commandKeymap;
 
 void CommandMode::enter(char prompt)
 {
@@ -341,6 +342,20 @@ void CommandMode::handleColonCommand(HWND hwndEdit, const std::string &cmd)
 
 }
 
+auto tutorHandler = [](HWND, int) {
+    ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_FILE_NEW);
+
+    HWND h = Utils::getCurrentScintillaHandle();
+    std::string tutor = Utils::buildTutorText();
+
+    ::SendMessage(h, SCI_SETREADONLY, FALSE, 0);
+    ::SendMessage(h, SCI_SETTEXT, 0, (LPARAM)tutor.c_str());
+    ::SendMessage(h, SCI_SETSAVEPOINT, 0, 0);
+    ::SendMessage(h, SCI_SETREADONLY, FALSE, 0);
+
+    Utils::setStatus(TEXT("-- TUTOR --"));
+};
+
 auto helpHandler = [](HWND, int) {
     ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_FILE_NEW);
 
@@ -451,7 +466,10 @@ CommandMode::CommandMode(VimState &state) : state(state)
         Utils::setStatus(TEXT("Line numbers disabled"));
     })
     .set("h",    "Open command help", helpHandler)
-    .set("help", "Open command help", helpHandler);
+    .set("help", "Open command help", helpHandler)
+    .set("tutor", "Open tutor", tutorHandler)
+    .set("tut",   "Open tutor", tutorHandler)
+    .set("t",     "Open tutor", tutorHandler);
 }
 
 static void appendNonKeymapHelp(std::string& help) {

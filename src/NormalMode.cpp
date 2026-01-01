@@ -7,6 +7,7 @@
 #include "../include/NormalMode.h"
 #include "../include/CommandMode.h"
 #include "../include/VisualMode.h"
+#include "../include/Keymap.h"
 #include "../include/Marks.h"
 #include "../include/TextObject.h"
 #include "../include/Utils.h"
@@ -28,19 +29,19 @@ NormalMode::NormalMode(VimState& state) : state(state) {
 void NormalMode::setupKeyMaps() {
     auto& k = *g_normalKeymap;
     
-    k.motion("h", 'h', [](HWND h, int c) { Motion::charLeft(h, c); })
-     .motion("j", 'j', [](HWND h, int c) { Motion::lineDown(h, c); })
-     .motion("k", 'k', [](HWND h, int c) { Motion::lineUp(h, c); })
-     .motion("l", 'l', [](HWND h, int c) { Motion::charRight(h, c); })
-     .motion("w", 'w', [](HWND h, int c) { Motion::wordRight(h, c); })
-     .motion("W", 'W', [](HWND h, int c) { Motion::wordRightBig(h, c); })
-     .motion("b", 'b', [](HWND h, int c) { Motion::wordLeft(h, c); })
-     .motion("B", 'B', [](HWND h, int c) { Motion::wordLeftBig(h, c); })
-     .motion("e", 'e', [](HWND h, int c) { Motion::wordEnd(h, c); })
-     .motion("E", 'E', [](HWND h, int c) { Motion::wordEndBig(h, c); })
-     .motion("0", '0', [](HWND h, int c) { Motion::lineStart(h, 1); })
-     .motion("$", '$', [](HWND h, int c) { Motion::lineEnd(h, c); })
-     .motion("^", '^', [](HWND h, int c) { Motion::lineStart(h, c); })
+    k.motion("h", 'h', "Move cursor left", [](HWND h, int c) { Motion::charLeft(h, c); })
+     .motion("j", 'j', "Move cursor down", [](HWND h, int c) { Motion::lineDown(h, c); })
+     .motion("k", 'k', "Move cursor up", [](HWND h, int c) { Motion::lineUp(h, c); })
+     .motion("l", 'l', "Move cursor right", [](HWND h, int c) { Motion::charRight(h, c); })
+     .motion("w", 'w', "", [](HWND h, int c) { Motion::wordRight(h, c); })
+     .motion("W", 'W', "", [](HWND h, int c) { Motion::wordRightBig(h, c); })
+     .motion("b", 'b', "", [](HWND h, int c) { Motion::wordLeft(h, c); })
+     .motion("B", 'B', "", [](HWND h, int c) { Motion::wordLeftBig(h, c); })
+     .motion("e", 'e', "", [](HWND h, int c) { Motion::wordEnd(h, c); })
+     .motion("E", 'E', "", [](HWND h, int c) { Motion::wordEndBig(h, c); })
+     .motion("0", '0', "", [](HWND h, int c) { Motion::lineStart(h, 1); })
+     .motion("$", '$', "", [](HWND h, int c) { Motion::lineEnd(h, c); })
+     .motion("^", '^', "", [](HWND h, int c) { Motion::lineStart(h, c); })
      .motion("{", '{', [this](HWND h, int c) {
         long pos = Utils::caretPos(h);
         int line = Utils::caretLine(h);

@@ -1,6 +1,7 @@
 #include "../include/VisualMode.h"
 #include "../include/NormalMode.h"
 #include "../include/CommandMode.h"
+#include "../include/Keymap.h"
 #include "../include/TextObject.h"
 #include "../include/Utils.h"
 #include "../plugin/menuCmdID.h"
@@ -11,9 +12,6 @@
 extern NormalMode* g_normalMode;
 extern CommandMode* g_commandMode;
 extern NppData nppData;
-extern std::unique_ptr<Keymap> g_normalKeymap;
-
-std::unique_ptr<Keymap> g_visualKeymap;
 
 VisualMode::VisualMode(VimState& state) : state(state) {
     g_visualKeymap = std::make_unique<Keymap>(state);
@@ -27,7 +25,7 @@ bool VisualMode::iswalnum(char c) {
 void VisualMode::setupKeyMaps() {
     auto& k = *g_visualKeymap;
     
-    k.set("d", [this](HWND h, int c) {
+    k.set("d", "Delete selection", [this](HWND h, int c) {
          Utils::beginUndo(h);
          if (state.isBlockVisual) {
              ::SendMessage(h, SCI_CLEAR, 0, 0);
@@ -42,8 +40,8 @@ void VisualMode::setupKeyMaps() {
          state.recordLastOp(OP_MOTION, c, 'd');
          exitToNormal(h);
      })
-    .set("x", [this](HWND h, int c) { g_visualKeymap->handleKey(h, 'd'); })
-    .set("y", [this](HWND h, int c) {
+    .set("x", "Clear selection", [this](HWND h, int c) { g_visualKeymap->handleKey(h, 'd'); })
+    .set("y", "Yank selection", [this](HWND h, int c) {
         if (state.isBlockVisual) {
             int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
             int caret = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONCARET, 0, 0);
@@ -131,7 +129,7 @@ void VisualMode::setupKeyMaps() {
         state.recordLastOp(OP_MOTION, c, 'y');
         exitToNormal(h);
     })
-     .set("c", [this](HWND h, int c) {
+     .set("c", "Change selection", [this](HWND h, int c) {
          Utils::beginUndo(h);
          if (state.isBlockVisual) {
              int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
@@ -171,7 +169,7 @@ void VisualMode::setupKeyMaps() {
          state.recordLastOp(OP_MOTION, c, 'c');
          if (g_normalMode) g_normalMode->enterInsertMode();
      })
-    .set("o", [this](HWND h, int c) {
+    .set("o", "Switch cursor in selection", [this](HWND h, int c) {
         int pos = Utils::caretPos(h);
         int anchor = ::SendMessage(h, SCI_GETANCHOR, 0, 0);
         
@@ -187,20 +185,20 @@ void VisualMode::setupKeyMaps() {
         }
     });
     
-    k.set("v", [this](HWND h, int c) {
+    k.set("v", "Visual char selection", [this](HWND h, int c) {
          if (!state.isLineVisual && !state.isBlockVisual) exitToNormal(h);
          else enterChar(h);
      })
-     .set("V", [this](HWND h, int c) {
+     .set("V", "Visual line selection", [this](HWND h, int c) {
          if (state.isLineVisual) exitToNormal(h);
          else enterLine(h);
      })
-     .set("\x16", [this](HWND h, int c) {
+     .set("\x16", "Visual block selection", [this](HWND h, int c) {
          if (state.isBlockVisual) exitToNormal(h);
          else enterBlock(h);
      });
     
-    k.set("I", [this](HWND h, int c) {
+    k.set("I", "Insert before selection", [this](HWND h, int c) {
         if (state.isBlockVisual) {
             int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
             int caret = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONCARET, 0, 0);
@@ -239,7 +237,7 @@ void VisualMode::setupKeyMaps() {
         }
         if (g_normalMode) g_normalMode->enterInsertMode();
     })
-    .set("A", [this](HWND h, int c) {
+    .set("A", "Insert after selection", [this](HWND h, int c) {
         if (state.isBlockVisual) {
             int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
             int caret = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONCARET, 0, 0);
@@ -279,16 +277,16 @@ void VisualMode::setupKeyMaps() {
         if (g_normalMode) g_normalMode->enterInsertMode();
     });
     
-    k.set("i", [this](HWND h, int c) {
-         if (state.isBlockVisual) return;
-         state.textObjectPending = 'i';
-         Utils::setStatus(TEXT("-- inner text object --"));
-     })
-     .set("a", [this](HWND h, int c) {
-         if (state.isBlockVisual) return;
-         state.textObjectPending = 'a';
-         Utils::setStatus(TEXT("-- around text object --"));
-        });
+    // k.set("i", [this](HWND h, int c) {
+    //      if (state.isBlockVisual) return;
+    //      state.textObjectPending = 'i';
+    //      Utils::setStatus(TEXT("-- inner text object --"));
+    //  })
+    //  .set("a", [this](HWND h, int c) {
+    //      if (state.isBlockVisual) return;
+    //      state.textObjectPending = 'a';
+    //      Utils::setStatus(TEXT("-- around text object --"));
+    //     });
         
     k.motion("h", 'h', [this](HWND h, int c) {
         if (state.isBlockVisual) {

@@ -7,6 +7,8 @@
 
 struct VimState;
 
+class Keymap;
+
 struct BlockSelection {
     int startLine;
     int endLine;
@@ -72,7 +74,10 @@ public:
 
     static void setClipboardText(const std::string& text);
 
+    static std::string buildTutorText();
+
 private:
     static NppData nppData;
     friend void setNppData(NppData data);
 };
+
