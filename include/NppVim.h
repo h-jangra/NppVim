@@ -38,6 +38,9 @@ struct LastOperation {
     int count = 0;
     char motion = 0;
     char searchChar = 0;
+
+    char textModifier = 0;
+    char textObject = 0;
 };
 
 struct JumpPosition {

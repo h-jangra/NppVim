@@ -251,14 +251,31 @@ void NormalMode::setupKeyMaps() {
         }
     });
 
-    k.set("d", [this](HWND h, int c) {
-        state.opPending = 'd';
-        Utils::setStatus(TEXT("-- DELETE --"));
-    })
-    .set("c", [this](HWND h, int c) {
-        state.opPending = 'c';
-        Utils::setStatus(TEXT("-- CHANGE --"));
-    });
+    k.set("d", "Delete line", [this](HWND h, int c) {
+         state.resetPending();
+         state.lastYankLinewise = true;
+         Utils::beginUndo(h);
+         for (int i = 0; i < c; ++i) deleteLineOnce(h);
+         Utils::endUndo(h);
+         state.recordLastOp(OP_DELETE_LINE, c);
+     })
+     .set("y", "Yank line", [this](HWND h, int c) {
+         state.resetPending();
+         state.lastYankLinewise = true;
+         Utils::beginUndo(h);
+         for (int i = 0; i < c; ++i) yankLineOnce(h);
+         Utils::endUndo(h);
+         state.recordLastOp(OP_YANK_LINE, c);
+     })
+     .set("c", "Change line", [this](HWND h, int c) {
+         state.resetPending();
+         Utils::beginUndo(h);
+         for (int i = 0; i < c; ++i) deleteLineOnce(h);
+         Utils::endUndo(h);
+         enterInsertMode();
+         state.recordLastOp(OP_MOTION, c, 'c');
+     });
+
     k.set("iw", "Inner word", [this](HWND h, int c) {
         if (!state.opPending) return;
         TextObject t; t.apply(h, state, state.opPending, 'i', 'w');
@@ -377,28 +394,7 @@ void NormalMode::setupKeyMaps() {
          enterInsertMode();
      });
     
-     k.set("dd", "Delete line", [this](HWND h, int c) {
-         state.lastYankLinewise = true;
-         Utils::beginUndo(h);
-         for (int i = 0; i < c; ++i) deleteLineOnce(h);
-         Utils::endUndo(h);
-         state.recordLastOp(OP_DELETE_LINE, c);
-     })
-     .set("yy", "Yank line", [this](HWND h, int c) {
-         state.lastYankLinewise = true;
-         Utils::beginUndo(h);
-         for (int i = 0; i < c; ++i) yankLineOnce(h);
-         Utils::endUndo(h);
-         state.recordLastOp(OP_YANK_LINE, c);
-     })
-     .set("cc", "Change line", [this](HWND h, int c) {
-         Utils::beginUndo(h);
-         for (int i = 0; i < c; ++i) deleteLineOnce(h);
-         Utils::endUndo(h);
-         enterInsertMode();
-         state.recordLastOp(OP_MOTION, c, 'c');
-     })
-     .set("D", "Delete to end", [this](HWND h, int c) {
+     k.set("D", "Delete to end", [this](HWND h, int c) {
          Utils::beginUndo(h);
          for (int i = 0; i < c; i++) {
              int pos = Utils::caretPos(h);
@@ -610,9 +606,20 @@ void NormalMode::setupKeyMaps() {
              for (int i = 0; i < rc; ++i) yankLineOnce(h);
              break;
          case OP_PASTE_LINE:
-             for (int i = 0; i < rc; ++i) ::SendMessage(h, SCI_PASTE, 0, 0);
+             for (int i = 0; i < rc; ++i) Utils::pasteAfter(h, 1, state.lastYankLinewise);
              break;
          case OP_MOTION:
+             if (state.lastOp.textModifier && state.lastOp.textObject) {
+                TextObject t;
+                t.apply(
+                    h,
+                    state,
+                    state.lastOp.motion,
+                    state.lastOp.textModifier,
+                    state.lastOp.textObject
+                );
+                break;
+            }
              if (state.lastOp.motion == 'x' || state.lastOp.motion == 'X') {
                  auto& k = *g_normalKeymap;
                  k.handleKey(h, state.lastOp.motion);
@@ -1003,6 +1010,17 @@ void NormalMode::enterInsertMode() {
 }
 
 void NormalMode::handleKey(HWND hwnd, char c) {
+    if (!state.opPending && (c == 'd' || c == 'c' || c == 'y')) {
+        state.lastYankLinewise = false;
+        state.opPending = c;
+        Utils::setStatus(
+            c == 'd' ? TEXT("-- DELETE --") :
+            c == 'c' ? TEXT("-- CHANGE --") :
+                    TEXT("-- YANK --")
+        );
+        return;
+    }
+
     if (state.replacePending) {
         handleReplaceInput(hwnd, c);
         return;

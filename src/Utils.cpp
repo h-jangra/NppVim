@@ -444,12 +444,12 @@ void Utils::pasteAfter(HWND hwnd, int count, bool linewise) {
         auto r = lineRange(hwnd, line, true);
         ::SendMessage(hwnd, SCI_GOTOPOS, r.second, 0);
     } else {
-        ::SendMessage(hwnd, SCI_GOTOPOS,
-            (int)::SendMessage(hwnd, SCI_POSITIONAFTER, pos, 0), 0);
+        ::SendMessage(hwnd, SCI_GOTOPOS, (int)::SendMessage(hwnd, SCI_POSITIONAFTER, pos, 0), 0);
     }
-    for (int i = 0; i < count; i++) {
-        ::SendMessage(hwnd, SCI_PASTE, 0, 0);
-    }
+    for (int i = 0; i < count; i++) { ::SendMessage(hwnd, SCI_PASTE, 0, 0); }
+
+     int newPos = caretPos(hwnd);
+    ::SendMessage(hwnd, SCI_SETSEL, newPos, newPos);
 }
 
 void Utils::pasteBefore(HWND hwnd, int count, bool linewise) {

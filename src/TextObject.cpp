@@ -14,6 +14,14 @@ void TextObject::apply(HWND hwndEdit, VimState& state, char op, char modifier, c
     int count = state.repeatCount > 0 ? state.repeatCount : 1;
     state.repeatCount = 0;
 
+    auto record = [&]() {
+        state.lastOp.type = OP_MOTION;
+        state.lastOp.count = count;
+        state.lastOp.motion = op;
+        state.lastOp.textModifier = modifier;
+        state.lastOp.textObject = object;
+    };
+
     TextObjectType objType = TEXT_OBJECT_WORD;
     char quoteChar = 0;
     char bracketChar = 0;
@@ -21,9 +29,11 @@ void TextObject::apply(HWND hwndEdit, VimState& state, char op, char modifier, c
     switch (object) {
     case 'w':
         handleWordTextObject(hwndEdit, state, op, inner, count, false);
+        record();
         return;
     case 'W':
         handleWordTextObject(hwndEdit, state, op, inner, count, true);
+        record();
         return;
 
     case 's': objType = TEXT_OBJECT_SENTENCE; break;
@@ -70,7 +80,10 @@ void TextObject::apply(HWND hwndEdit, VimState& state, char op, char modifier, c
             end--;
             if (start >= end) return;
         }
-        if (start < end) executeTextObjectOperation(hwndEdit, state, op, start, end, count);
+        if (start < end) {
+            executeTextObjectOperation(hwndEdit, state, op, start, end, count);
+            record();
+        }
         return;
     }
 
@@ -87,6 +100,7 @@ void TextObject::apply(HWND hwndEdit, VimState& state, char op, char modifier, c
         auto bounds = findBracketBounds(hwndEdit, (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0), openChar, closeChar, inner);
         if (bounds.first < bounds.second) {
             executeTextObjectOperation(hwndEdit, state, op, bounds.first, bounds.second, count);
+            record();
         }
         return;
     }
@@ -94,6 +108,7 @@ void TextObject::apply(HWND hwndEdit, VimState& state, char op, char modifier, c
     auto bounds = getTextObjectBounds(hwndEdit, objType, inner, count);
     if (bounds.first < bounds.second) {
         executeTextObjectOperation(hwndEdit, state, op, bounds.first, bounds.second, count);
+        record();
     }
 }
 
