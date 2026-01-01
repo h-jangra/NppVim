@@ -150,4 +150,8 @@ struct VimState {
     }
 };
 
+void showConfigDialog();
+void about();
+void loadConfig();
+
 extern VimState state;

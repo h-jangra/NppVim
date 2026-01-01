@@ -18,13 +18,23 @@ public:
     char motionChar = 0;  // For automatic motion tracking
 };
 
+struct KeyBinding {
+    std::string keys;
+    std::string desc;
+};
+
 class Keymap {
 public:
     Keymap(VimState& state);
     
     Keymap& set(const std::string& keys, KeyHandler handler);
+    Keymap& set(const std::string& keys, const std::string& desc, KeyHandler handler);
+
     Keymap& motion(const std::string& keys, char motionChar, KeyHandler handler);
-    
+
+    void setAllowCount(bool v);
+    const std::vector<KeyBinding>& getBindings() const;
+
     bool handleKey(HWND hwnd, char key);
     void reset();
     
@@ -36,6 +46,9 @@ private:
     std::shared_ptr<KeymapNode> root;
     std::shared_ptr<KeymapNode> currentNode;
     std::string pendingKeys;
+
+    bool allowCount = true;
+    std::vector<KeyBinding> bindings;
     
     void insertKeySequence(const std::string& keys, KeyHandler handler, char motionChar = 0);
     bool processKey(HWND hwnd, char key, int count);

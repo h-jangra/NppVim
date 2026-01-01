@@ -11,7 +11,8 @@
 extern NormalMode *g_normalMode;
 extern NppData nppData;
 
-CommandMode::CommandMode(VimState &state) : state(state) {}
+static void appendNonKeymapHelp(std::string& help);
+static std::unique_ptr<Keymap> g_commandKeymap;
 
 void CommandMode::enter(char prompt)
 {
@@ -295,176 +296,184 @@ void CommandMode::handleColonCommand(HWND hwndEdit, const std::string &cmd)
     return;
   }
 
-  if (cmd == "w" || cmd == "write")
-  {
-    ::SendMessage(nppData._nppHandle, NPPM_SAVECURRENTFILE, 0, 0);
-    Utils::setStatus(TEXT("File saved"));
-  }
-  else if (cmd == "q" || cmd == "quit")
-  {
-    ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_FILE_CLOSE);
-  }
-  else if (cmd == "wq" || cmd == "x")
-  {
-    ::SendMessage(nppData._nppHandle, NPPM_SAVECURRENTFILE, 0, 0);
-    ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_FILE_CLOSE);
-  }
-  else if (cmd == "q!" || cmd == "quit!")
-  {
-    ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_FILE_CLOSE);
-  }
-  else if (cmd == "tutor" || cmd == "tut")
-  {
-    TCHAR nppPath[MAX_PATH] = {0};
-    ::SendMessage(nppData._nppHandle, NPPM_GETNPPDIRECTORY, MAX_PATH, (LPARAM)nppPath);
-    std::wstring tutorPath = std::wstring(nppPath) + L"\\plugins\\NppVim\\tutor.txt";
-    ::SendMessage(nppData._nppHandle, NPPM_DOOPEN, 0, (LPARAM)tutorPath.c_str());
-    Utils::setStatus(TEXT("Opened tutor"));
-  }
-  else if (cmd == "reg" || cmd == "registers")
-  {
-    if (OpenClipboard(NULL))
-    {
-      HANDLE hData = GetClipboardData(CF_TEXT);
-      if (hData != NULL)
-      {
-        char* pszText = static_cast<char*>(GlobalLock(hData));
-        if (pszText != NULL)
-        {
-          int currentPos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
-          ::SendMessage(hwndEdit, SCI_INSERTTEXT, currentPos, (LPARAM)pszText);
-          GlobalUnlock(hData);
-          Utils::setStatus(TEXT("Pasted from clipboard"));
-        }
-        else
-        {
-          Utils::setStatus(TEXT("No text in clipboard"));
-        }
-      }
-      else
-      {
-        Utils::setStatus(TEXT("Cannot get clipboard data"));
-      }
-      CloseClipboard();
-    }
-    else
-    {
-      Utils::setStatus(TEXT("Cannot open clipboard"));
-    }
-  }
-  else if (cmd == "wrap" || cmd == "wrapmode" || cmd == "wrap on")
-  {
+  if (cmd == "wrap" || cmd == "wrapmode" || cmd == "wrap on") {
     ::SendMessage(hwndEdit, SCI_SETWRAPMODE, SC_WRAP_WORD, 0);
     ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_VIEW_WRAP);
     Utils::setStatus(TEXT("Word wrap enabled"));
+    return;
   }
-  else if (cmd == "nowrap" || cmd == "wrap off")
-  {
-    ::SendMessage(hwndEdit, SCI_SETWRAPMODE, SC_WRAP_NONE, 0);
-    ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_VIEW_WRAP);
-    Utils::setStatus(TEXT("Word wrap disabled"));
+  if (cmd == "nowrap" || cmd == "wrap off") {
+      ::SendMessage(hwndEdit, SCI_SETWRAPMODE, SC_WRAP_NONE, 0);
+      ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_VIEW_WRAP);
+      Utils::setStatus(TEXT("Word wrap disabled"));
+      return;
   }
-  else if (cmd == "wrap char")
-  {
-    ::SendMessage(hwndEdit, SCI_SETWRAPMODE, SC_WRAP_CHAR, 0);
-    Utils::setStatus(TEXT("Character wrap enabled"));
+  if (cmd == "wrap char") {
+      ::SendMessage(hwndEdit, SCI_SETWRAPMODE, SC_WRAP_CHAR, 0);
+      Utils::setStatus(TEXT("Character wrap enabled"));
+      return;
   }
-  else if (cmd == "wrap whitespace")
-  {
-    ::SendMessage(hwndEdit, SCI_SETWRAPMODE, SC_WRAP_WHITESPACE, 0);
-    Utils::setStatus(TEXT("Whitespace wrap enabled"));
+  if (cmd == "wrap whitespace") {
+      ::SendMessage(hwndEdit, SCI_SETWRAPMODE, SC_WRAP_WHITESPACE, 0);
+      Utils::setStatus(TEXT("Whitespace wrap enabled"));
+      return;
   }
-  else
-  {
-    std::wstring wcmd(cmd.begin(), cmd.end());
-    std::wstring msg = L"Not an editor command: " + wcmd;
-    Utils::setStatus(msg.c_str());
-  };
 
-  if (cmd == "noh" || cmd == "nohl" || cmd == "nohlsearch") {
-      Utils::clearSearchHighlights(hwndEdit);
+  if (cmd.rfind("set tw=", 0) == 0) {
+    try {
+        int width = std::stoi(cmd.substr(7));
+        ::SendMessage(hwndEdit, SCI_SETEDGECOLUMN, width, 0);
+        ::SendMessage(hwndEdit, SCI_SETEDGEMODE, EDGE_LINE, 0);
+        Utils::setStatus(TEXT("Text width set"));
+    } catch (...) {
+        Utils::setStatus(TEXT("Invalid text width"));
+    }
+    return;
+  }
+
+  for (char c : cmd) {
+    if (!g_commandKeymap->handleKey(hwndEdit, c)) {
+        break;
+    }
+  }
+  g_commandKeymap->reset();
+  return;
+
+}
+
+auto helpHandler = [](HWND, int) {
+    ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_FILE_NEW);
+
+    HWND h = Utils::getCurrentScintillaHandle();
+    std::string help =
+        "NppVim — Command Mode Help\n"
+        "=========================\n\n";
+
+    const size_t CMD_COL = 18;
+
+    for (const auto& b : g_commandKeymap->getBindings()) {
+        std::string cmd = ":" + b.keys;
+
+        help += cmd;
+        if (cmd.size() < CMD_COL)
+            help += std::string(CMD_COL - cmd.size(), ' ');
+
+        help += " - ";
+        help += b.desc;
+        help += "\n";
+    }
+
+    appendNonKeymapHelp(help);
+
+    ::SendMessage(h, SCI_SETREADONLY, FALSE, 0);
+    ::SendMessage(h, SCI_SETTEXT, 0, (LPARAM)help.c_str());
+    ::SendMessage(h, SCI_SETSAVEPOINT, 0, 0);
+    ::SendMessage(h, SCI_SETREADONLY, TRUE, 0);
+
+    Utils::setStatus(TEXT("-- HELP --"));
+};
+
+CommandMode::CommandMode(VimState &state) : state(state)
+{
+  g_commandKeymap = std::make_unique<Keymap>(state);
+  g_commandKeymap->setAllowCount(false);
+
+  g_commandKeymap
+    ->set("w", "Save current file", [](HWND, int) {
+        ::SendMessage(nppData._nppHandle, NPPM_SAVECURRENTFILE, 0, 0);
+        Utils::setStatus(TEXT("File saved"));
+    })
+    .set("q", "Close current file", [](HWND, int) {
+        ::SendMessage(nppData._nppHandle, IDM_FILE_CLOSE, 0, 0);
+    })
+    .set("wq", "Save and close file", [](HWND, int) {
+        ::SendMessage(nppData._nppHandle, NPPM_SAVECURRENTFILE, 0, 0);
+        ::SendMessage(nppData._nppHandle, IDM_FILE_CLOSE, 0, 0);
+    })
+    .set("bn", "Next tab", [](HWND, int) {
+        ::SendMessage(nppData._nppHandle, IDM_VIEW_TAB_NEXT, 0, 0);
+    })
+    .set("bp", "Previous tab", [](HWND, int) {
+        ::SendMessage(nppData._nppHandle, IDM_VIEW_TAB_PREV, 0, 0);
+    })
+    .set("bd", "Close current tab", [](HWND, int) {
+        ::SendMessage(nppData._nppHandle, IDM_FILE_CLOSE, 0, 0);
+    })
+    .set("sp", "Split window", [](HWND, int) {
+        ::SendMessage(nppData._nppHandle, IDM_VIEW_CLONE_TO_ANOTHER_VIEW, 0, 0);
+        Utils::setStatus(TEXT("Split window"));
+    })
+    .set("vs", "Vertical split", [](HWND, int) {
+        ::SendMessage(nppData._nppHandle, IDM_VIEW_CLONE_TO_ANOTHER_VIEW, 0, 0);
+        Utils::setStatus(TEXT("Vertical split"));
+    })
+    .set("gh", "Open GitHub", [](HWND, int) {
+        ShellExecuteW(NULL, L"open", L"https://github.com/h-jangra/nppvim", NULL, NULL, SW_SHOWNORMAL);
+    })
+    .set("paypal", "Donate via PayPal", [](HWND, int) {
+        ShellExecuteW(NULL, L"open", L"https://paypal.me/h8imansh8u", NULL, NULL, SW_SHOWNORMAL);
+    })
+    .set("donate", "Donate via PayPal", [](HWND, int) {
+        ShellExecuteW(NULL, L"open", L"https://paypal.me/h8imansh8u", NULL, NULL, SW_SHOWNORMAL);
+    })
+    .set("about", "About NppVim", [](HWND, int) {
+        about();
+    })
+    .set("config", "NppVim Configuration", [](HWND, int) {
+        showConfigDialog();
+    })
+    .set("noh", "Clear search highlight", [](HWND hwnd, int) {
+      Utils::clearSearchHighlights(hwnd);
       Utils::setStatus(TEXT("Search highlight cleared"));
-  }
-  else if (cmd == "set nu" || cmd == "set number") {
-      ::SendMessage(hwndEdit, SCI_SETMARGINWIDTHN, 0, 50);
-      Utils::setStatus(TEXT("Line numbers enabled"));
-      return;
-  }
-  else if (cmd == "set nonu" || cmd == "set nonumber") {
-      ::SendMessage(hwndEdit, SCI_SETMARGINWIDTHN, 0, 0);
-      Utils::setStatus(TEXT("Line numbers disabled"));
-      return;
-  }
-  else if (cmd.find("set tw=") == 0) {
-      int width = std::stoi(cmd.substr(7));
-      ::SendMessage(hwndEdit, SCI_SETEDGECOLUMN, width, 0);
-      ::SendMessage(hwndEdit, SCI_SETEDGEMODE, EDGE_LINE, 0);
-      Utils::setStatus(TEXT("Text width set"));
-      return;
-  }
-  else if (cmd == "wa" || cmd == "wall") {
-      ::SendMessage(nppData._nppHandle, NPPM_SAVEALLFILES, 0, 0);
-      Utils::setStatus(TEXT("All files saved"));
-  }
-  else if (cmd == "qa" || cmd == "qall") {
-      ::SendMessage(nppData._nppHandle, WM_COMMAND, IDM_FILE_EXIT, 0);
-  }
-  else if (cmd == "wqa" || cmd == "xa" || cmd == "xall") {
-      ::SendMessage(nppData._nppHandle, NPPM_SAVEALLFILES, 0, 0);
-      ::SendMessage(nppData._nppHandle, WM_COMMAND, IDM_FILE_EXIT, 0);
-  }
-  else if (cmd == "e" || cmd == "edit") {
-      ::SendMessage(nppData._nppHandle, NPPM_RELOADFILE, 0, 0);
-      Utils::setStatus(TEXT("File reloaded"));
-  }
-  else if (cmd == "bn" || cmd == "bnext") {
-      ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_VIEW_TAB_NEXT);
-  }
-  else if (cmd == "bp" || cmd == "bprev" || cmd == "bprevious") {
-      ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_VIEW_TAB_PREV);
-  }
-  else if (cmd == "bd" || cmd == "bdelete") {
-      ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_FILE_CLOSE);
-  }
-  else if (cmd == "sp" || cmd == "split") {
-      ::SendMessage(nppData._nppHandle, WM_COMMAND, IDM_VIEW_CLONE_TO_ANOTHER_VIEW, 0);
-      Utils::setStatus(TEXT("Split window"));
-      return;
-  }
-  else if (cmd == "vs" || cmd == "vsplit") {
-      ::SendMessage(nppData._nppHandle, WM_COMMAND, IDM_VIEW_CLONE_TO_ANOTHER_VIEW, 0);
-      Utils::setStatus(TEXT("Vertical split"));
-      return;
-  }
-  else if (cmd.find("tabn") == 0) {
-      int n = 1;
-      if (cmd.length() > 4) {
-          std::string num = cmd.substr(4);
-          bool ok = !num.empty();
-          for (char ch : num) if (!isdigit(ch)) ok = false;
-          if (ok) n = std::stoi(num);
-      }
-      for (int i = 0; i < n; i++) {
-          ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_VIEW_TAB_NEXT);
-      }
-  }
-  else if (cmd.find("tabp") == 0) {
-      int n = (cmd.length() > 4) ? std::stoi(cmd.substr(4)) : 1;
-      for (int i = 0; i < n; i++) {
-          ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_VIEW_TAB_PREV);
-      }
-  }
-  else if (cmd == "tabnew") {
-      ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_FILE_NEW);
-      return;
-  }
-  else if (cmd == "tabclose") {
-      ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_FILE_CLOSE);
-      return;
-  } else {
-      Utils::setStatus(TEXT("Unknown command"));
-  }
+    })
+    .set("nohl", "Clear search highlight", [](HWND hwnd, int) {
+        Utils::clearSearchHighlights(hwnd);
+        Utils::setStatus(TEXT("Search highlight cleared"));
+    })
+    .set("nohlsearch", "Clear search highlight", [](HWND hwnd, int) {
+        Utils::clearSearchHighlights(hwnd);
+        Utils::setStatus(TEXT("Search highlight cleared"));
+    })
+    .set("set nu", "Enable line numbers", [](HWND hwnd, int) {
+        ::SendMessage(hwnd, SCI_SETMARGINWIDTHN, 0, 50);
+        Utils::setStatus(TEXT("Line numbers enabled"));
+    })
+    .set("set number", "Enable line numbers", [](HWND hwnd, int) {
+        ::SendMessage(hwnd, SCI_SETMARGINWIDTHN, 0, 50);
+        Utils::setStatus(TEXT("Line numbers enabled"));
+    })
+    .set("set nonu", "Disable line numbers", [](HWND hwnd, int) {
+        ::SendMessage(hwnd, SCI_SETMARGINWIDTHN, 0, 0);
+        Utils::setStatus(TEXT("Line numbers disabled"));
+    })
+    .set("set nonumber", "Disable line numbers", [](HWND hwnd, int) {
+        ::SendMessage(hwnd, SCI_SETMARGINWIDTHN, 0, 0);
+        Utils::setStatus(TEXT("Line numbers disabled"));
+    })
+    .set("h",    "Open command help", helpHandler)
+    .set("help", "Open command help", helpHandler);
+}
 
+static void appendNonKeymapHelp(std::string& help) {
+    help += "\nOther Commands\n";
+    help += "--------------\n";
+    help += ":<number>          - Jump to line number\n";
+    help += ":q!                - Force close file\n";
+    help += ":quit!             - Force close file\n";
+    help += ":marks, :m         - Show marks\n";
+    help += ":delm, :dm         - Delete marks\n";
+    help += ":sort              - Sort lines (A→Z)\n";
+    help += ":sort!             - Sort lines (Z→A)\n";
+    help += ":sort n            - Numeric sort\n";
+    help += ":sort n!           - Numeric sort (desc)\n";
+    help += ":s/old/new/        - Substitute\n";
+    help += ":set tw=NN         - Set text width\n";
+    help += ":wrap              - Enable word wrap\n";
+    help += ":nowrap            - Disable wrap\n";
+    help += ":wrap char         - Character wrap\n";
+    help += ":wrap whitespace   - Whitespace wrap\n";
+    help += "/pattern           - Search forward\n";
+    help += "?pattern           - Search backward\n";
 }
 
 void CommandMode::handleSubstitutionCommand(HWND hwndEdit, const std::string &cmd)

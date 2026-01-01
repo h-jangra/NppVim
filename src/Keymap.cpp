@@ -12,6 +12,22 @@ Keymap& Keymap::set(const std::string& keys, KeyHandler handler) {
     return *this;
 }
 
+Keymap& Keymap::set(const std::string& keys,
+                    const std::string& desc,
+                    KeyHandler handler) {
+    insertKeySequence(keys, handler);
+    bindings.push_back({ keys, desc });
+    return *this;
+}
+
+void Keymap::setAllowCount(bool v) {
+    allowCount = v;
+}
+
+const std::vector<KeyBinding>& Keymap::getBindings() const {
+    return bindings;
+}
+
 Keymap& Keymap::motion(const std::string& keys, char motionChar, KeyHandler handler) {
     insertKeySequence(keys, handler, motionChar);
     return *this;
@@ -31,7 +47,7 @@ void Keymap::insertKeySequence(const std::string& keys, KeyHandler handler, char
 }
 
 bool Keymap::handleKey(HWND hwnd, char key) {
-    if (std::isdigit(static_cast<unsigned char>(key))) {
+    if (allowCount && std::isdigit(static_cast<unsigned char>(key))) {
         int digit = key - '0';
         if (key == '0' && state.repeatCount == 0 && pendingKeys.empty()) {
             auto it = currentNode->children.find(key);
@@ -65,8 +81,7 @@ bool Keymap::processKey(HWND hwnd, char key, int count) {
         pendingKeys += key;
     }
 
-    if (currentNode->isLeaf && currentNode->handler &&
-    (currentNode->children.empty() || key == 'y' || key == 'd' || key == 'c')) {
+    if (currentNode->isLeaf && currentNode->handler) {
         currentNode->handler(hwnd, count);
 
         if (currentNode->motionChar) {
