@@ -75,6 +75,7 @@ public:
     static void setClipboardText(const std::string& text);
 
     static std::string buildTutorText();
+    static int getCharBlocking();
 
 private:
     static NppData nppData;

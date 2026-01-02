@@ -15,63 +15,63 @@ extern NppData nppData;
 
 static void appendNonKeymapHelp(std::string& help);
 
-void CommandMode::enter(char prompt)
-{
+void CommandMode::enter(char prompt) {
   state.commandMode = true;
   state.commandBuffer.clear();
   state.commandBuffer.push_back(prompt);
+
+  HWND h = Utils::getCurrentScintillaHandle();
+  if (h) {
+      initSubstitutionIndicators(h);
+  }
+
   updateStatus();
 }
 
-void CommandMode::exit()
-{
+void CommandMode::exit() {
   state.commandMode = false;
-  state.commandBuffer.clear();
+  
+  HWND h = Utils::getCurrentScintillaHandle();
+  if (h) {
+      clearSubstitutionPreview(h);
+  }
 
-  if (state.mode != VISUAL)
-  {
+  state.commandBuffer.clear();
+  lastPreviewBuffer.clear();
+
+  if (state.mode != VISUAL) {
     Utils::clearSearchHighlights(Utils::getCurrentScintillaHandle());
     state.lastSearchMatchCount = -1;
 
-    if (g_normalMode)
-    {
+    if (g_normalMode) {
       g_normalMode->enter();
     }
-  }
-  else
-  {
+  } else {
     Utils::setStatus(TEXT("-- VISUAL --"));
   }
 }
 
-void CommandMode::updateStatus()
-{
-  if (state.commandBuffer.empty())
-  {
+void CommandMode::updateStatus() {
+  if (state.commandBuffer.empty()) {
     Utils::setStatus(TEXT(""));
     return;
   }
 
   std::wstring display(state.commandBuffer.begin(), state.commandBuffer.end());
 
-  if (state.lastSearchMatchCount >= 0)
-  {
+  if (state.lastSearchMatchCount >= 0) {
     const int totalWidth = 60;
     int commandLength = static_cast<int>(display.length());
 
     std::wstring matchInfo;
-    if (state.lastSearchMatchCount > 0)
-    {
+    if (state.lastSearchMatchCount > 0) {
       matchInfo = L"[" + std::to_wstring(state.lastSearchMatchCount) + L" matches]";
-    }
-    else
-    {
+    } else {
       matchInfo = L"[Pattern not found]";
     }
 
     int padding = totalWidth - commandLength - static_cast<int>(matchInfo.length());
-    if (padding > 0)
-    {
+    if (padding > 0) {
       display += std::wstring(padding, L' ');
     }
     display += matchInfo;
@@ -80,87 +80,71 @@ void CommandMode::updateStatus()
   Utils::setStatus(display.c_str());
 }
 
-void CommandMode::handleKey(HWND hwndEdit, char c)
-{
+void CommandMode::handleKey(HWND hwndEdit, char c) {
   if (!hwndEdit) return;
 
-  if (c == 13 || c == 10)
-  {
+  if (c == 13 || c == 10) {
     handleEnter(hwndEdit);
     return;
   }
 
-  if (c == 27)
-  {
+  if (c == 27) {
     exit();
     return;
   }
 
-  if (c >= 32 && c <= 126)
-  {
+  if (c >= 32 && c <= 126) {
     state.commandBuffer.push_back(c);
     updateStatus();
 
-    if (state.commandBuffer[0] == '/' && state.commandBuffer.size() > 1)
-    {
+    if (state.commandBuffer[0] == '/' && state.commandBuffer.size() > 1) {
       std::string currentSearch = state.commandBuffer.substr(1);
       Utils::updateSearchHighlight(hwndEdit, currentSearch, false);
-    }
-    else if (state.commandBuffer[0] == '?' && state.commandBuffer.size() > 1)
-    {
+    } else if (state.commandBuffer[0] == '?' && state.commandBuffer.size() > 1) {
       std::string currentPattern = state.commandBuffer.substr(1);
       Utils::updateSearchHighlight(hwndEdit, currentPattern, true);
-    }
-    else if (state.commandBuffer.size() == 1)
-    {
+    } else if (state.commandBuffer.size() == 1) {
       Utils::clearSearchHighlights(hwndEdit);
       state.lastSearchMatchCount = -1;
     }
+
+    previewSubstitutionFromBuffer(hwndEdit);
   }
 }
 
-void CommandMode::handleBackspace(HWND hwndEdit)
-{
+void CommandMode::handleBackspace(HWND hwndEdit) {
   if (!hwndEdit) return;
 
-  if (state.commandBuffer.size() > 1)
-  {
+  if (state.commandBuffer.size() > 1) {
     state.commandBuffer.pop_back();
     updateStatus();
 
-    if (state.commandBuffer[0] == '/' && state.commandBuffer.size() > 1)
-    {
+    if (state.commandBuffer[0] == '/' && state.commandBuffer.size() > 1) {
       std::string currentSearch = state.commandBuffer.substr(1);
       Utils::updateSearchHighlight(hwndEdit, currentSearch, false);
-    }
-    else if (state.commandBuffer[0] == ':' && state.commandBuffer.size() > 3 &&
-             state.commandBuffer[1] == 's' && state.commandBuffer[2] == ' ')
-    {
+    } else if (state.commandBuffer[0] == ':' && state.commandBuffer.size() > 3 &&
+             state.commandBuffer[1] == 's' && state.commandBuffer[2] == ' ') {
       std::string currentPattern = state.commandBuffer.substr(3);
       Utils::updateSearchHighlight(hwndEdit, currentPattern, true);
-    }
-    else if (state.commandBuffer.size() == 1)
-    {
+    } else if (state.commandBuffer.size() == 1) {
       Utils::clearSearchHighlights(hwndEdit);
       state.lastSearchMatchCount = -1;
     }
+
+    previewSubstitutionFromBuffer(hwndEdit);
   }
-  else
-  {
+  else {
     exit();
   }
 }
 
-void CommandMode::handleEnter(HWND hwndEdit)
-{
+void CommandMode::handleEnter(HWND hwndEdit) {
   if (!hwndEdit) return;
   handleCommand(hwndEdit);
 }
 
-void CommandMode::handleCommand(HWND hwndEdit)
-{
-  if (state.commandBuffer.empty())
-  {
+void CommandMode::handleCommand(HWND hwndEdit) {
+  if (state.commandBuffer.empty()) {
     exit();
     return;
   }
@@ -168,48 +152,29 @@ void CommandMode::handleCommand(HWND hwndEdit)
   const std::string &buf = state.commandBuffer;
   char firstChar = buf[0];
 
-  try
-  {
-    if (firstChar == '/')
-    {
-      if (buf.size() > 1)
-      {
+  try {
+    if (firstChar == '/') {
+      if (buf.size() > 1) {
         handleSearchCommand(hwndEdit, buf.substr(1));
-      }
-      else
-      {
+      } else {
         Utils::setStatus(TEXT("No search pattern"));
       }
-    }
-    else if (firstChar == '?')
-    {
-      if (buf.size() > 1)
-      {
+    } else if (firstChar == '?') {
+      if (buf.size() > 1) {
         handleSearchCommand(hwndEdit, buf.substr(1), true);
-      }
-      else
-      {
+      } else {
         Utils::setStatus(TEXT("No regex pattern"));
       }
-    }
-    else if (firstChar == ':')
-    {
-      if (buf.size() > 1)
-      {
+    } else if (firstChar == ':') {
+      if (buf.size() > 1) {
         handleColonCommand(hwndEdit, buf.substr(1));
-      }
-      else
-      {
+      } else {
         exit();
       }
-    }
-    else
-    {
+    } else {
       Utils::setStatus(TEXT("Unknown command type"));
     }
-  }
-  catch (const std::exception &e)
-  {
+  } catch (const std::exception &e) {
     std::string error = "Command error: " + std::string(e.what());
     Utils::setStatus(std::wstring(error.begin(), error.end()).c_str());
   }
@@ -217,52 +182,41 @@ void CommandMode::handleCommand(HWND hwndEdit)
   state.commandMode = false;
   state.commandBuffer.clear();
 
-  if (state.mode == VISUAL)
-  {
+  if (state.mode == VISUAL) {
     Utils::setStatus(TEXT("-- VISUAL --"));
   }
 }
 
-void CommandMode::handleSearchCommand(HWND hwndEdit, const std::string &searchTerm, bool useRegex)
-{
+void CommandMode::handleSearchCommand(HWND hwndEdit, const std::string &searchTerm, bool useRegex) {
   performSearch(hwndEdit, searchTerm, useRegex);
 }
 
-void CommandMode::handleColonCommand(HWND hwndEdit, const std::string &cmd)
-{
+void CommandMode::handleColonCommand(HWND hwndEdit, const std::string &cmd) {
   if (cmd.empty()) return;
 
-  if (cmd == "marks" || cmd == "m" || cmd.find("delm") == 0 || cmd.find("dm") == 0)
-  {
+  if (cmd == "marks" || cmd == "m" || cmd.find("delm") == 0 || cmd.find("dm") == 0) {
     handleMarksCommand(hwndEdit, cmd);
     return;
   }
 
   bool isNumber = true;
-  for (char ch : cmd)
-  {
-    if (!std::isdigit(static_cast<unsigned char>(ch)))
-    {
+  for (char ch : cmd) {
+    if (!std::isdigit(static_cast<unsigned char>(ch))) {
       isNumber = false;
       break;
     }
   }
 
-  if (isNumber)
-  {
+  if (isNumber) {
     int lineNum = std::stoi(cmd);
-    if (lineNum > 0)
-    {
+    if (lineNum > 0) {
       int lineCount = (int)::SendMessage(hwndEdit, SCI_GETLINECOUNT, 0, 0);
-      if (lineNum <= lineCount)
-      {
+      if (lineNum <= lineCount) {
         ::SendMessage(hwndEdit, SCI_GOTOLINE, lineNum - 1, 0);
         ::SendMessage(hwndEdit, SCI_SCROLLCARET, 0, 0);
         std::wstring msg = L"Jumped to line " + std::to_wstring(lineNum);
         Utils::setStatus(msg.c_str());
-      }
-      else
-      {
+      } else {
         Utils::setStatus(TEXT("Line number out of range"));
       }
     }
@@ -273,26 +227,24 @@ void CommandMode::handleColonCommand(HWND hwndEdit, const std::string &cmd)
         if (cmd == "sort") {
             ::SendMessage(nppData._nppHandle, WM_COMMAND, IDM_EDIT_SORTLINES_LEXICOGRAPHIC_ASCENDING, 0);
             Utils::setStatus(TEXT("Lines sorted"));
-        }
-        else if (cmd == "sort!") {
+        } else if (cmd == "sort!") {
             ::SendMessage(nppData._nppHandle, WM_COMMAND, IDM_EDIT_SORTLINES_LEXICOGRAPHIC_DESCENDING, 0);
             Utils::setStatus(TEXT("Lines sorted (descending)"));
-        }
-        else if (cmd == "sort n") {
+        } else if (cmd == "sort n") {
             ::SendMessage(nppData._nppHandle, WM_COMMAND, IDM_EDIT_SORTLINES_INTEGER_ASCENDING, 0);
             Utils::setStatus(TEXT("Lines sorted (numeric)"));
-        }
-        else if (cmd == "sort n!") {
+        } else if (cmd == "sort n!") {
             ::SendMessage(nppData._nppHandle, WM_COMMAND, IDM_EDIT_SORTLINES_INTEGER_DESCENDING, 0);
             Utils::setStatus(TEXT("Lines sorted (numeric descending)"));
-        }
-        else {
+        } else {
             Utils::setStatus(TEXT("Use: sort, sort!, sort n, sort n!"));
         }
         return;
     }
 
-  if (cmd.size() >= 2 && cmd[0] == 's' && !std::isalnum(cmd[1])) {
+  if ((cmd.size() >= 2 && cmd[0] == 's' && !std::isalnum(cmd[1])) || 
+      (cmd.size() >= 3 && cmd[0] == '%' && cmd[1] == 's' && !std::isalnum(cmd[2])) )
+  {
     handleSubstitutionCommand(hwndEdit, cmd);
     return;
   }
@@ -398,12 +350,22 @@ CommandMode::CommandMode(VimState &state) : state(state)
         ::SendMessage(nppData._nppHandle, NPPM_SAVECURRENTFILE, 0, 0);
         Utils::setStatus(TEXT("File saved"));
     })
+    .set("e", "Reload current file", [](HWND, int) {
+        ::SendMessage(nppData._nppHandle, IDM_FILE_RELOAD, 0, 0);
+    })
     .set("q", "Close current file", [](HWND, int) {
         ::SendMessage(nppData._nppHandle, IDM_FILE_CLOSE, 0, 0);
+    })
+    .set("qa", "Close all files", [](HWND, int) {
+        ::SendMessage(nppData._nppHandle, IDM_FILE_CLOSEALL, 0, 0);
     })
     .set("wq", "Save and close file", [](HWND, int) {
         ::SendMessage(nppData._nppHandle, NPPM_SAVECURRENTFILE, 0, 0);
         ::SendMessage(nppData._nppHandle, IDM_FILE_CLOSE, 0, 0);
+    })
+    .set("wqa", "Save all and close all files", [](HWND, int) {
+        ::SendMessage(nppData._nppHandle, NPPM_SAVEALLFILES, 0, 0);
+        ::SendMessage(nppData._nppHandle, IDM_FILE_CLOSEALL, 0, 0);
     })
     .set("bn", "Next tab", [](HWND, int) {
         ::SendMessage(nppData._nppHandle, IDM_VIEW_TAB_NEXT, 0, 0);
@@ -494,8 +456,9 @@ static void appendNonKeymapHelp(std::string& help) {
     help += "?pattern           - Search backward\n";
 }
 
-void CommandMode::handleSubstitutionCommand(HWND hwndEdit, const std::string &cmd)
-{
+void CommandMode::handleSubstitutionCommand(HWND hwndEdit, const std::string &cmd) {
+  clearSubstitutionPreview(hwndEdit);
+
   std::string command = cmd;
   bool globalReplace = false;
   int startPos = 0;
@@ -635,131 +598,140 @@ void CommandMode::performSubstitution(HWND hwndEdit, const std::string &pattern,
                                      bool confirmEach, bool globalReplace,
                                      int startPos, int endPos)
 {
-  if (pattern.empty())
-  {
-    Utils::setStatus(TEXT("Empty pattern"));
-    return;
-  }
+   Utils::beginUndo(hwndEdit);
 
-  int flags = 0;
-  if (useRegex) flags |= SCFIND_REGEXP;
-  if (!caseInsensitive) flags |= SCFIND_MATCHCASE;
-
-  ::SendMessage(hwndEdit, SCI_SETSEARCHFLAGS, flags, 0);
-
-  int originalPos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
-  int originalAnchor = (int)::SendMessage(hwndEdit, SCI_GETANCHOR, 0, 0);
-  int originalLine = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, originalPos, 0);
-
-  int searchStart = startPos;
-  int searchEnd = endPos;
-
-  if (globalReplace && startPos > 0)
-  {
-  }
-  else if (globalReplace)
-  {
-    searchStart = 0;
-    searchEnd = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
-  }
-  else
-  {
-    int lineStart = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, originalLine, 0);
-    int lineEnd = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, originalLine, 0);
-    searchStart = lineStart;
-    searchEnd = lineEnd;
-  }
-
-  int replacements = 0;
-  int skipped = 0;
-
-  if (globalReplace && !replaceAll)
-  {
-    int totalLines = (int)::SendMessage(hwndEdit, SCI_GETLINECOUNT, 0, 0);
-    
-    for (int line = 0; line < totalLines; line++)
+    if (pattern.empty())
     {
-      int lineStart = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, line, 0);
-      int lineEnd = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, line, 0);
-      
-      if (lineStart >= lineEnd) continue;
-      
-      ::SendMessage(hwndEdit, SCI_SETTARGETSTART, lineStart, 0);
-      ::SendMessage(hwndEdit, SCI_SETTARGETEND, lineEnd, 0);
-      
-      int found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
-                                    (WPARAM)pattern.length(), (LPARAM)pattern.c_str());
-      
-      if (found != -1)
-      {
-        ::SendMessage(hwndEdit, SCI_REPLACETARGETRE,
-                     replacement.length(), (LPARAM)replacement.c_str());
-        replacements++;
-      }
+      Utils::setStatus(TEXT("Empty pattern"));
+      Utils::endUndo(hwndEdit);
+      return;
     }
-  }
-  else
-  {
+
+    int flags = 0;
+    if (useRegex) flags |= SCFIND_REGEXP;
+    if (!caseInsensitive) flags |= SCFIND_MATCHCASE;
+
+    ::SendMessage(hwndEdit, SCI_SETSEARCHFLAGS, flags, 0);
+
+    int originalPos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+    int originalAnchor = (int)::SendMessage(hwndEdit, SCI_GETANCHOR, 0, 0);
+    int originalLine = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, originalPos, 0);
+
+    int searchStart;
+    int searchEnd;
+
+    if (globalReplace) {
+        searchStart = startPos;
+        searchEnd = endPos;
+    } else {
+        int lineStart = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, originalLine, 0);
+        int lineEnd   = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, originalLine, 0);
+        searchStart = lineStart;
+        searchEnd = lineEnd;
+    }
+
+    int replacements = 0;
+    int skipped = 0;
+
     ::SendMessage(hwndEdit, SCI_SETTARGETSTART, searchStart, 0);
     ::SendMessage(hwndEdit, SCI_SETTARGETEND, searchEnd, 0);
 
     if (confirmEach)
     {
-      int found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
-                                    (WPARAM)pattern.length(), (LPARAM)pattern.c_str());
+      ::SendMessage(hwndEdit, SCI_SETTARGETSTART, searchStart, 0);
+      ::SendMessage(hwndEdit, SCI_SETTARGETEND, searchEnd, 0);
 
-      while (found != -1)
+      while (true)
       {
-        int matchStart = (int)::SendMessage(hwndEdit, SCI_GETTARGETSTART, 0, 0);
-        int matchEnd = (int)::SendMessage(hwndEdit, SCI_GETTARGETEND, 0, 0);
+          int found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
+                                        (WPARAM)pattern.length(),
+                                        (LPARAM)pattern.c_str());
 
-        ::SendMessage(hwndEdit, SCI_SETSEL, matchStart, matchEnd);
-        ::SendMessage(hwndEdit, SCI_SCROLLCARET, 0, 0);
+          if (found == -1)
+              break;
 
-        std::wstring prompt = L"Replace with \"" +
-                             std::wstring(replacement.begin(), replacement.end()) +
-                             L"\"? (y/n/a/q)";
-        Utils::setStatus(prompt.c_str());
+          int matchStart = (int)::SendMessage(hwndEdit, SCI_GETTARGETSTART, 0, 0);
+          int matchEnd   = (int)::SendMessage(hwndEdit, SCI_GETTARGETEND, 0, 0);
 
-        char response = 'y';
+          ::SendMessage(hwndEdit, SCI_SETSEL, matchStart, matchEnd);
+          ::SendMessage(hwndEdit, SCI_SCROLLCARET, 0, 0);
 
-        if (response == 'y' || response == 'Y')
-        {
-          ::SendMessage(hwndEdit, SCI_REPLACETARGETRE,
-                       replacement.length(), (LPARAM)replacement.c_str());
-          replacements++;
+          std::wstring prompt = L"Replace with \"" +
+                                std::wstring(replacement.begin(), replacement.end()) +
+                                L"\"? (y/n/a/q)";
+          Utils::setStatus(prompt.c_str());
 
-          int newLength = (int)replacement.length();
-          int oldLength = matchEnd - matchStart;
-          int lengthDiff = newLength - oldLength;
+          char response = (char)Utils::getCharBlocking();
 
-          searchEnd += lengthDiff;
-          matchEnd += lengthDiff;
-        }
-        else if (response == 'n' || response == 'N')
-        {
-          skipped++;
-        }
-        else if (response == 'a' || response == 'A')
-        {
-          confirmEach = false;
-          replaceAll = true;
-        }
-        else if (response == 'q' || response == 'Q')
-        {
-          break;
-        }
+          if (response == 'y' || response == 'Y')
+          {
+              ::SendMessage(hwndEdit,
+                  useRegex ? SCI_REPLACETARGETRE : SCI_REPLACETARGET,
+                  replacement.length(),
+                  (LPARAM)replacement.c_str());
 
-        ::SendMessage(hwndEdit, SCI_SETTARGETSTART, matchEnd, 0);
-        ::SendMessage(hwndEdit, SCI_SETTARGETEND, searchEnd, 0);
+              replacements++;
 
-        found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
-                                  (WPARAM)pattern.length(), (LPARAM)pattern.c_str());
+              int diff = (int)replacement.length() - (matchEnd - matchStart);
+              searchEnd += diff;
+              matchEnd += diff;
 
-        if (!replaceAll && found != -1)
-        {
-          break;
-        }
+              ::SendMessage(hwndEdit, SCI_SETTARGETSTART, matchEnd, 0);
+              ::SendMessage(hwndEdit, SCI_SETTARGETEND, searchEnd, 0);
+          }
+          else if (response == 'n' || response == 'N')
+          {
+              skipped++;
+              ::SendMessage(hwndEdit, SCI_SETTARGETSTART, matchEnd, 0);
+              ::SendMessage(hwndEdit, SCI_SETTARGETEND, searchEnd, 0);
+          }
+          else if (response == 'a' || response == 'A')
+          {
+              ::SendMessage(hwndEdit,
+                  useRegex ? SCI_REPLACETARGETRE : SCI_REPLACETARGET,
+                  replacement.length(),
+                  (LPARAM)replacement.c_str());
+
+              replacements++;
+
+              int diff = (int)replacement.length() - (matchEnd - matchStart);
+              searchEnd += diff;
+              matchEnd += diff;
+
+              ::SendMessage(hwndEdit, SCI_SETTARGETSTART, matchEnd, 0);
+              ::SendMessage(hwndEdit, SCI_SETTARGETEND, searchEnd, 0);
+
+              found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
+                                        (WPARAM)pattern.length(), (LPARAM)pattern.c_str());
+
+              while (found != -1)
+              {
+                matchStart = (int)::SendMessage(hwndEdit, SCI_GETTARGETSTART, 0, 0);
+                matchEnd = (int)::SendMessage(hwndEdit, SCI_GETTARGETEND, 0, 0);
+
+                ::SendMessage(hwndEdit, useRegex ? SCI_REPLACETARGETRE : SCI_REPLACETARGET,
+                            replacement.length(), (LPARAM)replacement.c_str());
+                replacements++;
+
+                int newLength = (int)replacement.length();
+                int oldLength = matchEnd - matchStart;
+                int lengthDiff = newLength - oldLength;
+
+                searchEnd += lengthDiff;
+                matchEnd += lengthDiff;
+
+                ::SendMessage(hwndEdit, SCI_SETTARGETSTART, matchEnd, 0);
+                ::SendMessage(hwndEdit, SCI_SETTARGETEND, searchEnd, 0);
+
+                found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
+                                          (WPARAM)pattern.length(), (LPARAM)pattern.c_str());
+              }
+              break;
+          }
+          else if (response == 'q' || response == 'Q')
+          {
+              break;
+          }
       }
     }
     else
@@ -774,8 +746,8 @@ void CommandMode::performSubstitution(HWND hwndEdit, const std::string &pattern,
           int matchStart = (int)::SendMessage(hwndEdit, SCI_GETTARGETSTART, 0, 0);
           int matchEnd = (int)::SendMessage(hwndEdit, SCI_GETTARGETEND, 0, 0);
 
-          ::SendMessage(hwndEdit, SCI_REPLACETARGETRE,
-                       replacement.length(), (LPARAM)replacement.c_str());
+          ::SendMessage(hwndEdit, useRegex ? SCI_REPLACETARGETRE : SCI_REPLACETARGET,
+                      replacement.length(), (LPARAM)replacement.c_str());
           replacements++;
 
           int newLength = (int)replacement.length();
@@ -799,8 +771,8 @@ void CommandMode::performSubstitution(HWND hwndEdit, const std::string &pattern,
 
         if (found != -1)
         {
-          ::SendMessage(hwndEdit, SCI_REPLACETARGETRE,
-                       replacement.length(), (LPARAM)replacement.c_str());
+          ::SendMessage(hwndEdit, useRegex ? SCI_REPLACETARGETRE : SCI_REPLACETARGET,
+                      replacement.length(), (LPARAM)replacement.c_str());
           replacements++;
 
           int matchEnd = (int)::SendMessage(hwndEdit, SCI_GETTARGETEND, 0, 0);
@@ -817,8 +789,8 @@ void CommandMode::performSubstitution(HWND hwndEdit, const std::string &pattern,
 
           if (found != -1)
           {
-            ::SendMessage(hwndEdit, SCI_REPLACETARGETRE,
-                         replacement.length(), (LPARAM)replacement.c_str());
+            ::SendMessage(hwndEdit, useRegex ? SCI_REPLACETARGETRE : SCI_REPLACETARGET,
+                        replacement.length(), (LPARAM)replacement.c_str());
             replacements++;
 
             int matchEnd = (int)::SendMessage(hwndEdit, SCI_GETTARGETEND, 0, 0);
@@ -829,13 +801,14 @@ void CommandMode::performSubstitution(HWND hwndEdit, const std::string &pattern,
         }
       }
     }
-  }
 
   if (replacements == 0 && !globalReplace)
   {
     ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, originalPos, 0);
     ::SendMessage(hwndEdit, SCI_SETANCHOR, originalAnchor, 0);
   }
+
+  Utils::endUndo(hwndEdit);
 
   if (replacements > 0)
   {
@@ -1114,4 +1087,155 @@ void CommandMode::handleMarksCommand(HWND hwndEdit, const std::string &commandLi
   }
 
   Utils::setStatus(TEXT("-- Unknown marks command --"));
+}
+
+void CommandMode::initSubstitutionIndicators(HWND h) {
+    ::SendMessage(h, SCI_INDICSETSTYLE, IND_SUB_MATCH, INDIC_ROUNDBOX);
+    ::SendMessage(h, SCI_INDICSETFORE, IND_SUB_MATCH, RGB(255, 180, 0));
+
+    ::SendMessage(h, SCI_INDICSETSTYLE, IND_SUB_REPL, INDIC_STRAIGHTBOX);
+    ::SendMessage(h, SCI_INDICSETFORE, IND_SUB_REPL, RGB(0, 200, 120));
+}
+
+void CommandMode::clearSubstitutionPreview(HWND h) {
+    int firstLine = (int)::SendMessage(h, SCI_GETFIRSTVISIBLELINE, 0, 0);
+    int linesOnScreen = (int)::SendMessage(h, SCI_LINESONSCREEN, 0, 0);
+
+    int start = (int)::SendMessage(h, SCI_POSITIONFROMLINE, firstLine, 0);
+    int end = (int)::SendMessage(
+        h,
+        SCI_POSITIONFROMLINE,
+        firstLine + linesOnScreen + 1,
+        0
+    );
+
+    ::SendMessage(h, SCI_SETINDICATORCURRENT, IND_SUB_MATCH, 0);
+    ::SendMessage(h, SCI_INDICATORCLEARRANGE, start, end - start);
+
+    ::SendMessage(h, SCI_SETINDICATORCURRENT, IND_SUB_REPL, 0);
+    ::SendMessage(h, SCI_INDICATORCLEARRANGE, start, end - start);
+}
+
+void CommandMode::previewSubstitution(
+    HWND h,
+    const std::string& pat,
+    const std::string& rep,
+    bool regex,
+    bool global
+) {
+    clearSubstitutionPreview(h);
+
+    int firstLine = (int)::SendMessage(h, SCI_GETFIRSTVISIBLELINE, 0, 0);
+    int linesOnScreen = (int)::SendMessage(h, SCI_LINESONSCREEN, 0, 0);
+
+    int startPos = (int)::SendMessage(h, SCI_POSITIONFROMLINE, firstLine, 0);
+    int endPos = (int)::SendMessage(
+        h,
+        SCI_POSITIONFROMLINE,
+        firstLine + linesOnScreen + 1,
+        0
+    );
+
+    int flags = regex ? SCFIND_REGEXP : 0;
+    ::SendMessage(h, SCI_SETSEARCHFLAGS, flags, 0);
+    ::SendMessage(h, SCI_SETTARGETSTART, startPos, 0);
+    ::SendMessage(h, SCI_SETTARGETEND, endPos, 0);
+
+    bool firstOnly = !global;
+
+    int found = (int)::SendMessage(
+        h,
+        SCI_SEARCHINTARGET,
+        pat.size(),
+        (LPARAM)pat.c_str()
+    );
+
+    while (found != -1) {
+        int s = (int)::SendMessage(h, SCI_GETTARGETSTART, 0, 0);
+        int e = (int)::SendMessage(h, SCI_GETTARGETEND, 0, 0);
+
+        ::SendMessage(h, SCI_SETINDICATORCURRENT, IND_SUB_MATCH, 0);
+        ::SendMessage(h, SCI_INDICATORFILLRANGE, s, e - s);
+
+        ::SendMessage(h, SCI_SETINDICATORCURRENT, IND_SUB_REPL, 0);
+        ::SendMessage(h, SCI_INDICATORFILLRANGE, s, e - s);
+
+        if (firstOnly) break;
+
+        ::SendMessage(h, SCI_SETTARGETSTART, e, 0);
+        found = (int)::SendMessage(
+            h,
+            SCI_SEARCHINTARGET,
+            pat.size(),
+            (LPARAM)pat.c_str()
+        );
+    }
+}
+
+bool CommandMode::parseSubstitution(
+    const std::string& buf,
+    std::string& pat,
+    std::string& rep,
+    bool& regex,
+    bool& global,
+    bool& confirm
+) {
+    if (buf.size() < 4) return false;
+
+    size_t i = 0;
+    if (buf[i] == ':') i++;
+
+    if (i >= buf.size() || buf[i] != 's')
+        return false;
+
+    if (i + 1 >= buf.size())
+        return false;
+
+    char d = buf[i + 1];
+
+    size_t p1 = i + 2;
+    size_t p2 = buf.find(d, p1);
+    if (p2 == std::string::npos) return false;
+
+    size_t p3 = buf.find(d, p2 + 1);
+    if (p3 == std::string::npos) return false;
+
+    pat = buf.substr(p1, p2 - p1);
+    rep = buf.substr(p2 + 1, p3 - (p2 + 1));
+
+    if (pat.empty()) return false;
+
+    regex = true;
+    global = false;
+    confirm = false;
+
+    for (size_t k = p3 + 1; k < buf.size(); k++) {
+        if (buf[k] == 'g') global = true;
+        else if (buf[k] == 'c') confirm = true;
+        else if (buf[k] == 'l') regex = false;
+    }
+
+    return true;
+}
+
+void CommandMode::previewSubstitutionFromBuffer(HWND h) {
+    std::string pat, rep;
+    bool regex, global, confirm;
+
+    if (state.commandBuffer == lastPreviewBuffer)
+        return;
+
+    lastPreviewBuffer = state.commandBuffer;
+
+    if (!parseSubstitution(state.commandBuffer, pat, rep, regex, global, confirm)) {
+        clearSubstitutionPreview(h);
+        return;
+    }
+
+    if (confirm || pat.size() < 2) {
+        clearSubstitutionPreview(h);
+        return;
+    }
+
+    previewSubstitution(h, pat, rep, regex, global);
 }

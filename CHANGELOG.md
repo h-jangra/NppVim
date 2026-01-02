@@ -54,5 +54,14 @@
 - `sp` / `split` – Horizontal split
 - `vs` / `vsplit` – Vertical split
 - `tabn` / `tabp` – Next / previous tab
-- `tabnew` – Open new tab
-- `tabclose` – Close current tab
+- `about` - Show about dialog
+- `config` - Show configuration
+- `h`/`help` - Open command help
+- `t`/`tut`/`tutor` - Open tutor
+- `s/old/new/` - Regex Substitute
+- `s/foo/bar/g` - Replace all matches in line
+- `s/foo/bar/c` - Replace with confirmation
+- `s/foo/bar/gc` - Replace all in line (confirm)
+- `s/foo/bar/i` - Case-insensitive replace
+- `s/foo/bar/l` - Literal (no regex) replace
+- `%s/foo/bar/gc` - Replace in whole file (confirm)

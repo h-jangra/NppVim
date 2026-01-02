@@ -557,6 +557,24 @@ std::string Utils::buildTutorText() {
     append("Normal Mode", g_normalKeymap.get());
     append("Visual Mode", g_visualKeymap.get());
     append("Command Mode", g_commandKeymap.get());
+    out += "\n";
+    out += ":s/foo/bar/g        - Replace all matches in line\n";
+    out += ":s/foo/bar/c        - Replace with confirmation\n";
+    out += ":s/foo/bar/gc       - Replace all in line (confirm)\n";
+    out += ":s/foo/bar/i        - Case-insensitive replace\n";
+    out += ":s/foo/bar/l        - Literal (no regex) replace\n";
+    out += ":%s/foo/bar/gc      - Replace in whole file (confirm)\n";
 
     return out;
+}
+
+int Utils::getCharBlocking() {
+    MSG msg;
+    while (GetMessage(&msg, NULL, 0, 0)) {
+        if (msg.message == WM_CHAR)
+            return (int)msg.wParam;
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
+    }
+    return 0;
 }
