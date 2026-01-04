@@ -43,8 +43,9 @@ void TextObject::apply(HWND hwndEdit, VimState& state, char op, char modifier, c
     case '`': quoteChar = '`'; break;
     case '(':
     case ')':
+    case 'b':
         objType = TEXT_OBJECT_PAREN;
-        bracketChar = object;
+        bracketChar = '(';
         break;
     case '[':
     case ']':
@@ -53,8 +54,9 @@ void TextObject::apply(HWND hwndEdit, VimState& state, char op, char modifier, c
         break;
     case '{':
     case '}':
+    case 'B':
         objType = TEXT_OBJECT_BRACE;
-        bracketChar = object;
+        bracketChar = '{';
         break;
     case '<':
     case '>':
@@ -164,49 +166,49 @@ std::pair<int, int> TextObject::getTextObjectBounds(HWND hwndEdit, TextObjectTyp
 
 std::pair<int, int> TextObject::findBracketBounds(HWND hwndEdit, int pos, char openChar, char closeChar, bool inner) {
     int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
+    int line = ::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, pos, 0);
+    int lineStart = ::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, line, 0);
+    int lineEnd = ::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, line, 0);
 
     int startPos = -1;
     int endPos = -1;
+    int minDistance = docLen;
 
-    int searchPos = pos;
-    int bracketCount = 0;
-    bool foundOpening = false;
+    for (int searchStart = lineStart; searchStart <= lineEnd; searchStart++) {
+        char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, searchStart, 0);
+        if (ch != openChar) continue;
 
-    while (searchPos >= 0) {
-        char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, searchPos, 0);
-        if (ch == closeChar) {
-            bracketCount++;
-        }
-        else if (ch == openChar) {
-            if (bracketCount == 0) {
-                startPos = searchPos;
-                foundOpening = true;
-                break;
-            }
-            else {
-                bracketCount--;
-            }
-        }
-        searchPos--;
-    }
-
-    if (foundOpening) {
-        bracketCount = 1;
-        searchPos = startPos + 1;
+        int bracketCount = 1;
+        int searchPos = searchStart + 1;
 
         while (searchPos < docLen && bracketCount > 0) {
-            char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, searchPos, 0);
-            if (ch == openChar) {
+            char ch2 = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, searchPos, 0);
+            if (ch2 == openChar) {
                 bracketCount++;
             }
-            else if (ch == closeChar) {
+            else if (ch2 == closeChar) {
                 bracketCount--;
                 if (bracketCount == 0) {
-                    endPos = searchPos;
+                    if (pos >= searchStart && pos <= searchPos) {
+                        startPos = searchStart;
+                        endPos = searchPos;
+                        break;
+                    } else {
+                        int distance = (std::min)(abs(pos - searchStart), abs(pos - searchPos));
+                        if (distance < minDistance) {
+                            minDistance = distance;
+                            startPos = searchStart;
+                            endPos = searchPos;
+                        }
+                    }
                     break;
                 }
             }
             searchPos++;
+        }
+
+        if (startPos != -1 && pos >= startPos && pos <= endPos) {
+            break;
         }
     }
 

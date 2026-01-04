@@ -93,35 +93,46 @@ int Utils::findMatchingBracket(HWND hwndEdit, int pos, char openChar, char close
   return -1;
 }
 
-std::pair<int, int> Utils::findQuoteBounds(HWND hwndEdit, int pos, char quoteChar)
-{
-  int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
-  int start = -1, end = -1;
+std::pair<int, int> Utils::findQuoteBounds(HWND hwndEdit, int pos, char quoteChar) {
+    int line = ::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, pos, 0);
+    int lineStart = ::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, line, 0);
+    int lineEnd = ::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, line, 0);
 
-  for (int i = pos; i >= 0; i--)
-  {
-    char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, i, 0);
-    if (ch == quoteChar)
-    {
-      start = i;
-      break;
+    int startPos = -1;
+    int endPos = -1;
+    int minDistance = lineEnd - lineStart;
+
+    bool inQuote = false;
+    int quoteStart = -1;
+
+    for (int i = lineStart; i <= lineEnd; i++) {
+        char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, i, 0);
+        
+        if (ch == quoteChar) {
+            if (!inQuote) {
+                quoteStart = i;
+                inQuote = true;
+            } else {
+                if (pos >= quoteStart && pos <= i) {
+                    return { quoteStart, i };
+                } else {
+                    int distance = (std::min)(abs(pos - quoteStart), abs(pos - i));
+                    if (distance < minDistance) {
+                        minDistance = distance;
+                        startPos = quoteStart;
+                        endPos = i;
+                    }
+                }
+                inQuote = false;
+            }
+        }
     }
-  }
 
-  if (start != -1)
-  {
-    for (int i = start + 1; i < docLen; i++)
-    {
-      char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, i, 0);
-      if (ch == quoteChar)
-      {
-        end = i;
-        break;
-      }
+    if (startPos == -1 || endPos == -1) {
+        return { -1, -1 };
     }
-  }
 
-  return {start, end};
+    return { startPos, endPos };
 }
 
 void Utils::updateSearchHighlight(HWND hwndEdit, const std::string &searchTerm, bool useRegex)

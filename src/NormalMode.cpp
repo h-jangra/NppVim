@@ -249,6 +249,9 @@ void NormalMode::setupKeyMaps() {
                 ShellExecuteW(NULL, L"open", urlWide.data(), NULL, NULL, SW_SHOWNORMAL);
             }
         }
+    })
+    .motion("_", '_', "First non-blank char", [](HWND h, int c) { 
+        Motion::lineStart(h, c); 
     });
 
     k.set("d", "Delete line", [this](HWND h, int c) {
