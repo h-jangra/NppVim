@@ -1067,7 +1067,7 @@ void NormalMode::handleKey(HWND hwnd, char c) {
         if (c == 'w' || c == 'W' || c == 'b' || c == 'B' || c == 'e' || c == 'E' ||
             c == 'h' || c == 'l' || c == 'j' || c == 'k' || 
             c == '$' || c == '^' || c == '0' || c == 'G' || c == '%' ||
-            c == '{' || c == '}') {
+            c == '{' || c == '}' || c == 'g') {
             
             int count = (state.repeatCount > 0) ? state.repeatCount : 1;
             Utils::beginUndo(hwnd);
@@ -1221,6 +1221,13 @@ void NormalMode::applyOperatorToMotion(HWND hwnd, char op, char motion, int coun
     }
     
     int start = Utils::caretPos(hwnd);
+    int startLine = Utils::caretLine(hwnd);
+    bool isLineMotion = false;
+    
+    if (motion == 'j' || motion == 'k' || motion == 'G' || motion == 'g' || 
+        motion == '{' || motion == '}') {
+        isLineMotion = true;
+    }
     
     switch (motion) {
     case 'h': Motion::charLeft(hwnd, count); break;
@@ -1240,22 +1247,51 @@ void NormalMode::applyOperatorToMotion(HWND hwnd, char op, char motion, int coun
         if (count == 1) Motion::documentEnd(hwnd);
         else Motion::gotoLine(hwnd, count);
         break;
+    case 'g':  // Handle gg motion
+        if (count > 1) Motion::gotoLine(hwnd, count);
+        else Motion::documentStart(hwnd);
+        break;
+    case '{': Motion::paragraphUp(hwnd, count); break;
+    case '}': Motion::paragraphDown(hwnd, count); break;
+    case '%': {
+        int match = ::SendMessage(hwnd, SCI_BRACEMATCH, start, 0);
+        if (match != -1) ::SendMessage(hwnd, SCI_GOTOPOS, match, 0);
+        break;
+    }
     default: break;
     }
     
     int end = Utils::caretPos(hwnd);
-    if (start > end) std::swap(start, end);
-    
-    if (motion == 'e' || motion == 'E') {
-        int docLen = ::SendMessage(hwnd, SCI_GETTEXTLENGTH, 0, 0);
-        if (end < docLen) end++;
+    int endLine = Utils::caretLine(hwnd);
+
+    if (isLineMotion) {
+        if (startLine > endLine) {
+            std::swap(startLine, endLine);
+        }
+        start = Utils::lineStart(hwnd, startLine);
+        end = Utils::lineStart(hwnd, endLine + 1);
+        state.lastYankLinewise = true;
+    } else {
+        if (start > end) std::swap(start, end);
+        
+        // For word-end motions, include the character under cursor
+        if (motion == 'e' || motion == 'E' || motion == 'w' || motion == 'W') {
+            int docLen = ::SendMessage(hwnd, SCI_GETTEXTLENGTH, 0, 0);
+            if (end < docLen) end = ::SendMessage(hwnd, SCI_POSITIONAFTER, end, 0);
+        }
+        state.lastYankLinewise = false;
     }
     
     Utils::select(hwnd, start, end);
     switch (op) {
     case 'd':
         ::SendMessage(hwnd, SCI_CUT, 0, 0);
-        ::SendMessage(hwnd, SCI_SETCURRENTPOS, start, 0);
+        if (isLineMotion) {
+            int newPos = Utils::lineStart(hwnd, startLine);
+            ::SendMessage(hwnd, SCI_SETCURRENTPOS, newPos, 0);
+        } else {
+            ::SendMessage(hwnd, SCI_SETCURRENTPOS, start, 0);
+        }
         state.recordLastOp(OP_MOTION, count, motion);
         break;
     case 'y':
