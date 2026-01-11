@@ -557,9 +557,19 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
         if (msg == WM_CHAR) {
             char c = (char)wParam;
 
+            if (state.recordingInsertMacro && c != VK_ESCAPE) {
+                state.insertMacroBuffers.back().push_back(c);
+            }
+
             if ((int)wParam == VK_ESCAPE) {
                 ::SendMessage(hwndEdit, SCI_SETOVERTYPE, false, 0);
                 g_firstKey = 0;
+
+                if (state.recordingInsertMacro) {
+                    state.insertMacroBuffers.back().push_back('\x1B'); // ESC character
+                    state.recordingInsertMacro = false;
+                }
+
                 g_normalMode->enter();
                 return 0;
             }
@@ -567,6 +577,17 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
             if (g_config.escapeKey != "esc") {
                 bool isEscape = checkEscapeSequence(c);
                 if (isEscape) {
+
+                    if (state.recordingInsertMacro && !state.insertMacroBuffers.empty()) {
+                        auto& currentBuffer = state.insertMacroBuffers.back();
+                        if (currentBuffer.size() >= 2) {
+                            currentBuffer.pop_back();
+                            currentBuffer.pop_back();
+                        }
+                        currentBuffer.push_back('\x1B');
+                        state.recordingInsertMacro = false;
+                    }
+
                     int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
                     if (pos >= 2) {
                         ::SendMessage(hwndEdit, SCI_SETSEL, pos - 2, pos);

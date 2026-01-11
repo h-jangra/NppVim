@@ -427,6 +427,23 @@ CommandMode::CommandMode(VimState &state) : state(state)
         ::SendMessage(hwnd, SCI_SETMARGINWIDTHN, 0, 0);
         Utils::setStatus(TEXT("Line numbers disabled"));
     })
+    .set("m", "Move line to specific line number", [](HWND h, int c) {
+        int currentLine = ::SendMessage(h, SCI_LINEFROMPOSITION, Utils::caretPos(h), 0);
+        int targetLine = c > 0 ? c - 1 : 0;
+        if (targetLine >= 0 && targetLine != currentLine) {
+            ::SendMessage(h, SCI_MOVESELECTEDLINESUP, currentLine < targetLine ? 0 : 1, 0);
+            if (currentLine < targetLine) {
+                for (int i = currentLine; i < targetLine; ++i) {
+                    ::SendMessage(h, SCI_MOVESELECTEDLINESDOWN, 0, 0);
+                }
+            } else {
+                for (int i = currentLine; i > targetLine; --i) {
+                    ::SendMessage(h, SCI_MOVESELECTEDLINESUP, 0, 0);
+                }
+            }
+            ::SendMessage(h, SCI_GOTOLINE, targetLine, 0);
+        }
+    })
     .set("h",    "Open command help", helpHandler)
     .set("help", "Open command help", helpHandler)
     .set("tutor", "Open tutor", tutorHandler)

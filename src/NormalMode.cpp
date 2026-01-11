@@ -381,22 +381,33 @@ void NormalMode::setupKeyMaps() {
     });
 
     
-    k.set("i", "Insert mode", [this](HWND h, int c) { enterInsertMode(); })
-     .set("a", "Append mode", [this](HWND h, int c) { Motion::charRight(h, 1); enterInsertMode(); })
-     .set("A", "Append line end", [this](HWND h, int c) { ::SendMessage(h, SCI_LINEEND, 0, 0); enterInsertMode(); })
-     .set("I", "Insert line start", [this](HWND h, int c) { ::SendMessage(h, SCI_VCHOME, 0, 0); enterInsertMode(); })
-     .set("o", "New line below", [this](HWND h, int c) {
-         ::SendMessage(h, SCI_LINEEND, 0, 0);
-         ::SendMessage(h, SCI_NEWLINE, 0, 0);
-         enterInsertMode();
-     })
-     .set("O", "New line above", [this](HWND h, int c) {
-         ::SendMessage(h, SCI_HOME, 0, 0);
-         ::SendMessage(h, SCI_NEWLINE, 0, 0);
-         Motion::lineUp(h, 1);
-         enterInsertMode();
-     });
-    
+    k.set("i", "Insert mode", [this](HWND h, int c) { 
+        enterInsertMode(); 
+    })
+    .set("a", "Append mode", [this](HWND h, int c) { 
+        Motion::charRight(h, 1); 
+        enterInsertMode(); 
+    })
+    .set("A", "Append line end", [this](HWND h, int c) { 
+        ::SendMessage(h, SCI_LINEEND, 0, 0); 
+        enterInsertMode(); 
+    })
+    .set("I", "Insert line start", [this](HWND h, int c) { 
+        ::SendMessage(h, SCI_VCHOME, 0, 0); 
+        enterInsertMode(); 
+    })
+    .set("o", "New line below", [this](HWND h, int c) {
+        ::SendMessage(h, SCI_LINEEND, 0, 0);
+        ::SendMessage(h, SCI_NEWLINE, 0, 0);
+        enterInsertMode();
+    })
+    .set("O", "New line above", [this](HWND h, int c) {
+        ::SendMessage(h, SCI_HOME, 0, 0);
+        ::SendMessage(h, SCI_NEWLINE, 0, 0);
+        Motion::lineUp(h, 1);
+        enterInsertMode();
+    });
+
      k.set("D", "Delete to end", [this](HWND h, int c) {
          Utils::beginUndo(h);
          for (int i = 0; i < c; i++) {
@@ -677,8 +688,75 @@ void NormalMode::setupKeyMaps() {
         for (int i = 0; i < c; i++) {
             ::SendMessage(h, SCI_FOLDLINE, line, SC_FOLDACTION_CONTRACT);
         }
+    })
+    .set("za", "Toggle fold", [](HWND h, int c) {
+        ::SendMessage(h, SCI_TOGGLEFOLD, ::SendMessage(h, SCI_LINEFROMPOSITION, Utils::caretPos(h), 0), 0);
+    })
+    .set("q", "Start/stop recording macro", [this](HWND h, int c) {
+        if (state.recordingMacro) {
+            state.recordingMacro = false;
+            state.recordingInsertMacro = false;
+            state.macroRegister = '\0';
+            Utils::setStatus(TEXT("-- Stopped recording --"));
+        } else {
+            state.recordingMacro = true;
+            state.recordingInsertMacro = false;
+            state.macroRegister = 'a';
+            state.macroBuffer.clear();
+            state.insertMacroBuffers.clear();
+            Utils::setStatus(TEXT("-- Recording macro --"));
+        }
+    })
+    .set("@", "Execute macro", [this](HWND h, int c) {
+        if (state.macroBuffer.empty() && state.insertMacroBuffers.empty()) {
+            Utils::setStatus(TEXT("-- No macro recorded --"));
+            return;
+        }
+        
+        bool wasRecording = state.recordingMacro;
+        bool wasRecordingInsert = state.recordingInsertMacro;
+        state.recordingMacro = false;
+        state.recordingInsertMacro = false;
+        
+        for (int iteration = 0; iteration < c; ++iteration) {
+            size_t insertBufferIndex = 0;
+            
+            for (size_t i = 0; i < state.macroBuffer.size(); i++) {
+                char key = state.macroBuffer[i];
+                
+                if (key == 'i' || key == 'a' || key == 'A' || key == 'I' || 
+                    key == 'o' || key == 'O' || key == 'c' || key == 's' || 
+                    key == 'S' || key == 'C') {
+                    
+                    g_normalKeymap->handleKey(h, key);
+                    
+                    if (insertBufferIndex < state.insertMacroBuffers.size()) {
+                        for (char insertChar : state.insertMacroBuffers[insertBufferIndex]) {
+                            if (insertChar == '\x1B') { // ESC
+                                g_normalMode->enter();
+                                break;
+                            } else {
+                                ::SendMessage(h, SCI_ADDTEXT, 1, (LPARAM)&insertChar);
+                            }
+                        }
+                        insertBufferIndex++;
+                    }
+                    
+                    if (state.mode == INSERT) {
+                        g_normalMode->enter();
+                    }
+                } else {
+                    g_normalKeymap->handleKey(h, key);
+                }
+            }
+        }
+        
+        state.recordingMacro = wasRecording;
+        state.recordingInsertMacro = wasRecordingInsert;
+        
+        Utils::setStatus(TEXT("-- Macro executed --"));
     });
-    
+        
     k.set("m", "Set mark", [this](HWND h, int c) {
          state.awaitingMarkSet = true;
          Utils::setStatus(TEXT("-- Set mark --"));
@@ -1008,11 +1086,40 @@ void NormalMode::enterInsertMode() {
     HWND hwnd = Utils::getCurrentScintillaHandle();
     state.mode = INSERT;
     state.reset();
+
+    if (state.recordingMacro) {
+        state.recordingInsertMacro = true;
+        state.insertMacroBuffers.push_back(std::vector<char>());
+    }
+
     Utils::setStatus(TEXT("-- INSERT --"));
     ::SendMessage(hwnd, SCI_SETCARETSTYLE, CARETSTYLE_LINE, 0);
 }
 
+void handleInsertModeChar(HWND hwnd, char c) {
+    if (state.mode != INSERT) return;
+    
+    if (state.recordingInsertMacro) {
+        state.insertMacroBuffers.back().push_back(c);
+    }
+    
+    if (c == 27) { // ESC key
+        if (state.recordingInsertMacro) {
+            state.insertMacroBuffers.back().push_back('\x1B'); // Record ESC
+            state.recordingInsertMacro = false;
+        }
+        if (g_normalMode) g_normalMode->enter();
+        return;
+    }
+    
+    ::SendMessage(hwnd, SCI_ADDTEXT, 1, (LPARAM)&c);
+}
+
 void NormalMode::handleKey(HWND hwnd, char c) {
+    if (state.recordingMacro && c != 'q' && !state.recordingInsertMacro) {
+        state.macroBuffer.push_back(c);
+    }
+
     if (!state.opPending && (c == 'd' || c == 'c' || c == 'y')) {
         state.lastYankLinewise = false;
         state.opPending = c;

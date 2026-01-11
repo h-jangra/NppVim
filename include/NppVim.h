@@ -98,6 +98,12 @@ struct VimState {
     bool isBacktickJump = false;
     int pendingJumpCount = 0;
 
+    bool recordingMacro = false;
+    char macroRegister = '\0';
+    std::vector<char> macroBuffer;
+    std::vector<std::vector<char>> insertMacroBuffers; 
+    bool recordingInsertMacro = false;
+
     void reset() {
         repeatCount = 0;
         opPending = 0;
