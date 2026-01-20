@@ -9,6 +9,7 @@
 #include "../plugin/Notepad_plus_msgs.h"
 #include "../plugin/PluginInterface.h"
 #include "../plugin/menuCmdID.h"
+#include "CommandMode.h"
 
 extern NormalMode *g_normalMode;
 extern NppData nppData;
@@ -443,6 +444,18 @@ CommandMode::CommandMode(VimState &state) : state(state)
             }
             ::SendMessage(h, SCI_GOTOLINE, targetLine, 0);
         }
+    })
+    .set("reg", "Show registers", [this](HWND, int) {
+        showRegisters();
+    })
+    .set("registers", "Show registers", [this](HWND, int) {
+        showRegisters();
+    })
+    .set("di", "Show registers", [this](HWND, int) {
+        showRegisters();
+    })
+    .set("display", "Show registers", [this](HWND, int) {
+        showRegisters();
     })
     .set("h",    "Open command help", helpHandler)
     .set("help", "Open command help", helpHandler)
@@ -1255,4 +1268,180 @@ void CommandMode::previewSubstitutionFromBuffer(HWND h) {
     }
 
     previewSubstitution(h, pat, rep, regex, global);
+}
+
+void CommandMode::showRegisters() {
+    HWND h = Utils::getCurrentScintillaHandle();
+    if (!h) return;
+    
+    ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_FILE_NEW);
+    
+    std::string registersText;
+    registersText += "NppVim Registers\n";
+    registersText += "════════════════\n\n";
+    
+    auto getPreview = [](const std::string& content, int maxLength = 40) -> std::string {
+        if (content.empty()) return "";
+        
+        std::string preview;
+        int charCount = 0;
+        bool truncated = false;
+        
+        for (size_t i = 0; i < content.size() && charCount < maxLength; i++) {
+            char ch = content[i];
+            
+            if (ch == '\n' || ch == '\r') {
+                if (charCount + 4 < maxLength) {
+                    preview += "\\n";
+                    charCount += 2;
+                } else {
+                    truncated = true;
+                    break;
+                }
+                
+                // Skip \r\n pairs
+                if (ch == '\r' && i + 1 < content.size() && content[i + 1] == '\n') {
+                    i++;
+                }
+            } else if (ch == '\t') {
+                if (charCount + 2 < maxLength) {
+                    preview += "\\t";
+                    charCount += 2;
+                } else {
+                    truncated = true;
+                    break;
+                }
+            } else if (ch >= 32 && ch <= 126) {
+                preview += ch;
+                charCount++;
+            } else {
+                if (charCount + 4 < maxLength) {
+                    char hex[5];
+                    sprintf_s(hex, "\\x%02X", (unsigned char)ch);
+                    preview += hex;
+                    charCount += 4;
+                } else {
+                    truncated = true;
+                    break;
+                }
+            }
+        }
+        
+        if (truncated || charCount >= maxLength) {
+            preview += "...";
+        }
+        
+        return preview;
+    };
+    
+    auto countLines = [](const std::string& content) -> int {
+        int lines = 0;
+        for (char ch : content) {
+            if (ch == '\n') lines++;
+        }
+        return lines + (content.empty() ? 0 : 1);
+    };
+    
+    // Named registers table
+    registersText += "Named registers:\n";
+    registersText += "Type Name  Preview                              Lines\n";
+    registersText += "──── ───── ──────────────────────────────────── ─────\n";
+    
+    for (char reg = 'a'; reg <= 'z'; reg++) {
+        std::string content = Utils::getRegisterContent(reg);
+        if (!content.empty()) {
+            std::string preview = getPreview(content, 35);
+            int lines = countLines(content);
+            
+            char line[80];
+            sprintf_s(line, "char  \"%c   %-35s %4d\n", 
+                     reg, preview.c_str(), lines);
+            registersText += line;
+        }
+    }
+    
+    registersText += "\n";
+    
+    // Numbered registers table
+    registersText += "Numbered registers:\n";
+    registersText += "Type Name  Preview                              Lines\n";
+    registersText += "──── ───── ──────────────────────────────────── ─────\n";
+    
+    for (char reg = '0'; reg <= '9'; reg++) {
+        std::string content = Utils::getRegisterContent(reg);
+        if (!content.empty()) {
+            std::string preview = getPreview(content, 35);
+            int lines = countLines(content);
+            
+            char line[80];
+            sprintf_s(line, "char  \"%c   %-35s %4d\n", 
+                     reg, preview.c_str(), lines);
+            registersText += line;
+        }
+    }
+    
+    registersText += "\n";
+    
+    // Special registers
+    registersText += "Special registers:\n";
+    registersText += "Type Name  Description                         Content\n";
+    registersText += "──── ───── ─────────────────────────────────── ───────\n";
+    
+    // System clipboard
+    std::string clipboardPreview;
+    if (IsClipboardFormatAvailable(CF_TEXT)) {
+        if (OpenClipboard(NULL)) {
+            HANDLE hData = GetClipboardData(CF_TEXT);
+            if (hData) {
+                char* pszText = (char*)GlobalLock(hData);
+                if (pszText) {
+                    clipboardPreview = getPreview(pszText, 30);
+                    GlobalUnlock(hData);
+                }
+            }
+            CloseClipboard();
+        }
+    }
+    
+    char line[80];
+    sprintf_s(line, "sys   \"+   System clipboard               %s\n", 
+             clipboardPreview.empty() ? "(empty)" : clipboardPreview.c_str());
+    registersText += line;
+    
+    sprintf_s(line, "sys   \"*   System clipboard (selection)   %s\n", 
+             clipboardPreview.empty() ? "(empty)" : clipboardPreview.c_str());
+    registersText += line;
+    
+    // Last search
+    if (!state.lastSearchTerm.empty()) {
+        sprintf_s(line, "spec  \"/   Last search pattern           \"%s\"\n", 
+                 getPreview(state.lastSearchTerm, 30).c_str());
+        registersText += line;
+    } else {
+        registersText += "spec  \"/   Last search pattern           (none)\n";
+    }
+    
+    // Black hole
+    std::string blackhole = Utils::getRegisterContent('_');
+    if (!blackhole.empty()) {
+        sprintf_s(line, "spec  \"_   Black hole register           %s\n", 
+                 getPreview(blackhole, 30).c_str());
+        registersText += line;
+    } else {
+        registersText += "spec  \"_   Black hole register           (empty)\n";
+    }
+    
+    // Set the text in the new buffer
+    ::SendMessage(h, SCI_SETREADONLY, FALSE, 0);
+    ::SendMessage(h, SCI_SETTEXT, 0, (LPARAM)registersText.c_str());
+    ::SendMessage(h, SCI_SETSAVEPOINT, 0, 0);
+    ::SendMessage(h, SCI_SETREADONLY, TRUE, 0);
+    
+    // Use monospace font for table alignment
+    ::SendMessage(h, SCI_STYLESETFONT, STYLE_DEFAULT, (LPARAM)"Consolas");
+    ::SendMessage(h, SCI_STYLESETSIZE, STYLE_DEFAULT, 10);
+    
+    ::SendMessage(h, SCI_SETFIRSTVISIBLELINE, 0, 0);
+    
+    Utils::setStatus(TEXT("-- REGISTERS --"));
 }

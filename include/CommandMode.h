@@ -37,6 +37,7 @@ private:
     void initSubstitutionIndicators(HWND h);
     void clearSubstitutionPreview(HWND h);
     void previewSubstitutionFromBuffer(HWND h);
-    void previewSubstitution(HWND h,const std::string& pat,const std::string& rep,bool regex, bool global);
+    void showRegisters();
+    void previewSubstitution(HWND h, const std::string &pat, const std::string &rep, bool regex, bool global);
     bool parseSubstitution(const std::string& buf,std::string& pat,std::string& rep,bool& regex,bool& global, bool& confirm);
 };

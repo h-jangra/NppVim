@@ -26,22 +26,96 @@ void VisualMode::setupKeyMaps() {
     auto& k = *g_visualKeymap;
     
     k.set("d", "Delete selection", [this](HWND h, int c) {
-         Utils::beginUndo(h);
-         if (state.isBlockVisual) {
-             ::SendMessage(h, SCI_CLEAR, 0, 0);
-             ::SendMessage(h, SCI_SETSELECTIONMODE, SC_SEL_STREAM, 0);
-             int pos = Utils::caretPos(h);
-             ::SendMessage(h, SCI_SETCURRENTPOS, pos, 0);
-             ::SendMessage(h, SCI_SETANCHOR, pos, 0);
-         } else {
-             ::SendMessage(h, SCI_CLEAR, 0, 0);
-         }
+        char reg = Utils::getCurrentRegister();
+        bool toBlackhole = (reg == '_' || state.deleteToBlackhole);
+        
+        Utils::beginUndo(h);
+        
+        if (state.isBlockVisual) {
+            BlockSelection blk = Utils::blockSelection(h);
+            
+            // Store in register unless it's blackhole
+            if (!toBlackhole) {
+                std::string content;
+                for (int line = blk.startLine; line <= blk.endLine; line++) {
+                    int lineStart = Utils::lineStart(h, line);
+                    int lineEnd = Utils::lineEnd(h, line);
+                    
+                    int colStart = ::SendMessage(h, SCI_FINDCOLUMN, line, blk.startCol);
+                    int colEnd = ::SendMessage(h, SCI_FINDCOLUMN, line, blk.endCol);
+                    
+                    if (colStart > lineEnd) colStart = lineEnd;
+                    if (colEnd > lineEnd) colEnd = lineEnd;
+                    
+                    if (colStart < colEnd) {
+                        std::vector<char> buffer(colEnd - colStart + 1);
+                        Sci_TextRangeFull tr;
+                        tr.chrg.cpMin = colStart;
+                        tr.chrg.cpMax = colEnd;
+                        tr.lpstrText = buffer.data();
+                        ::SendMessage(h, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
+                        content += buffer.data();
+                    }
+                    if (line < blk.endLine) content += "\r\n";
+                }
+                
+                if (!content.empty()) {
+                    Utils::setRegisterContent(reg, content);
+                }
+            }
+            
+            // Clear the block selection
+            ::SendMessage(h, SCI_CLEAR, 0, 0);
+            Utils::clearBlockSelection(h);
+            int pos = Utils::caretPos(h);
+            Utils::select(h, pos, pos);
+        } 
+        else if (state.isLineVisual) {
+            int startPos = ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
+            int endPos = ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
+            
+            // Store in register unless it's blackhole
+            if (!toBlackhole) {
+                std::vector<char> buffer(endPos - startPos + 1);
+                Sci_TextRangeFull tr;
+                tr.chrg.cpMin = startPos;
+                tr.chrg.cpMax = endPos;
+                tr.lpstrText = buffer.data();
+                ::SendMessage(h, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
+                
+                Utils::setRegisterContent(reg, buffer.data());
+                state.lastYankLinewise = true;
+            }
+            
+            Utils::clear(h, startPos, endPos);
+        } 
+        else {
+            int startPos = ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
+            int endPos = ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
+            
+            // Store in register unless it's blackhole
+            if (!toBlackhole) {
+                std::vector<char> buffer(endPos - startPos + 1);
+                Sci_TextRangeFull tr;
+                tr.chrg.cpMin = startPos;
+                tr.chrg.cpMax = endPos;
+                tr.lpstrText = buffer.data();
+                ::SendMessage(h, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
+                
+                Utils::setRegisterContent(reg, buffer.data());
+                state.lastYankLinewise = false;
+            }
+            
+            Utils::clear(h, startPos, endPos);
+        }
          Utils::endUndo(h);
          state.recordLastOp(OP_MOTION, c, 'd');
          exitToNormal(h);
      })
     .set("x", "Clear selection", [this](HWND h, int c) { g_visualKeymap->handleKey(h, 'd'); })
     .set("y", "Yank selection", [this](HWND h, int c) {
+        char reg = Utils::getCurrentRegister();
+        
         if (state.isBlockVisual) {
             int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
             int caret = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONCARET, 0, 0);
@@ -52,28 +126,15 @@ void VisualMode::setupKeyMaps() {
                 return;
             }
             
-            int anchorLine = ::SendMessage(h, SCI_LINEFROMPOSITION, anchor, 0);
-            int caretLine = ::SendMessage(h, SCI_LINEFROMPOSITION, caret, 0);
+            BlockSelection blk = Utils::blockSelection(h);
             
-            int anchorVirtualCol = ::SendMessage(h, SCI_GETCOLUMN, anchor, 0);
-            int caretVirtualCol = ::SendMessage(h, SCI_GETCOLUMN, caret, 0);
-            
-            int startLine = (std::min)(anchorLine, caretLine);
-            int endLine = (std::max)(anchorLine, caretLine);
-            int startCol = (std::min)(anchorVirtualCol, caretVirtualCol);
-            int endCol = (std::max)(anchorVirtualCol, caretVirtualCol);
-            
-            if (startCol == endCol) {
-                endCol = startCol + 1;
-            }
-            
-            std::string clipText;
-            for (int line = startLine; line <= endLine; line++) {
+            std::string content;
+            for (int line = blk.startLine; line <= blk.endLine; line++) {
                 int lineStart = Utils::lineStart(h, line);
                 int lineEnd = Utils::lineEnd(h, line);
                 
-                int colStart = ::SendMessage(h, SCI_FINDCOLUMN, line, startCol);
-                int colEnd = ::SendMessage(h, SCI_FINDCOLUMN, line, endCol);
+                int colStart = ::SendMessage(h, SCI_FINDCOLUMN, line, blk.startCol);
+                int colEnd = ::SendMessage(h, SCI_FINDCOLUMN, line, blk.endCol);
                 
                 if (colStart > lineEnd) colStart = lineEnd;
                 if (colEnd > lineEnd) colEnd = lineEnd;
@@ -85,86 +146,132 @@ void VisualMode::setupKeyMaps() {
                     tr.chrg.cpMax = colEnd;
                     tr.lpstrText = buffer.data();
                     ::SendMessage(h, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
-                    clipText += buffer.data();
+                    content += buffer.data();
                 }
-                if (line < endLine) clipText += "\r\n";
+                if (line < blk.endLine) content += "\r\n";
             }
             
-            if (!clipText.empty()) {
-                if (OpenClipboard(h)) {
-                    EmptyClipboard();
-                    HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, clipText.size() + 1);
-                    if (hMem) {
-                        char* pMem = (char*)GlobalLock(hMem);
-                        memcpy(pMem, clipText.c_str(), clipText.size() + 1);
-                        GlobalUnlock(hMem);
-                        SetClipboardData(CF_TEXT, hMem);
-                    }
-                    CloseClipboard();
-                }
+            if (!content.empty() && reg != '_') {
+                Utils::setRegisterContent(reg, content);
             }
-            ::SendMessage(h, SCI_SETSELECTIONMODE, SC_SEL_STREAM, 0);
-        } else if (state.isLineVisual) {
-            int startLine = ::SendMessage(h, SCI_LINEFROMPOSITION,
-                ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0), 0);
-            int endLine = ::SendMessage(h, SCI_LINEFROMPOSITION,
-                ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0), 0);
-
-            int start = ::SendMessage(h, SCI_POSITIONFROMLINE, startLine, 0);
-            int total = ::SendMessage(h, SCI_GETLINECOUNT, 0, 0);
-            int end = (endLine < total - 1)
-                ? ::SendMessage(h, SCI_POSITIONFROMLINE, endLine + 1, 0)
-                : ::SendMessage(h, SCI_GETLINEENDPOSITION, endLine, 0) + 1;
-
-            Utils::select(h, start, end);
-            ::SendMessage(h, SCI_COPY, 0, 0);
+            Utils::clearBlockSelection(h);
+        } 
+        else if (state.isLineVisual) {
+            int startPos = ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
+            int endPos = ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
+            
+            std::vector<char> buffer(endPos - startPos + 1);
+            Sci_TextRangeFull tr;
+            tr.chrg.cpMin = startPos;
+            tr.chrg.cpMax = endPos;
+            tr.lpstrText = buffer.data();
+            ::SendMessage(h, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
+            
+            if (reg != '_') {
+                Utils::setRegisterContent(reg, buffer.data());
+            }
             state.lastYankLinewise = true;
         }
         else {
-            int start = ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
-            int end = ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
-            ::SendMessage(h, SCI_COPYRANGE, start, end);
+            int startPos = ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
+            int endPos = ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
+            
+            std::vector<char> buffer(endPos - startPos + 1);
+            Sci_TextRangeFull tr;
+            tr.chrg.cpMin = startPos;
+            tr.chrg.cpMax = endPos;
+            tr.lpstrText = buffer.data();
+            ::SendMessage(h, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
+            
+            if (reg != '_') {
+                Utils::setRegisterContent(reg, buffer.data());
+            }
             state.lastYankLinewise = false;
         }
+    
+        Utils::setCurrentRegister('"');
+        state.deleteToBlackhole = false;
         state.recordLastOp(OP_MOTION, c, 'y');
         exitToNormal(h);
     })
      .set("c", "Change selection", [this](HWND h, int c) {
-         Utils::beginUndo(h);
-         if (state.isBlockVisual) {
-             int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
-             int caret = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONCARET, 0, 0);
-             int anchorLine = ::SendMessage(h, SCI_LINEFROMPOSITION, anchor, 0);
-             int caretLine = ::SendMessage(h, SCI_LINEFROMPOSITION, caret, 0);
-             int anchorCol = anchor - ::SendMessage(h, SCI_POSITIONFROMLINE, anchorLine, 0);
-             int caretCol = caret - ::SendMessage(h, SCI_POSITIONFROMLINE, caretLine, 0);
-             
-             int startLine = (std::min)(anchorLine, caretLine);
-             int endLine = (std::max)(anchorLine, caretLine);
-             int startCol = (std::min)(anchorCol, caretCol);
-             
-             ::SendMessage(h, SCI_CLEAR, 0, 0);
-             ::SendMessage(h, SCI_SETSELECTIONMODE, SC_SEL_STREAM, 0);
-             ::SendMessage(h, SCI_CLEARSELECTIONS, 0, 0);
-             
-             bool first = true;
-             for (int line = startLine; line <= endLine; line++) {
-                 int lineStart = Utils::lineStart(h, line);
-                 int lineEnd = Utils::lineEnd(h, line);
-                 int pos = lineStart + startCol;
-                 if (pos > lineEnd) pos = lineEnd;
-                 
-                 if (first) {
-                     ::SendMessage(h, SCI_SETCURRENTPOS, pos, 0);
-                     ::SendMessage(h, SCI_SETANCHOR, pos, 0);
-                     first = false;
-                 } else {
-                     ::SendMessage(h, SCI_ADDSELECTION, pos, pos);
-                 }
-             }
-         } else {
-             ::SendMessage(h, SCI_CLEAR, 0, 0);
-         }
+        char reg = Utils::getCurrentRegister();
+        bool toBlackhole = (reg == '_' || state.deleteToBlackhole);
+        
+        Utils::beginUndo(h);
+        
+        if (state.isBlockVisual) {
+            BlockSelection blk = Utils::blockSelection(h);
+            
+            // Store in register unless it's blackhole
+            if (!toBlackhole) {
+                std::string content;
+                for (int line = blk.startLine; line <= blk.endLine; line++) {
+                    int lineStart = Utils::lineStart(h, line);
+                    int lineEnd = Utils::lineEnd(h, line);
+                    
+                    int colStart = ::SendMessage(h, SCI_FINDCOLUMN, line, blk.startCol);
+                    int colEnd = ::SendMessage(h, SCI_FINDCOLUMN, line, blk.endCol);
+                    
+                    if (colStart > lineEnd) colStart = lineEnd;
+                    if (colEnd > lineEnd) colEnd = lineEnd;
+                    
+                    if (colStart < colEnd) {
+                        std::vector<char> buffer(colEnd - colStart + 1);
+                        Sci_TextRangeFull tr;
+                        tr.chrg.cpMin = colStart;
+                        tr.chrg.cpMax = colEnd;
+                        tr.lpstrText = buffer.data();
+                        ::SendMessage(h, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
+                        content += buffer.data();
+                    }
+                    if (line < blk.endLine) content += "\r\n";
+                }
+                
+                if (!content.empty()) {
+                    Utils::setRegisterContent(reg, content);
+                }
+            }
+            
+            // Clear the block selection
+            ::SendMessage(h, SCI_CLEAR, 0, 0);
+            Utils::clearBlockSelection(h);
+            ::SendMessage(h, SCI_CLEARSELECTIONS, 0, 0);
+            
+            // Set up multiple cursors at the start of each line in the block
+            bool first = true;
+            for (int line = blk.startLine; line <= blk.endLine; line++) {
+                int lineStart = Utils::lineStart(h, line);
+                int lineEnd = Utils::lineEnd(h, line);
+                int pos = lineStart + blk.startCol;
+                if (pos > lineEnd) pos = lineEnd;
+                
+                if (first) {
+                    Utils::select(h, pos, pos);
+                    first = false;
+                } else {
+                    ::SendMessage(h, SCI_ADDSELECTION, pos, pos);
+                }
+            }
+        } 
+        else {
+            int startPos = ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
+            int endPos = ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
+            
+            // Store in register unless it's blackhole
+            if (!toBlackhole) {
+                std::vector<char> buffer(endPos - startPos + 1);
+                Sci_TextRangeFull tr;
+                tr.chrg.cpMin = startPos;
+                tr.chrg.cpMax = endPos;
+                tr.lpstrText = buffer.data();
+                ::SendMessage(h, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
+                
+                Utils::setRegisterContent(reg, buffer.data());
+            }
+            
+            Utils::clear(h, startPos, endPos);
+        }
          Utils::endUndo(h);
          state.recordLastOp(OP_MOTION, c, 'c');
          if (g_normalMode) g_normalMode->enterInsertMode();
@@ -275,6 +382,16 @@ void VisualMode::setupKeyMaps() {
             ::SendMessage(h, SCI_SETANCHOR, end, 0);
         }
         if (g_normalMode) g_normalMode->enterInsertMode();
+    })
+    .set("_d", "Delete to blackhole", [this](HWND h, int c) {
+        state.deleteToBlackhole = true;
+        g_visualKeymap->handleKey(h, 'd');
+        state.deleteToBlackhole = false;
+    })
+    .set("_x", "Delete to blackhole", [this](HWND h, int c) {
+        state.deleteToBlackhole = true;
+        g_visualKeymap->handleKey(h, 'x');
+        state.deleteToBlackhole = false;
     });
     
     // k.set("i", [this](HWND h, int c) {
@@ -888,7 +1005,26 @@ void VisualMode::setupKeyMaps() {
         Utils::setStatus(TEXT("-- VISUAL REPLACE --"));
     })
     .set("S", [this](HWND h, int c) {
+        char reg = Utils::getCurrentRegister();
+        bool toBlackhole = (reg == '_' || state.deleteToBlackhole);
+        
         Utils::beginUndo(h);
+        
+        // Store the selected text in register unless it's blackhole
+        if (!toBlackhole) {
+            int startPos = ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
+            int endPos = ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
+            
+            std::vector<char> buffer(endPos - startPos + 1);
+            Sci_TextRangeFull tr;
+            tr.chrg.cpMin = startPos;
+            tr.chrg.cpMax = endPos;
+            tr.lpstrText = buffer.data();
+            ::SendMessage(h, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
+            
+            Utils::setRegisterContent(reg, buffer.data());
+        }
+     
         ::SendMessage(h, SCI_CLEAR, 0, 0);
         Utils::endUndo(h);
         if (g_normalMode) g_normalMode->enterInsertMode();
@@ -981,6 +1117,19 @@ void VisualMode::exitToNormal(HWND h) {
 }
 
 void VisualMode::handleKey(HWND hwnd, char c) {
+
+    if (c == '"' && !state.visualReplacePending) {
+        state.awaitingRegister = true;
+        Utils::setStatus(TEXT("-- register --"));
+        return;
+    }
+    
+    if (state.awaitingRegister) {
+        Utils::setCurrentRegister(c);
+        state.awaitingRegister = false;
+        Utils::setStatus(TEXT(""));
+        return;
+    }
 
      if (state.visualReplacePending) {
         handleVisualReplaceInput(hwnd, c);

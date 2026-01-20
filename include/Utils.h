@@ -77,7 +77,14 @@ public:
     static std::string buildTutorText();
     static int getCharBlocking();
 
-private:
+    static std::string getRegisterContent(char reg);
+    static void setRegisterContent(char reg, const std::string &content);
+    static void appendToRegister(char reg, const std::string &content);
+    static bool isValidRegister(char c);
+    static char getCurrentRegister();
+    static void setCurrentRegister(char reg);
+
+  private:
     static NppData nppData;
     friend void setNppData(NppData data);
 };

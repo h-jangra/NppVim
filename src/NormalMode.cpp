@@ -15,6 +15,7 @@
 #include "../plugin/Notepad_plus_msgs.h"
 #include "../plugin/PluginInterface.h"
 #include "../plugin/Scintilla.h"
+#include "NormalMode.h"
 
 extern NormalMode* g_normalMode;
 extern VisualMode* g_visualMode;
@@ -258,6 +259,9 @@ void NormalMode::setupKeyMaps() {
          state.resetPending();
          state.lastYankLinewise = true;
          Utils::beginUndo(h);
+
+         char reg = Utils::getCurrentRegister();
+
          for (int i = 0; i < c; ++i) deleteLineOnce(h);
          Utils::endUndo(h);
          state.recordLastOp(OP_DELETE_LINE, c);
@@ -266,6 +270,12 @@ void NormalMode::setupKeyMaps() {
          state.resetPending();
          state.lastYankLinewise = true;
          Utils::beginUndo(h);
+
+        char reg = Utils::getCurrentRegister();
+        if (state.opPending == 'y' && state.repeatCount == 0) {
+            // Handle "ayy" - yank to register a
+        }
+
          for (int i = 0; i < c; ++i) yankLineOnce(h);
          Utils::endUndo(h);
          state.recordLastOp(OP_YANK_LINE, c);
@@ -482,9 +492,33 @@ void NormalMode::setupKeyMaps() {
      });
     
     k.set("p", "Paste after", [this](HWND h, int c) {
-        Utils::beginUndo(h);
-        Utils::pasteAfter(h, c, state.lastYankLinewise);
-        Utils::endUndo(h);
+        char reg = Utils::getCurrentRegister();
+        std::string content;
+        
+        if (reg == '+' || reg == '*') {
+            // Get from system clipboard
+            if (OpenClipboard(h)) {
+                HANDLE hData = GetClipboardData(CF_TEXT);
+                if (hData) {
+                    char* pszText = (char*)GlobalLock(hData);
+                    if (pszText) {
+                        content = pszText;
+                        GlobalUnlock(hData);
+                    }
+                }
+                CloseClipboard();
+            }
+        } else {
+            content = Utils::getRegisterContent(reg);
+        }
+        
+        if (!content.empty()) {
+            Utils::beginUndo(h);
+            for (int i = 0; i < c; i++) {
+                ::SendMessage(h, SCI_REPLACESEL, 0, (LPARAM)content.c_str());
+            }
+            Utils::endUndo(h);
+        }
         state.recordLastOp(OP_PASTE, c);
      })
      .set("P", "Paste before", [this](HWND h, int c) {
@@ -494,6 +528,24 @@ void NormalMode::setupKeyMaps() {
         state.recordLastOp(OP_PASTE, c);
      });
     
+    k.set("\"", "Select register", [this](HWND h, int c) {
+        state.awaitingRegister = true;
+        Utils::setStatus(TEXT("-- Select register --"));
+    })
+    .set("_", [this](HWND h, int c) {
+        Utils::setCurrentRegister('_');
+        state.deleteToBlackhole = true;
+    })
+    .set("_d", "Delete without saving to clipboard", [this](HWND h, int c) {
+        Utils::setCurrentRegister('_');
+        state.deleteToBlackhole = true;
+        g_normalKeymap->handleKey(h, 'd');
+    })
+    .set("_y", "Yank without saving to clipboard", [this](HWND h, int c) {
+        Utils::setCurrentRegister('_');
+        g_normalKeymap->handleKey(h, 'y');
+    });
+
     k.set("/", "Forward search", [](HWND h, int c) { if (g_commandMode) g_commandMode->enter('/'); })
      .set("?", "Regex search", [](HWND h, int c) { if (g_commandMode) g_commandMode->enter('?'); })
      .set("n", "Next match", [this](HWND h, int c) {
@@ -1145,6 +1197,64 @@ void NormalMode::handleKey(HWND hwnd, char c) {
         handleMarkJumpInput(hwnd, c, state.isBacktickJump);
         return;
     }
+
+    if (state.awaitingRegister) {
+        state.awaitingRegister = false;
+        if (Utils::isValidRegister(c)) {
+            Utils::setCurrentRegister(c);
+            if (c == '_') {
+                state.deleteToBlackhole = true;
+            } else {
+                state.deleteToBlackhole = false;
+            }
+            
+            // Show which register was selected
+            std::string status = "Register \"";
+            status += c;
+            status += "\" selected";
+            Utils::setStatus(std::wstring(status.begin(), status.end()).c_str());
+            
+            // Now wait for the operation (y, d, c, p, P)
+            state.awaitingRegisterOperation = true;
+            return;
+        } else {
+            Utils::setStatus(TEXT("-- Invalid register --"));
+        }
+        return;
+    }
+
+    if (state.awaitingRegisterOperation) {
+        state.awaitingRegisterOperation = false;
+        
+        // Handle operations that can use registers
+        if (c == 'y' || c == 'd' || c == 'c' || c == 'p' || c == 'P' || c == 'x' || c == 'X') {
+            char selectedRegister = Utils::getCurrentRegister();
+            
+            if (c == 'y') {
+                state.opPending = 'y';
+                state.lastYankLinewise = false;
+                Utils::setStatus(TEXT("-- YANK TO REGISTER --"));
+            } else if (c == 'd') {
+                state.opPending = 'd';
+                state.lastYankLinewise = true;
+                Utils::setStatus(TEXT("-- DELETE TO REGISTER --"));
+            } else if (c == 'c') {
+                state.opPending = 'c';
+                Utils::setStatus(TEXT("-- CHANGE TO REGISTER --"));
+            } else if (c == 'p' || c == 'P') {
+                handlePasteFromRegister(hwnd, c, selectedRegister);
+                return;
+            } else if (c == 'x' || c == 'X') {
+                handleDeleteCharToRegister(hwnd, c, selectedRegister);
+                return;
+            }
+        } else {
+            Utils::setStatus(TEXT("-- Invalid operation for register --"));
+            Utils::setCurrentRegister('"');
+            state.deleteToBlackhole = false;
+        }
+        return;
+    }
     
     if (state.textObjectPending == 'f' || state.textObjectPending == 't') {
         char searchType = state.opPending;
@@ -1299,6 +1409,27 @@ void NormalMode::deleteLineOnce(HWND hwnd) {
     int pos = Utils::caretPos(hwnd);
     int line = Utils::caretLine(hwnd);
     auto range = Utils::lineRange(hwnd, line, true);
+ 
+    // Get the text before deleting
+    std::vector<char> buffer(range.second - range.first + 1);
+    Sci_TextRangeFull tr;
+    tr.chrg.cpMin = range.first;
+    tr.chrg.cpMax = range.second;
+    tr.lpstrText = buffer.data();
+    ::SendMessage(hwnd, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
+    
+    // Store in register if not blackhole
+    if (!state.deleteToBlackhole) {
+        char reg = Utils::getCurrentRegister();
+        if (reg != '_') {  // Skip blackhole register
+            if (reg == '+' || reg == '*') {
+                // System clipboard
+                Utils::setClipboardText(buffer.data());
+            } else {
+                Utils::setRegisterContent(reg, buffer.data());
+            }
+        }
+    }
 
     Utils::select(hwnd, range.first, range.second);
     ::SendMessage(hwnd, SCI_CUT, 0, 0);
@@ -1311,6 +1442,23 @@ void NormalMode::yankLineOnce(HWND hwnd) {
     int pos = Utils::caretPos(hwnd);
     int line = Utils::caretLine(hwnd);
     auto range = Utils::lineRange(hwnd, line, true);
+
+    // Get the text
+    std::vector<char> buffer(range.second - range.first + 1);
+    Sci_TextRangeFull tr;
+    tr.chrg.cpMin = range.first;
+    tr.chrg.cpMax = range.second;
+    tr.lpstrText = buffer.data();
+    ::SendMessage(hwnd, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
+    
+    // Store in register
+    char reg = Utils::getCurrentRegister();
+    if (reg == '+' || reg == '*') {
+        // System clipboard
+        Utils::setClipboardText(buffer.data());
+    } else {
+        Utils::setRegisterContent(reg, buffer.data());
+    }
 
     Utils::select(hwnd, range.first, range.second);
     ::SendMessage(hwnd, SCI_COPY, 0, 0);
@@ -1374,6 +1522,45 @@ void NormalMode::applyOperatorToMotion(HWND hwnd, char op, char motion, int coun
     int end = Utils::caretPos(hwnd);
     int endLine = Utils::caretLine(hwnd);
 
+    // Get selected text before operation
+    std::string selectedText;
+    if (start != end) {
+        int selStart = (std::min)(start, end);
+        int selEnd = (std::max)(start, end);
+        if (isLineMotion && op == 'd') {
+            // For line motions, we already captured in deleteLineOnce
+        } else {
+            std::vector<char> buffer(selEnd - selStart + 1);
+            Sci_TextRangeFull tr;
+            tr.chrg.cpMin = selStart;
+            tr.chrg.cpMax = selEnd;
+            tr.lpstrText = buffer.data();
+            ::SendMessage(hwnd, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
+            selectedText = buffer.data();
+        }
+    }
+    
+    // Store in register before deletion
+    if (op == 'd' || op == 'c') {
+        if (!state.deleteToBlackhole && !selectedText.empty()) {
+            char reg = Utils::getCurrentRegister();
+            if (reg != '_') {  // Skip blackhole register
+                if (reg == '+' || reg == '*') {
+                    Utils::setClipboardText(selectedText);
+                } else {
+                    Utils::setRegisterContent(reg, selectedText);
+                }
+            }
+        }
+    } else if (op == 'y' && !selectedText.empty()) {
+        char reg = Utils::getCurrentRegister();
+        if (reg == '+' || reg == '*') {
+            Utils::setClipboardText(selectedText);
+        } else {
+            Utils::setRegisterContent(reg, selectedText);
+        }
+    }
+
     if (isLineMotion) {
         if (startLine > endLine) {
             std::swap(startLine, endLine);
@@ -1415,4 +1602,114 @@ void NormalMode::applyOperatorToMotion(HWND hwnd, char op, char motion, int coun
         state.recordLastOp(OP_MOTION, count, motion);
         break;
     }
+}
+
+void NormalMode::handlePasteFromRegister(HWND hwnd, char pasteCmd, char reg) {
+    std::string content;
+    
+    if (reg == '+' || reg == '*') {
+        // Get from system clipboard
+        if (OpenClipboard(hwnd)) {
+            HANDLE hData = GetClipboardData(CF_TEXT);
+            if (hData) {
+                char* pszText = (char*)GlobalLock(hData);
+                if (pszText) {
+                    content = pszText;
+                    GlobalUnlock(hData);
+                }
+            }
+            CloseClipboard();
+        }
+    } else {
+        content = Utils::getRegisterContent(reg);
+    }
+    
+    if (!content.empty()) {
+        Utils::beginUndo(hwnd);
+        
+        if (pasteCmd == 'p') {
+            // Paste after cursor
+            Utils::pasteAfter(hwnd, 1, false);
+        } else if (pasteCmd == 'P') {
+            // Paste before cursor
+            Utils::pasteBefore(hwnd, 1, false);
+        }
+        
+        Utils::endUndo(hwnd);
+        state.recordLastOp(OP_PASTE, 1);
+    } else {
+        Utils::setStatus(TEXT("-- Register empty --"));
+    }
+    
+    // Reset to default register
+    Utils::setCurrentRegister('"');
+    state.deleteToBlackhole = false;
+}
+
+void NormalMode::handleDeleteCharToRegister(HWND hwnd, char deleteCmd, char reg) {
+    Utils::beginUndo(hwnd);
+    
+    int pos = Utils::caretPos(hwnd);
+    int docLen = ::SendMessage(hwnd, SCI_GETTEXTLENGTH, 0, 0);
+    
+    if (deleteCmd == 'x') {
+        // Delete character under cursor
+        if (pos >= docLen) {
+            Utils::endUndo(hwnd);
+            return;
+        }
+        
+        int next = ::SendMessage(hwnd, SCI_POSITIONAFTER, pos, 0);
+        std::vector<char> buffer(next - pos + 1);
+        Sci_TextRangeFull tr;
+        tr.chrg.cpMin = pos;
+        tr.chrg.cpMax = next;
+        tr.lpstrText = buffer.data();
+        ::SendMessage(hwnd, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
+        
+        // Store in register
+        if (reg != '_') {  // Skip blackhole register
+            if (reg == '+' || reg == '*') {
+                Utils::setClipboardText(buffer.data());
+            } else {
+                Utils::setRegisterContent(reg, buffer.data());
+            }
+        }
+        
+        ::SendMessage(hwnd, SCI_SETSEL, pos, next);
+        ::SendMessage(hwnd, SCI_CLEAR, 0, 0);
+        
+    } else if (deleteCmd == 'X') {
+        // Delete character before cursor
+        if (pos <= 0) {
+            Utils::endUndo(hwnd);
+            return;
+        }
+        
+        int prev = ::SendMessage(hwnd, SCI_POSITIONBEFORE, pos, 0);
+        std::vector<char> buffer(pos - prev + 1);
+        Sci_TextRangeFull tr;
+        tr.chrg.cpMin = prev;
+        tr.chrg.cpMax = pos;
+        tr.lpstrText = buffer.data();
+        ::SendMessage(hwnd, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
+        
+        // Store in register
+        if (reg != '_') {  // Skip blackhole register
+            if (reg == '+' || reg == '*') {
+                Utils::setClipboardText(buffer.data());
+            } else {
+                Utils::setRegisterContent(reg, buffer.data());
+            }
+        }
+        
+        ::SendMessage(hwnd, SCI_SETSEL, prev, pos);
+        ::SendMessage(hwnd, SCI_CLEAR, 0, 0);
+    }
+    
+    Utils::endUndo(hwnd);
+    state.recordLastOp(OP_MOTION, 1, deleteCmd);
+    
+    Utils::setCurrentRegister('"');
+    state.deleteToBlackhole = false;
 }

@@ -4,6 +4,7 @@
 #include "../include/NormalMode.h"
 #include "../include/VisualMode.h"
 #include "../plugin/Notepad_plus_msgs.h"
+#include "Utils.h"
 
 NppData Utils::nppData;
 
@@ -588,4 +589,41 @@ int Utils::getCharBlocking() {
         DispatchMessage(&msg);
     }
     return 0;
+}
+
+std::string Utils::getRegisterContent(char reg) {
+    if (state.registers.find(reg) != state.registers.end()) {
+        return state.registers[reg];
+    }
+    return "";
+}
+
+void Utils::setRegisterContent(char reg, const std::string& content) {
+    state.registers[reg] = content;
+}
+
+void Utils::appendToRegister(char reg, const std::string& content) {
+    if (state.registers.find(reg) != state.registers.end()) {
+        state.registers[reg] += content;
+    } else {
+        state.registers[reg] = content;
+    }
+}
+
+bool Utils::isValidRegister(char c) {
+    // Valid registers: a-z (named), 0-9 (numbered), " (default), _ (blackhole), 
+    // +/* (clipboard), / (search), : (command), . (last inserted)
+    return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || 
+           c == '"' || c == '_' || c == '+' || c == '*' || 
+           c == '/' || c == ':' || c == '.';
+}
+
+char Utils::getCurrentRegister() {
+    return state.defaultRegister;
+}
+
+void Utils::setCurrentRegister(char reg) {
+    if (isValidRegister(reg)) {
+        state.defaultRegister = reg;
+    }
 }

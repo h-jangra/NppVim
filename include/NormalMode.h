@@ -22,7 +22,10 @@ private:
     void deleteLineOnce(HWND hwnd);
     void yankLineOnce(HWND hwnd);
     void applyOperatorToMotion(HWND hwnd, char op, char motion, int count);
-    
+
+    void handlePasteFromRegister(HWND hwnd, char pasteCmd, char reg);
+    void handleDeleteCharToRegister(HWND hwnd, char deleteCmd, char reg);
+
     void handleCharSearchInput(HWND hwnd, char searchChar, char searchType, int count);
     void handleMarkSetInput(HWND hwnd, char mark);
     void handleMarkJumpInput(HWND hwnd, char mark, bool exactPosition);

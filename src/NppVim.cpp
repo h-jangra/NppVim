@@ -5,6 +5,8 @@
 #include <fstream>
 #include <shellapi.h>
 #include <commctrl.h>
+#include <vector>
+#pragma comment(lib, "Version.lib")
 
 #include "../plugin/PluginInterface.h"
 #include "../plugin/Scintilla.h"
@@ -255,6 +257,37 @@ INT_PTR CALLBACK AboutDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         SendDlgItemMessage(hwnd, IDC_TITLE, WM_SETFONT, (WPARAM)g_hFontTitle, TRUE);
         SendDlgItemMessage(hwnd, IDC_DESC1, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
         SendDlgItemMessage(hwnd, IDC_DESC2, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
+
+        WCHAR path[MAX_PATH];
+        GetModuleFileNameW((HMODULE)g_hInstance, path, MAX_PATH);
+
+        DWORD handle = 0;
+        DWORD size = GetFileVersionInfoSizeW(path, &handle);
+
+        if (size)
+        {
+            std::vector<BYTE> data(size);
+            if (GetFileVersionInfoW(path, 0, size, data.data()))
+            {
+                VS_FIXEDFILEINFO* info = nullptr;
+                UINT len = 0;
+
+                if (VerQueryValueW(data.data(), L"\\", (LPVOID*)&info, &len))
+                {
+                    WCHAR version[64];
+                    wsprintfW(
+                        version,
+                        L"Version: %d.%d.%d.%d",
+                        HIWORD(info->dwFileVersionMS),
+                        LOWORD(info->dwFileVersionMS),
+                        HIWORD(info->dwFileVersionLS),
+                        LOWORD(info->dwFileVersionLS)
+                    );
+
+                    SetDlgItemTextW(hwnd, IDC_VERSION, version);
+                }
+            }
+        }
 
         // Center dialog
         RECT rc, rcOwner;

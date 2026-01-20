@@ -4,6 +4,7 @@
 #include <windows.h>
 #include <vector>
 #include <string>
+#include <map>
 
 enum VimMode {
     NORMAL,
@@ -71,6 +72,12 @@ struct VimState {
     char textObjectPending = 0;
     bool replacePending = false;
     bool visualReplacePending = false;
+
+    std::map<char, std::string> registers;
+    char defaultRegister = '"';
+    bool deleteToBlackhole = false;
+    bool awaitingRegister = false;
+    bool awaitingRegisterOperation = false;
 
     bool awaitingBracketAbove = false;
     bool awaitingBracketBelow = false;
