@@ -69,6 +69,8 @@ void VisualMode::setupKeyMaps() {
             Utils::clearBlockSelection(h);
             int pos = Utils::caretPos(h);
             Utils::select(h, pos, pos);
+            Utils::setCurrentRegister('"');
+            state.deleteToBlackhole = false;
         } 
         else if (state.isLineVisual) {
             int startPos = ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
@@ -88,6 +90,8 @@ void VisualMode::setupKeyMaps() {
             }
             
             Utils::clear(h, startPos, endPos);
+            Utils::setCurrentRegister('"');
+            state.deleteToBlackhole = false;
         } 
         else {
             int startPos = ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
@@ -274,6 +278,8 @@ void VisualMode::setupKeyMaps() {
         }
          Utils::endUndo(h);
          state.recordLastOp(OP_MOTION, c, 'c');
+         Utils::setCurrentRegister('"');
+         state.deleteToBlackhole = false;
          if (g_normalMode) g_normalMode->enterInsertMode();
      })
     .set("o", "Switch cursor", [this](HWND h, int c) {

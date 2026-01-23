@@ -1,11 +1,25 @@
+# 1.10.0.0
+
+## Added
+`registers`/`reg`/`di`/`display` - vim like registers
+`d`/`c` - in visual line `cut` text instead `clear`
+
+---
+
+# 1.9.0.0
+## Added
+
+`-` - goto line start
+`za` - toggle fold
+`q`/`@` - macros
+
+---
 
 # 1.8.0.0
 ## Fixed
 
 * `Visual mode stability` – Corrected selection behavior and motion consistency
 * `iW / aW` – Improved big-word text object handling
-
----
 
 ## Added
 

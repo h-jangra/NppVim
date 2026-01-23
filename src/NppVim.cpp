@@ -54,6 +54,10 @@ struct VimConfig {
     bool overrideCtrlD = false;
     bool overrideCtrlU = false;
     bool overrideCtrlR = false;
+    bool overrideCtrlF = false;
+    bool overrideCtrlB = false;
+    bool overrideCtrlO = false;
+    bool overrideCtrlI = false;
 };
 
 VimConfig g_config;
@@ -161,6 +165,21 @@ void loadConfig() {
             else if (key == "override_ctrl_r") {
                 g_config.overrideCtrlR = (value == "1" || value == "true");
             }
+            else if (key == "override_ctrl_r") {
+                g_config.overrideCtrlR = (value == "1" || value == "true");
+            }
+            else if (key == "override_ctrl_f") {
+                g_config.overrideCtrlF = (value == "1" || value == "true");
+            }
+            else if (key == "override_ctrl_b") {
+                g_config.overrideCtrlB = (value == "1" || value == "true");
+            }
+            else if (key == "override_ctrl_o") {
+                g_config.overrideCtrlO = (value == "1" || value == "true");
+            }
+            else if (key == "override_ctrl_i") {
+                g_config.overrideCtrlI = (value == "1" || value == "true");
+            }
         }
     }
     file.close();
@@ -184,6 +203,10 @@ void saveConfig() {
         file << "override_ctrl_d=" << (g_config.overrideCtrlD ? "1" : "0") << "\n";
         file << "override_ctrl_u=" << (g_config.overrideCtrlU ? "1" : "0") << "\n";
         file << "override_ctrl_r=" << (g_config.overrideCtrlR ? "1" : "0") << "\n";
+        file << "override_ctrl_f=" << (g_config.overrideCtrlF ? "1" : "0") << "\n";
+        file << "override_ctrl_b=" << (g_config.overrideCtrlB ? "1" : "0") << "\n";
+        file << "override_ctrl_o=" << (g_config.overrideCtrlO ? "1" : "0") << "\n";
+        file << "override_ctrl_i=" << (g_config.overrideCtrlI ? "1" : "0") << "\n";
         file.close();
     }
 }
@@ -538,6 +561,28 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
                 state.recordLastOp(OP_MOTION, 1, 'R');
                 return 0;
             }
+            else if (wParam == 'R' && g_config.overrideCtrlR && state.mode == NORMAL) {
+                // Ctrl+R: Redo in normal mode
+                ::SendMessage(hwndEdit, SCI_REDO, 0, 0);
+                state.recordLastOp(OP_MOTION, 1, 'R');
+                return 0;
+            }
+            else if (wParam == 'F' && g_config.overrideCtrlF) {
+                Motion::pageDown(hwndEdit);
+                if (state.mode == NORMAL) {
+                    state.recordLastOp(OP_MOTION, state.repeatCount > 0 ? state.repeatCount : 1, 6);
+                }
+                state.repeatCount = 0;
+                return 0;
+            }
+            else if (wParam == 'B' && g_config.overrideCtrlB) {
+                Motion::pageUp(hwndEdit);
+                if (state.mode == NORMAL) {
+                    state.recordLastOp(OP_MOTION, state.repeatCount > 0 ? state.repeatCount : 1, 2);
+                }
+                state.repeatCount = 0;
+                return 0;
+            }
             // Ctrl+Q: Enter visual block mode
             else if (wParam == 'Q') {
                 if (state.mode == VISUAL) {
@@ -613,9 +658,14 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
 
                     if (state.recordingInsertMacro && !state.insertMacroBuffers.empty()) {
                         auto& currentBuffer = state.insertMacroBuffers.back();
-                        if (currentBuffer.size() >= 2) {
-                            currentBuffer.pop_back();
-                            currentBuffer.pop_back();
+                        size_t removeCount = 0;
+                        if (g_config.escapeKey == "jj" || g_config.escapeKey == "jk" || g_config.escapeKey == "kj") {
+                            removeCount = 2; // Remove the two-char sequence
+                        }
+                        if (currentBuffer.size() >= removeCount) {
+                            for (size_t i = 0; i < removeCount; i++) {
+                                currentBuffer.pop_back();
+                            }
                         }
                         currentBuffer.push_back('\x1B');
                         state.recordingInsertMacro = false;

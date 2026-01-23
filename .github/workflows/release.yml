@@ -1,0 +1,69 @@
+name: NppVim Release
+
+on:
+  push:
+    tags:
+      - "*.*.*.*"
+
+permissions:
+  contents: write
+
+env:
+  BUILD_TYPE: Release
+  BUILD_DIR: build/x64
+  DIST_DIR: dist/NppVim.x64
+  PLUGIN_NAME: NppVim
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup CMake
+      uses: lukka/get-cmake@v3.30.0
+
+    - name: Configure
+      run: >
+        cmake
+        -S .
+        -B ${{ env.BUILD_DIR }}
+        -A x64
+        -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+
+    - name: Build
+      run: >
+        cmake
+        --build ${{ env.BUILD_DIR }}
+        --config ${{ env.BUILD_TYPE }}
+
+    - name: Verify dist output
+      shell: powershell
+      run: |
+        if (!(Test-Path "${{ env.DIST_DIR }}")) {
+          Write-Error "Dist folder not found: ${{ env.DIST_DIR }}"
+          exit 1
+        }
+        Get-ChildItem "${{ env.DIST_DIR }}"
+
+    - name: Archive
+      uses: thedoctor0/zip-release@0.7.6
+      with:
+        type: zip
+        filename: ${{ env.PLUGIN_NAME }}-${{ github.ref_name }}-x64.zip
+        directory: ${{ env.DIST_DIR }}
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref_name }}
+        name: NppVim ${{ github.ref_name }}
+        generate_release_notes: true
+        files: ${{ env.PLUGIN_NAME }}-${{ github.ref_name }}-x64.zip
+
+    - name: SHA256
+      shell: bash
+      run: sha256sum.exe ${{ env.PLUGIN_NAME }}-${{ github.ref_name }}-x64.zip

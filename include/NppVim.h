@@ -49,6 +49,9 @@ struct JumpPosition {
     int lineNumber = -1;
 };
 
+extern int g_macroDepth;
+const int MAX_MACRO_DEPTH = 10;
+
 struct VimState {
     VimMode mode = NORMAL;
     bool vimEnabled = true;
@@ -110,6 +113,7 @@ struct VimState {
     std::vector<char> macroBuffer;
     std::vector<std::vector<char>> insertMacroBuffers; 
     bool recordingInsertMacro = false;
+    bool awaitingMacroRegister = false;
 
     void reset() {
         repeatCount = 0;

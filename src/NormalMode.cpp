@@ -22,6 +22,8 @@ extern VisualMode* g_visualMode;
 extern CommandMode* g_commandMode;
 extern NppData nppData;
 
+int g_macroDepth = 0;
+
 NormalMode::NormalMode(VimState& state) : state(state) {
     g_normalKeymap = std::make_unique<Keymap>(state);
     setupKeyMaps();
@@ -744,69 +746,63 @@ void NormalMode::setupKeyMaps() {
     .set("za", "Toggle fold", [](HWND h, int c) {
         ::SendMessage(h, SCI_TOGGLEFOLD, ::SendMessage(h, SCI_LINEFROMPOSITION, Utils::caretPos(h), 0), 0);
     })
-    .set("q", "Start/stop recording macro", [this](HWND h, int c) {
+    .set("q", "Start/stop recording macro", [this](HWND h, int c) {        
         if (state.recordingMacro) {
+            if (!state.macroBuffer.empty() && state.macroBuffer.back() == 'q') {
+                state.macroBuffer.pop_back();
+            }
+            state.registers[state.macroRegister] = std::string(state.macroBuffer.begin(), state.macroBuffer.end());
             state.recordingMacro = false;
             state.recordingInsertMacro = false;
             state.macroRegister = '\0';
             Utils::setStatus(TEXT("-- Stopped recording --"));
         } else {
-            state.recordingMacro = true;
-            state.recordingInsertMacro = false;
-            state.macroRegister = 'a';
-            state.macroBuffer.clear();
-            state.insertMacroBuffers.clear();
+            state.awaitingMacroRegister = true;
             Utils::setStatus(TEXT("-- Recording macro --"));
         }
     })
     .set("@", "Execute macro", [this](HWND h, int c) {
-        if (state.macroBuffer.empty() && state.insertMacroBuffers.empty()) {
-            Utils::setStatus(TEXT("-- No macro recorded --"));
+        if (g_macroDepth >= MAX_MACRO_DEPTH) {
+            Utils::setStatus(TEXT("Macro recursion limit reached"));
             return;
         }
+
+        char reg = Utils::getCurrentRegister();
+
+        if (state.registers.find(reg) == state.registers.end() || state.registers[reg].empty()) {
+            Utils::setStatus(TEXT("Register is empty"));
+            return;
+        }
+        std::string macroContent = state.registers[reg];
         
-        bool wasRecording = state.recordingMacro;
-        bool wasRecordingInsert = state.recordingInsertMacro;
-        state.recordingMacro = false;
-        state.recordingInsertMacro = false;
+        // Iteration limit to prevent infinite loops
+        const int MAX_MACRO_ITERATIONS = 1000;
+        int iterations = 0;
+        
+        g_macroDepth++;
         
         for (int iteration = 0; iteration < c; ++iteration) {
-            size_t insertBufferIndex = 0;
-            
-            for (size_t i = 0; i < state.macroBuffer.size(); i++) {
-                char key = state.macroBuffer[i];
-                
-                if (key == 'i' || key == 'a' || key == 'A' || key == 'I' || 
-                    key == 'o' || key == 'O' || key == 'c' || key == 's' || 
-                    key == 'S' || key == 'C') {
-                    
-                    g_normalKeymap->handleKey(h, key);
-                    
-                    if (insertBufferIndex < state.insertMacroBuffers.size()) {
-                        for (char insertChar : state.insertMacroBuffers[insertBufferIndex]) {
-                            if (insertChar == '\x1B') { // ESC
-                                g_normalMode->enter();
-                                break;
-                            } else {
-                                ::SendMessage(h, SCI_ADDTEXT, 1, (LPARAM)&insertChar);
-                            }
-                        }
-                        insertBufferIndex++;
-                    }
-                    
-                    if (state.mode == INSERT) {
-                        g_normalMode->enter();
-                    }
-                } else {
-                    g_normalKeymap->handleKey(h, key);
+            for (char key : macroContent) {
+                if (++iterations > MAX_MACRO_ITERATIONS) {
+                    Utils::setStatus(TEXT("Macro iteration limit reached"));
+                    g_macroDepth--;
+                    return;
                 }
+                
+                // Process Windows messages to keep UI responsive
+                MSG msg;
+                while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+                    TranslateMessage(&msg);
+                    DispatchMessage(&msg);
+                }
+                
+                handleKey(h, key);
             }
         }
         
-        state.recordingMacro = wasRecording;
-        state.recordingInsertMacro = wasRecordingInsert;
-        
-        Utils::setStatus(TEXT("-- Macro executed --"));
+        g_macroDepth--;
+        Utils::setCurrentRegister('"');
+        Utils::setStatus(TEXT(""));
     });
         
     k.set("m", "Set mark", [this](HWND h, int c) {
@@ -1168,7 +1164,27 @@ void handleInsertModeChar(HWND hwnd, char c) {
 }
 
 void NormalMode::handleKey(HWND hwnd, char c) {
-    if (state.recordingMacro && c != 'q' && !state.recordingInsertMacro) {
+    if (state.awaitingMacroRegister) {
+        if (Utils::isValidRegister(c)) {
+            state.macroRegister = c;
+            state.recordingMacro = true;
+            state.recordingInsertMacro = false;
+            state.macroBuffer.clear();
+            state.insertMacroBuffers.clear();
+            state.awaitingMacroRegister = false;
+            
+            std::wstring status = L"-- Recording @";
+            status += (wchar_t)c;
+            status += L" --";
+            Utils::setStatus(status.c_str());
+        } else {
+            Utils::setStatus(TEXT("Invalid register"));
+            state.awaitingMacroRegister = false;
+        }
+        return;
+    }
+    
+    if (state.recordingMacro && c != 'q' && !state.awaitingRegister && !state.awaitingRegisterOperation) {
         state.macroBuffer.push_back(c);
     }
 
