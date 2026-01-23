@@ -57,7 +57,7 @@ jobs:
       run: >
         cmake
         -S .
-        -B ${{ env.BUILD_DIR }}
+        -B ${{ matrix.arch.build_dir }}
         -G Ninja
         -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
         -DDIST_DIR=${{ matrix.arch.dist_dir }}
