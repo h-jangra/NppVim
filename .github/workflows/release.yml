@@ -65,7 +65,7 @@ jobs:
     - name: Build
       run: >
         cmake
-        --build ${{ env.BUILD_DIR }}
+        --build ${{ matrix.arch.build_dir }}
         --config ${{ env.BUILD_TYPE }}
 
     - name: Verify dist output
