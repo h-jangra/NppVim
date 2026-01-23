@@ -66,4 +66,6 @@ jobs:
 
     - name: SHA256
       shell: bash
-      run: sha256sum.exe ${{ env.PLUGIN_NAME }}-${{ github.ref_name }}-x64.zip
+      run: |
+          FILE="${{ github.workspace }}/${{ env.PLUGIN_NAME }}-${{ github.ref_name }}-x64.zip"
+          sha256sum.exe "$FILE"
