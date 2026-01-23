@@ -21,7 +21,16 @@ target_compile_features(NppVim PRIVATE cxx_std_17)
 target_include_directories(NppVim PRIVATE include plugin)
 
 target_link_libraries(NppVim PRIVATE
-    kernel32 user32 gdi32 shell32 ole32 oleaut32 advapi32 shlwapi uuid
+    kernel32
+    user32
+    gdi32
+    shell32
+    ole32
+    oleaut32
+    advapi32
+    shlwapi
+    uuid
+    version
 )
 
 # Build outputs always stay inside binary dir
