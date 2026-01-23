@@ -18,6 +18,21 @@ jobs:
   build:
     runs-on: windows-latest
 
+    strategy:
+      matrix:
+        arch:
+          - name: win32
+            cmake_arch: Win32
+            build_dir: build/win32
+            dist_dir: dist/NppVim
+            suffix: x86
+          - name: x64
+            cmake_arch: x64
+            build_dir: build/x64
+            dist_dir: dist/NppVim.x64
+            suffix: x64
+
+
     steps:
     - uses: actions/checkout@v4
 
@@ -29,7 +44,7 @@ jobs:
         cmake
         -S .
         -B ${{ env.BUILD_DIR }}
-        -A x64
+        -A ${{ matrix.arch.cmake_arch }}
         -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
 
     - name: Build
@@ -41,20 +56,20 @@ jobs:
     - name: Verify dist output
       shell: powershell
       run: |
-        if (!(Test-Path "${{ env.DIST_DIR }}")) {
-          Write-Error "Dist folder not found: ${{ env.DIST_DIR }}"
+        if (!(Test-Path "${{ matrix.arch.dist_dir }}")) {
+          Write-Error "Dist folder not found: ${{ matrix.arch.dist_dir }}"
           exit 1
         }
-        Get-ChildItem "${{ env.DIST_DIR }}"
+        Get-ChildItem "${{ matrix.arch.dist_dir }}"
 
     - name: Archive
       uses: thedoctor0/zip-release@0.7.6
       with:
         type: zip
-        filename: ${{ env.PLUGIN_NAME }}-${{ github.ref_name }}-x64.zip
-        directory: ${{ env.DIST_DIR }}
+        filename: ${{ env.PLUGIN_NAME }}-${{ github.ref_name }}-${{ matrix.arch.suffix }}.zip
+        directory: ${{ matrix.arch.dist_dir }}
 
-    - name: Create Release
+    - name: Create Release / Upload
       uses: softprops/action-gh-release@v2
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -62,10 +77,10 @@ jobs:
         tag_name: ${{ github.ref_name }}
         name: NppVim ${{ github.ref_name }}
         generate_release_notes: true
-        files: ${{ env.PLUGIN_NAME }}-${{ github.ref_name }}-x64.zip
+        files: ${{ matrix.arch.dist_dir }}/${{ env.PLUGIN_NAME }}-${{ github.ref_name }}-${{ matrix.arch.suffix }}.zip
 
     - name: SHA256
       shell: bash
       run: |
-          FILE="${{ github.workspace }}/${{ env.PLUGIN_NAME }}-${{ github.ref_name }}-x64.zip"
+          FILE="${{ github.workspace }}/${{ matrix.arch.dist_dir }}/${{ env.PLUGIN_NAME }}-${{ github.ref_name }}-${{ matrix.arch.suffix }}.zip"
           sha256sum.exe "$FILE"
