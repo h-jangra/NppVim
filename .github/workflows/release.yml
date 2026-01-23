@@ -36,6 +36,20 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
+    - name: Validate version
+      shell: powershell
+      run: |
+        $rc = Get-Content "plugin/NppVim.rc"
+        $line = $rc | Where-Object { $_ -match "FILEVERSION" } | Select-Object -First 1
+        if (!$line) { Write-Error "FILEVERSION not found"; exit 1 }
+        $version = ($line -replace "[^\d,]", "") -replace ",", "."
+        $tag = "${{ github.ref_name }}"
+        echo "RC_VERSION=$version" >> $env:GITHUB_ENV
+        if ($version -ne $tag) {
+          Write-Error "Version mismatch: RC=$version TAG=$tag"
+          exit 1
+        }
+
     - name: Setup CMake
       uses: lukka/get-cmake@v3.30.0
 
@@ -44,7 +58,7 @@ jobs:
         cmake
         -S .
         -B ${{ env.BUILD_DIR }}
-        -A ${{ matrix.arch.cmake_arch }}
+        -G Ninja
         -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
 
     - name: Build
