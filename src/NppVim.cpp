@@ -672,13 +672,9 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
                     }
 
                     int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
-                    if (pos >= 2) {
-                        ::SendMessage(hwndEdit, SCI_SETSEL, pos - 2, pos);
-                        ::SendMessage(hwndEdit, SCI_REPLACESEL, 0, (LPARAM)"");
-                    }
-                    else if (pos == 1) {
-                        ::SendMessage(hwndEdit, SCI_SETSEL, 0, 1);
-                        ::SendMessage(hwndEdit, SCI_REPLACESEL, 0, (LPARAM)"");
+                    if (pos >= 1) {
+                      ::SendMessage(hwndEdit, SCI_SETSEL, pos - 1, pos);
+                      ::SendMessage(hwndEdit, SCI_REPLACESEL, 0, (LPARAM)"");
                     }
                     ::SendMessage(hwndEdit, SCI_SETOVERTYPE, false, 0);
                     g_normalMode->enter();
