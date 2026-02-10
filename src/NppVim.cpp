@@ -20,6 +20,7 @@
 #include "../include/Utils.h"
 #include "../plugin/resource.h"
 #include "../include/Motion.h"
+#include <algorithm>
 
 HINSTANCE g_hInstance = nullptr;
 NppData nppData;
@@ -50,6 +51,7 @@ static std::map<HWND, WNDPROC> origProcMap;
 // Configuration
 struct VimConfig {
     std::string escapeKey = "esc";
+    std::string customEscape = "";
     int escapeTimeout = 300;
     bool overrideCtrlD = false;
     bool overrideCtrlU = false;
@@ -147,6 +149,7 @@ void loadConfig() {
             if (key == "escape_key") {
                 g_config.escapeKey = value;
             }
+            
             else if (key == "escape_timeout") {
                 try {
                     int timeout = std::stoi(value);
@@ -155,6 +158,9 @@ void loadConfig() {
                     }
                 }
                 catch (...) {}
+            }
+            else if (key == "custom_escape") {
+                g_config.customEscape = value;
             }
             else if (key == "override_ctrl_d") {
                 g_config.overrideCtrlD = (value == "1" || value == "true");
@@ -200,6 +206,9 @@ void saveConfig() {
         file << "escape_timeout=" << g_config.escapeTimeout << "\n";
         file << "\n";
         file << "# Ctrl key overrides (0 or 1)\n";
+        file << "\n";
+        file << "# Custom escape sequence (e.g., ctrl+[, ctrl+c)\n";
+        file << "custom_escape=" << g_config.customEscape << "\n";
         file << "override_ctrl_d=" << (g_config.overrideCtrlD ? "1" : "0") << "\n";
         file << "override_ctrl_u=" << (g_config.overrideCtrlU ? "1" : "0") << "\n";
         file << "override_ctrl_r=" << (g_config.overrideCtrlR ? "1" : "0") << "\n";
@@ -387,17 +396,21 @@ INT_PTR CALLBACK ConfigDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM
         SendMessage(hCombo, CB_ADDSTRING, 0, (LPARAM)TEXT("jj (double tap j)"));
         SendMessage(hCombo, CB_ADDSTRING, 0, (LPARAM)TEXT("jk"));
         SendMessage(hCombo, CB_ADDSTRING, 0, (LPARAM)TEXT("kj"));
+        SendMessage(hCombo, CB_ADDSTRING, 0, (LPARAM)TEXT("Custom"));
 
         int selIndex = 0;
         if (g_config.escapeKey == "jj") selIndex = 1;
         else if (g_config.escapeKey == "jk") selIndex = 2;
         else if (g_config.escapeKey == "kj") selIndex = 3;
+        else if (g_config.escapeKey == "custom") selIndex = 4;
         SendMessage(hCombo, CB_SETCURSEL, selIndex, 0);
 
         SetDlgItemInt(hwnd, IDC_TIMEOUT, g_config.escapeTimeout, FALSE);
         CheckDlgButton(hwnd, IDC_CHECK_CTRL_D, g_config.overrideCtrlD ? BST_CHECKED : BST_UNCHECKED);
         CheckDlgButton(hwnd, IDC_CHECK_CTRL_U, g_config.overrideCtrlU ? BST_CHECKED : BST_UNCHECKED);
         CheckDlgButton(hwnd, IDC_CHECK_CTRL_R, g_config.overrideCtrlR ? BST_CHECKED : BST_UNCHECKED);
+        SetDlgItemTextA(hwnd, IDC_CUSTOM_ESCAPE, g_config.customEscape.c_str());
+        EnableWindow(GetDlgItem(hwnd, IDC_CUSTOM_ESCAPE), selIndex == 4);
 
         // Center dialog
         RECT rc, rcOwner;
@@ -438,10 +451,19 @@ INT_PTR CALLBACK ConfigDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM
         case IDC_RESET_BUTTON:
             SendMessage(GetDlgItem(hwnd, IDC_ESCAPE_KEY), CB_SETCURSEL, 0, 0);
             SetDlgItemInt(hwnd, IDC_TIMEOUT, 300, FALSE);
+            SetDlgItemTextA(hwnd, IDC_CUSTOM_ESCAPE, "");
+            EnableWindow(GetDlgItem(hwnd, IDC_CUSTOM_ESCAPE), FALSE);
             CheckDlgButton(hwnd, IDC_CHECK_CTRL_D, BST_UNCHECKED);
             CheckDlgButton(hwnd, IDC_CHECK_CTRL_U, BST_UNCHECKED);
             CheckDlgButton(hwnd, IDC_CHECK_CTRL_R, BST_UNCHECKED);
             MessageBox(hwnd, TEXT("Settings reset to defaults."), TEXT("Reset"), MB_OK | MB_ICONINFORMATION);
+            break;
+
+        case IDC_ESCAPE_KEY:
+            if (HIWORD(wParam) == CBN_SELCHANGE) {
+                int sel = SendMessage((HWND)lParam, CB_GETCURSEL, 0, 0);
+                EnableWindow(GetDlgItem(hwnd, IDC_CUSTOM_ESCAPE), sel == 4);
+            }
             break;
 
         case IDOK: {
@@ -450,6 +472,17 @@ INT_PTR CALLBACK ConfigDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM
                 case 1: g_config.escapeKey = "jj"; break;
                 case 2: g_config.escapeKey = "jk"; break;
                 case 3: g_config.escapeKey = "kj"; break;
+                case 4: 
+                    g_config.escapeKey = "custom";
+                    char customBuf[128];
+                    GetDlgItemTextA(hwnd, IDC_CUSTOM_ESCAPE, customBuf, 128);
+                    g_config.customEscape = customBuf;
+                    if (g_config.customEscape.empty()) {
+                        MessageBox(hwnd, TEXT("Please enter a custom escape sequence."),
+                                  TEXT("Invalid Input"), MB_OK | MB_ICONWARNING);
+                        return TRUE;
+                    }
+                    break;
                 default: g_config.escapeKey = "esc"; break;
             }
 
@@ -488,6 +521,29 @@ bool checkEscapeSequence(char c) {
 
     if (g_firstKey != 0 && currentTime - g_firstKeyTime > g_config.escapeTimeout) {
         g_firstKey = 0;
+    }
+
+    if (g_config.escapeKey == "custom" && !g_config.customEscape.empty()) {
+        // Skip ctrl+, alt+, shift+ combinations
+        if (g_config.customEscape.find("ctrl+") == 0 || 
+            g_config.customEscape.find("alt+") == 0 || 
+            g_config.customEscape.find("shift+") == 0) {
+            return false;
+        }
+        
+        // Handle two-character custom sequences
+        if (g_config.customEscape.length() == 2) {
+            if (g_firstKey == 0) {
+                if (c == g_config.customEscape[0]) {
+                    g_firstKey = c;
+                    g_firstKeyTime = currentTime;
+                    return false;
+                }
+            } else if (g_firstKey == g_config.customEscape[0] && c == g_config.customEscape[1]) {
+                g_firstKey = 0;
+                return true;
+            }
+        }
     }
 
     if (g_firstKey == 0) {
@@ -632,6 +688,61 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
 
     // Handle INSERT mode
     if (state.mode == INSERT) {
+        // Handle custom Ctrl+ escape sequences
+        if (msg == WM_KEYDOWN && g_config.escapeKey == "custom" && !g_config.customEscape.empty()) {
+            std::string lower = g_config.customEscape;
+            std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+            
+            // Parse modifier+key combinations
+            if (lower.find("ctrl+") == 0 || lower.find("alt+") == 0 || 
+                lower.find("shift+") == 0 || lower.find("ctrl+shift+") == 0 ||
+                lower.find("ctrl+alt+") == 0 || lower.find("alt+shift+") == 0) {
+                
+                bool ctrlPressed = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+                bool altPressed = (GetKeyState(VK_MENU) & 0x8000) != 0;
+                bool shiftPressed = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
+                
+                // Extract the key part after the modifier
+                size_t plusPos = lower.rfind('+');
+                if (plusPos != std::string::npos && plusPos + 1 < lower.length()) {
+                    char expectedKey = toupper(lower[plusPos + 1]);
+                    char actualKey = toupper((char)wParam);
+                    
+                    bool modifiersMatch = false;
+                    
+                    if (lower.find("ctrl+shift+") == 0) {
+                        modifiersMatch = ctrlPressed && shiftPressed && !altPressed;
+                    }
+                    else if (lower.find("ctrl+alt+") == 0) {
+                        modifiersMatch = ctrlPressed && altPressed && !shiftPressed;
+                    }
+                    else if (lower.find("alt+shift+") == 0) {
+                        modifiersMatch = altPressed && shiftPressed && !ctrlPressed;
+                    }
+                    else if (lower.find("ctrl+") == 0) {
+                        modifiersMatch = ctrlPressed && !altPressed && !shiftPressed;
+                    }
+                    else if (lower.find("alt+") == 0) {
+                        modifiersMatch = altPressed && !ctrlPressed && !shiftPressed;
+                    }
+                    else if (lower.find("shift+") == 0) {
+                        modifiersMatch = shiftPressed && !ctrlPressed && !altPressed;
+                    }
+                    
+                    if (modifiersMatch && actualKey == expectedKey) {
+                        ::SendMessage(hwndEdit, SCI_SETOVERTYPE, false, 0);
+                        g_firstKey = 0;
+                        if (state.recordingInsertMacro) {
+                            state.insertMacroBuffers.back().push_back('\x1B');
+                            state.recordingInsertMacro = false;
+                        }
+                        g_normalMode->enter();
+                        return 0;
+                    }
+                }
+            }
+        }
+
         if (msg == WM_CHAR) {
             char c = (char)wParam;
 
