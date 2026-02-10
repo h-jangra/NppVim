@@ -1,3 +1,9 @@
+# 1.11.0.0
+- Fix h-jangra#40: escape (jj,jk) deletes extra character
+- Add custom keymap for esc in config #41
+
+---
+
 # 1.10.0.0
 
 ## Added
