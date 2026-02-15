@@ -31,7 +31,7 @@ NormalMode::NormalMode(VimState& state) : state(state) {
 
 void NormalMode::setupKeyMaps() {
     auto& k = *g_normalKeymap;
-    
+
     k.motion("h", 'h', "Move cursor left", [](HWND h, int c) { Motion::charLeft(h, c); })
      .motion("j", 'j', "Move cursor down", [](HWND h, int c) { Motion::lineDown(h, c); })
      .motion("k", 'k', "Move cursor up", [](HWND h, int c) { Motion::lineUp(h, c); })
@@ -60,7 +60,7 @@ void NormalMode::setupKeyMaps() {
      .motion(")", ')', "Next sentence", [](HWND h, int c) {
         for (int i = 0; i < c; i++) {
             int pos = Utils::caretPos(h);
-            int lineEnd = ::SendMessage(h, SCI_GETLINEENDPOSITION, 
+            int lineEnd = ::SendMessage(h, SCI_GETLINEENDPOSITION,
                 Utils::caretLine(h), 0);
             if (pos < lineEnd) {
                 ::SendMessage(h, SCI_GOTOPOS, lineEnd, 0);
@@ -73,7 +73,7 @@ void NormalMode::setupKeyMaps() {
     .motion("(", '(', "Previous sentence", [](HWND h, int c) {
         for (int i = 0; i < c; i++) {
             int pos = Utils::caretPos(h);
-            int lineStart = ::SendMessage(h, SCI_POSITIONFROMLINE, 
+            int lineStart = ::SendMessage(h, SCI_POSITIONFROMLINE,
                 Utils::caretLine(h), 0);
             if (pos > lineStart) {
                 ::SendMessage(h, SCI_GOTOPOS, lineStart, 0);
@@ -167,21 +167,21 @@ void NormalMode::setupKeyMaps() {
         int line = Utils::caretLine(h);
         int lineStart = Utils::lineStart(h, line);
         int lineEnd = Utils::lineEnd(h, line);
-        
+
         int left = pos;
         while (left > lineStart) {
             char ch = ::SendMessage(h, SCI_GETCHARAT, left - 1, 0);
             if (ch == ' ' || ch == '\t' || ch == '"' || ch == '\'' || ch == '<' || ch == '(' || ch == '[') break;
             left--;
         }
-        
+
         int right = pos;
         while (right < lineEnd) {
             char ch = ::SendMessage(h, SCI_GETCHARAT, right, 0);
             if (ch == ' ' || ch == '\t' || ch == '"' || ch == '\'' || ch == '>' || ch == ')' || ch == ']' || ch == ',' || ch == ';') break;
             right++;
         }
-        
+
         if (right > left) {
             std::vector<char> pathBytes(right - left + 1);
             Sci_TextRangeFull tr;
@@ -189,26 +189,26 @@ void NormalMode::setupKeyMaps() {
             tr.chrg.cpMax = right;
             tr.lpstrText = pathBytes.data();
             ::SendMessage(h, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
-            
+
             int wideLen = MultiByteToWideChar(CP_UTF8, 0, pathBytes.data(), -1, NULL, 0);
             if (wideLen > 0) {
                 std::vector<wchar_t> pathWide(wideLen);
                 MultiByteToWideChar(CP_UTF8, 0, pathBytes.data(), -1, pathWide.data(), wideLen);
-                
+
                 wchar_t currentFile[MAX_PATH] = {0};
                 ::SendMessageW(nppData._nppHandle, NPPM_GETFULLCURRENTPATH, MAX_PATH, (LPARAM)currentFile);
-                
+
                 wchar_t currentDir[MAX_PATH] = {0};
                 wcscpy_s(currentDir, currentFile);
                 PathRemoveFileSpecW(currentDir);
-                
+
                 wchar_t fullPath[MAX_PATH] = {0};
                 if (PathIsRelativeW(pathWide.data())) {
                     PathCombineW(fullPath, currentDir, pathWide.data());
                 } else {
                     wcscpy_s(fullPath, pathWide.data());
                 }
-                
+
                 if (PathFileExistsW(fullPath)) {
                     ::SendMessageW(nppData._nppHandle, NPPM_DOOPEN, 0, (LPARAM)fullPath);
                 } else {
@@ -222,21 +222,21 @@ void NormalMode::setupKeyMaps() {
         int line = Utils::caretLine(h);
         int lineStart = Utils::lineStart(h, line);
         int lineEnd = Utils::lineEnd(h, line);
-        
+
         int left = pos;
         while (left > lineStart) {
             char ch = ::SendMessage(h, SCI_GETCHARAT, left - 1, 0);
             if (std::isspace(ch) || ch == '"' || ch == '\'' || ch == '<' || ch == '(' || ch == '[') break;
             left--;
         }
-        
+
         int right = pos;
         while (right < lineEnd) {
             char ch = ::SendMessage(h, SCI_GETCHARAT, right, 0);
             if (std::isspace(ch) || ch == '"' || ch == '\'' || ch == '>' || ch == ')' || ch == ']') break;
             right++;
         }
-        
+
         if (right > left) {
             std::vector<char> urlBytes(right - left + 1);
             Sci_TextRangeFull tr;
@@ -244,7 +244,7 @@ void NormalMode::setupKeyMaps() {
             tr.chrg.cpMax = right;
             tr.lpstrText = urlBytes.data();
             ::SendMessage(h, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
-            
+
             int wideLen = MultiByteToWideChar(CP_UTF8, 0, urlBytes.data(), -1, NULL, 0);
             if (wideLen > 0) {
                 std::vector<wchar_t> urlWide(wideLen);
@@ -253,8 +253,8 @@ void NormalMode::setupKeyMaps() {
             }
         }
     })
-    .motion("_", '_', "First non-blank char", [](HWND h, int c) { 
-        Motion::lineStart(h, c); 
+    .motion("_", '_', "First non-blank char", [](HWND h, int c) {
+        Motion::lineStart(h, c);
     });
 
     k.set("d", "Delete line", [this](HWND h, int c) {
@@ -392,21 +392,21 @@ void NormalMode::setupKeyMaps() {
         state.resetPending();
     });
 
-    
-    k.set("i", "Insert mode", [this](HWND h, int c) { 
-        enterInsertMode(); 
+
+    k.set("i", "Insert mode", [this](HWND h, int c) {
+        enterInsertMode();
     })
-    .set("a", "Append mode", [this](HWND h, int c) { 
-        Motion::charRight(h, 1); 
-        enterInsertMode(); 
+    .set("a", "Append mode", [this](HWND h, int c) {
+        Motion::charRight(h, 1);
+        enterInsertMode();
     })
-    .set("A", "Append line end", [this](HWND h, int c) { 
-        ::SendMessage(h, SCI_LINEEND, 0, 0); 
-        enterInsertMode(); 
+    .set("A", "Append line end", [this](HWND h, int c) {
+        ::SendMessage(h, SCI_LINEEND, 0, 0);
+        enterInsertMode();
     })
-    .set("I", "Insert line start", [this](HWND h, int c) { 
-        ::SendMessage(h, SCI_VCHOME, 0, 0); 
-        enterInsertMode(); 
+    .set("I", "Insert line start", [this](HWND h, int c) {
+        ::SendMessage(h, SCI_VCHOME, 0, 0);
+        enterInsertMode();
     })
     .set("o", "New line below", [this](HWND h, int c) {
         ::SendMessage(h, SCI_LINEEND, 0, 0);
@@ -447,7 +447,7 @@ void NormalMode::setupKeyMaps() {
          Utils::endUndo(h);
          enterInsertMode();
      });
-    
+
     k.set("x", "Delete char", [this](HWND h, int c) {
          Utils::beginUndo(h);
          for (int i = 0; i < c; ++i) {
@@ -485,18 +485,18 @@ void NormalMode::setupKeyMaps() {
          state.recordLastOp(OP_MOTION, c, 'R');
      })
      .motion("~", '~', "Toggle case", [this](HWND h, int c) { motion.toggleCase(h, c); });
-    
+
     k.set("J", "Join lines", [this](HWND h, int c) {
         Utils::beginUndo(h);
         Utils::joinLines(h, Utils::caretLine(h), c, true);
         Utils::endUndo(h);
         state.recordLastOp(OP_MOTION, c, 'J');
      });
-    
+
     k.set("p", "Paste after", [this](HWND h, int c) {
         char reg = Utils::getCurrentRegister();
         std::string content;
-        
+
         if (reg == '+' || reg == '*') {
             // Get from system clipboard
             if (OpenClipboard(h)) {
@@ -513,7 +513,7 @@ void NormalMode::setupKeyMaps() {
         } else {
             content = Utils::getRegisterContent(reg);
         }
-        
+
         if (!content.empty()) {
             Utils::beginUndo(h);
             for (int i = 0; i < c; i++) {
@@ -529,7 +529,7 @@ void NormalMode::setupKeyMaps() {
         Utils::endUndo(h);
         state.recordLastOp(OP_PASTE, c);
      });
-    
+
     k.set("\"", "Select register", [this](HWND h, int c) {
         state.awaitingRegister = true;
         Utils::setStatus(TEXT("-- Select register --"));
@@ -600,7 +600,7 @@ void NormalMode::setupKeyMaps() {
              state.recordLastOp(OP_MOTION, c, '#');
          }
      });
-    
+
     k.set("f", "Find character", [this](HWND h, int c) {
          state.opPending = 'f';
          state.textObjectPending = 'f';
@@ -653,10 +653,10 @@ void NormalMode::setupKeyMaps() {
          int pos = Utils::caretPos(h);
          Utils::select(h, pos, pos);
      });
-    
+
     k.set("v", [](HWND h, int c) { if (g_visualMode) g_visualMode->enterChar(h); })
      .set("V", [](HWND h, int c) { if (g_visualMode) g_visualMode->enterLine(h); });
-    
+
     k.set(":", "Enter Command mode", [](HWND h, int c) { if (g_commandMode) g_commandMode->enter(':'); })
      .set("u", "Undo", [this](HWND h, int c) {
          ::SendMessage(h, SCI_UNDO, 0, 0);
@@ -710,7 +710,7 @@ void NormalMode::setupKeyMaps() {
          Utils::endUndo(h);
          state.repeatCount = 0;
      });
-    
+
     k.set("zz", "Center cursor", [this](HWND h, int c) {
          int pos = Utils::caretPos(h);
          int line = Utils::caretLine(h);
@@ -730,14 +730,14 @@ void NormalMode::setupKeyMaps() {
         ::SendMessage(h, SCI_SETFIRSTVISIBLELINE, line - linesOnScreen + 1, 0);
     })
     .set("zo", "Open fold", [](HWND h, int c) {
-        int line = ::SendMessage(h, SCI_LINEFROMPOSITION, 
+        int line = ::SendMessage(h, SCI_LINEFROMPOSITION,
             Utils::caretPos(h), 0);
         for (int i = 0; i < c; i++) {
             ::SendMessage(h, SCI_FOLDLINE, line, SC_FOLDACTION_EXPAND);
         }
     })
     .set("zc", "Close fold", [](HWND h, int c) {
-        int line = ::SendMessage(h, SCI_LINEFROMPOSITION, 
+        int line = ::SendMessage(h, SCI_LINEFROMPOSITION,
             Utils::caretPos(h), 0);
         for (int i = 0; i < c; i++) {
             ::SendMessage(h, SCI_FOLDLINE, line, SC_FOLDACTION_CONTRACT);
@@ -746,7 +746,7 @@ void NormalMode::setupKeyMaps() {
     .set("za", "Toggle fold", [](HWND h, int c) {
         ::SendMessage(h, SCI_TOGGLEFOLD, ::SendMessage(h, SCI_LINEFROMPOSITION, Utils::caretPos(h), 0), 0);
     })
-    .set("q", "Start/stop recording macro", [this](HWND h, int c) {        
+    .set("q", "Start/stop recording macro", [this](HWND h, int c) {
         if (state.recordingMacro) {
             if (!state.macroBuffer.empty() && state.macroBuffer.back() == 'q') {
                 state.macroBuffer.pop_back();
@@ -774,13 +774,13 @@ void NormalMode::setupKeyMaps() {
             return;
         }
         std::string macroContent = state.registers[reg];
-        
+
         // Iteration limit to prevent infinite loops
         const int MAX_MACRO_ITERATIONS = 1000;
         int iterations = 0;
-        
+
         g_macroDepth++;
-        
+
         for (int iteration = 0; iteration < c; ++iteration) {
             for (char key : macroContent) {
                 if (++iterations > MAX_MACRO_ITERATIONS) {
@@ -788,23 +788,23 @@ void NormalMode::setupKeyMaps() {
                     g_macroDepth--;
                     return;
                 }
-                
+
                 // Process Windows messages to keep UI responsive
                 MSG msg;
                 while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
                     TranslateMessage(&msg);
                     DispatchMessage(&msg);
                 }
-                
+
                 handleKey(h, key);
             }
         }
-        
+
         g_macroDepth--;
         Utils::setCurrentRegister('"');
         Utils::setStatus(TEXT(""));
     });
-        
+
     k.set("m", "Set mark", [this](HWND h, int c) {
          state.awaitingMarkSet = true;
          Utils::setStatus(TEXT("-- Set mark --"));
@@ -870,11 +870,11 @@ void NormalMode::setupKeyMaps() {
              ::SendMessage(h, SCI_SCROLLCARET, 0, 0);
          }
      });
-    
+
     k.set(">", "Indent", [](HWND h, int c) { Utils::handleIndent(h, c); })
      .set("<", "Unindent", [](HWND h, int c) { Utils::handleUnindent(h, c); })
      .set("=", "Autoindent", [](HWND h, int c) { Utils::handleAutoIndent(h, c); });
-    
+
     k.set("gcc", "Toggle Comment", [this](HWND h, int c) {
          ::SendMessage(nppData._nppHandle, WM_COMMAND, IDM_EDIT_BLOCK_COMMENT, 0);
          state.recordLastOp(OP_MOTION, c, 'c');
@@ -927,7 +927,7 @@ void NormalMode::setupKeyMaps() {
         ::SendMessage(h, SCI_GOTOPOS, state.lastInsertPos, 0);
         enterInsertMode();
     });
-    
+
     k.set("[ ", "Insert line above", [](HWND h, int c) {
          ::SendMessage(h, SCI_HOME, 0, 0);
          ::SendMessage(h, SCI_NEWLINE, 0, 0);
@@ -1019,7 +1019,7 @@ void NormalMode::setupKeyMaps() {
             tr.chrg.cpMax = bounds.second;
             tr.lpstrText = word.data();
             ::SendMessage(h, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
- 
+
             ::SendMessage(h, SCI_SETTARGETRANGE, 0, pos);
             ::SendMessage(h, SCI_SETSEARCHFLAGS, SCFIND_WHOLEWORD, 0);
             int found = ::SendMessage(h, SCI_SEARCHINTARGET, len, (LPARAM)word.data());
@@ -1106,7 +1106,7 @@ void NormalMode::setupKeyMaps() {
 
 void NormalMode::enter() {
     HWND hwnd = Utils::getCurrentScintillaHandle();
-    
+
     state.mode = NORMAL;
     state.isLineVisual = false;
     state.visualAnchor = -1;
@@ -1146,11 +1146,11 @@ void NormalMode::enterInsertMode() {
 
 void handleInsertModeChar(HWND hwnd, char c) {
     if (state.mode != INSERT) return;
-    
+
     if (state.recordingInsertMacro) {
         state.insertMacroBuffers.back().push_back(c);
     }
-    
+
     if (c == 27) { // ESC key
         if (state.recordingInsertMacro) {
             state.insertMacroBuffers.back().push_back('\x1B'); // Record ESC
@@ -1159,7 +1159,7 @@ void handleInsertModeChar(HWND hwnd, char c) {
         if (g_normalMode) g_normalMode->enter();
         return;
     }
-    
+
     ::SendMessage(hwnd, SCI_ADDTEXT, 1, (LPARAM)&c);
 }
 
@@ -1172,7 +1172,7 @@ void NormalMode::handleKey(HWND hwnd, char c) {
             state.macroBuffer.clear();
             state.insertMacroBuffers.clear();
             state.awaitingMacroRegister = false;
-            
+
             std::wstring status = L"-- Recording @";
             status += (wchar_t)c;
             status += L" --";
@@ -1183,7 +1183,7 @@ void NormalMode::handleKey(HWND hwnd, char c) {
         }
         return;
     }
-    
+
     if (state.recordingMacro && c != 'q' && !state.awaitingRegister && !state.awaitingRegisterOperation) {
         state.macroBuffer.push_back(c);
     }
@@ -1203,12 +1203,12 @@ void NormalMode::handleKey(HWND hwnd, char c) {
         handleReplaceInput(hwnd, c);
         return;
     }
-    
+
     if (state.awaitingMarkSet) {
         handleMarkSetInput(hwnd, c);
         return;
     }
-    
+
     if (state.awaitingMarkJump) {
         handleMarkJumpInput(hwnd, c, state.isBacktickJump);
         return;
@@ -1223,13 +1223,13 @@ void NormalMode::handleKey(HWND hwnd, char c) {
             } else {
                 state.deleteToBlackhole = false;
             }
-            
+
             // Show which register was selected
             std::string status = "Register \"";
             status += c;
             status += "\" selected";
             Utils::setStatus(std::wstring(status.begin(), status.end()).c_str());
-            
+
             // Now wait for the operation (y, d, c, p, P)
             state.awaitingRegisterOperation = true;
             return;
@@ -1241,11 +1241,11 @@ void NormalMode::handleKey(HWND hwnd, char c) {
 
     if (state.awaitingRegisterOperation) {
         state.awaitingRegisterOperation = false;
-        
+
         // Handle operations that can use registers
         if (c == 'y' || c == 'd' || c == 'c' || c == 'p' || c == 'P' || c == 'x' || c == 'X') {
             char selectedRegister = Utils::getCurrentRegister();
-            
+
             if (c == 'y') {
                 state.opPending = 'y';
                 state.lastYankLinewise = false;
@@ -1271,7 +1271,7 @@ void NormalMode::handleKey(HWND hwnd, char c) {
         }
         return;
     }
-    
+
     if (state.textObjectPending == 'f' || state.textObjectPending == 't') {
         char searchType = state.opPending;
         int count = (state.repeatCount > 0) ? state.repeatCount : 1;
@@ -1282,34 +1282,34 @@ void NormalMode::handleKey(HWND hwnd, char c) {
     if (state.textObjectPending) {
         char modifier = state.textObjectPending;
         char op = state.opPending;
-        
+
         state.textObjectPending = 0;
         state.opPending = 0;
-        
+
         TextObject textObj;
         textObj.apply(hwnd, state, op, modifier, c);
         state.repeatCount = 0;
         return;
     }
-    
-    if ((state.opPending == 'd' || state.opPending == 'c' || state.opPending == 'y' || 
-         (state.mode == VISUAL && state.opPending == 'v')) && 
+
+    if ((state.opPending == 'd' || state.opPending == 'c' || state.opPending == 'y' ||
+         (state.mode == VISUAL && state.opPending == 'v')) &&
         (c == 'i' || c == 'a')) {
         state.textObjectPending = c;
         return;
     }
-    
+
      if (state.opPending && !state.textObjectPending) {
         if (c == 'w' || c == 'W' || c == 'b' || c == 'B' || c == 'e' || c == 'E' ||
-            c == 'h' || c == 'l' || c == 'j' || c == 'k' || 
+            c == 'h' || c == 'l' || c == 'j' || c == 'k' ||
             c == '$' || c == '^' || c == '0' || c == 'G' || c == '%' ||
             c == '{' || c == '}' || c == 'g') {
-            
+
             int count = (state.repeatCount > 0) ? state.repeatCount : 1;
             Utils::beginUndo(hwnd);
             applyOperatorToMotion(hwnd, state.opPending, c, count);
             Utils::endUndo(hwnd);
-            
+
             state.opPending = 0;
             state.repeatCount = 0;
             return;
@@ -1327,29 +1327,29 @@ void NormalMode::handleKey(HWND hwnd, char c) {
             state.textObjectPending = c;
             return;
         }
-        
+
         if (state.textObjectPending && state.opPending == 'v') {
             char modifier = state.textObjectPending;
             char op = state.opPending;
-            
+
             state.textObjectPending = 0;
             state.opPending = 0;
-            
+
             TextObject textObj;
             textObj.apply(hwnd, state, op, modifier, c);
             state.repeatCount = 0;
-            
+
             int anchor = (int)::SendMessage(hwnd, SCI_GETANCHOR, 0, 0);
             int caret = (int)Utils::caretPos(hwnd);
             state.lastVisualAnchor = anchor;
             state.lastVisualCaret = caret;
             state.lastVisualWasBlock = false;
             state.lastVisualWasLine = false;
-            
+
             return;
         }
     }
-    
+
     if (g_normalKeymap) {
         g_normalKeymap->handleKey(hwnd, c);
     }
@@ -1364,7 +1364,7 @@ void NormalMode::handleCharSearchInput(HWND hwnd, char searchChar, char searchTy
         searchType,
         searchChar
     );
-    
+
     state.opPending = 0;
     state.textObjectPending = 0;
     Utils::setStatus(TEXT("-- NORMAL --"));
@@ -1382,12 +1382,12 @@ void NormalMode::handleMarkSetInput(HWND hwnd, char mark) {
 
 void NormalMode::handleMarkJumpInput(HWND hwnd, char mark, bool exactPosition) {
     state.awaitingMarkJump = false;
-    
+
     if (Marks::isValidMark(mark)) {
         long pos = Utils::caretPos(hwnd);
         int line = ::SendMessage(hwnd, SCI_LINEFROMPOSITION, pos, 0);
         state.recordJump(pos, line);
-        
+
         if (Marks::jumpToMark(hwnd, mark, exactPosition)) {
             long newPos = Utils::caretPos(hwnd);
             int newLine = ::SendMessage(hwnd, SCI_LINEFROMPOSITION, newPos, 0);
@@ -1399,7 +1399,7 @@ void NormalMode::handleMarkJumpInput(HWND hwnd, char mark, bool exactPosition) {
     } else {
         Utils::setStatus(TEXT("-- Invalid mark --"));
     }
-    
+
     state.isBacktickJump = false;
     state.pendingJumpCount = 0;
 }
@@ -1425,7 +1425,7 @@ void NormalMode::deleteLineOnce(HWND hwnd) {
     int pos = Utils::caretPos(hwnd);
     int line = Utils::caretLine(hwnd);
     auto range = Utils::lineRange(hwnd, line, true);
- 
+
     // Get the text before deleting
     std::vector<char> buffer(range.second - range.first + 1);
     Sci_TextRangeFull tr;
@@ -1433,7 +1433,7 @@ void NormalMode::deleteLineOnce(HWND hwnd) {
     tr.chrg.cpMax = range.second;
     tr.lpstrText = buffer.data();
     ::SendMessage(hwnd, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
-    
+
     // Store in register if not blackhole
     if (!state.deleteToBlackhole) {
         char reg = Utils::getCurrentRegister();
@@ -1466,7 +1466,7 @@ void NormalMode::yankLineOnce(HWND hwnd) {
     tr.chrg.cpMax = range.second;
     tr.lpstrText = buffer.data();
     ::SendMessage(hwnd, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
-    
+
     // Store in register
     char reg = Utils::getCurrentRegister();
     if (reg == '+' || reg == '*') {
@@ -1488,21 +1488,21 @@ void NormalMode::applyOperatorToMotion(HWND hwnd, char op, char motion, int coun
         motion == '{' || motion == '}' || motion == '<' || motion == '>' ||
         motion == '\'' || motion == '\"' || motion == '`' ||
         motion == 't' || motion == 's' || motion == 'p') {
-        
+
         TextObject textObj;
         textObj.apply(hwnd, state, op, 'a', motion);
         return;
     }
-    
+
     int start = Utils::caretPos(hwnd);
     int startLine = Utils::caretLine(hwnd);
     bool isLineMotion = false;
-    
-    if (motion == 'j' || motion == 'k' || motion == 'G' || motion == 'g' || 
+
+    if (motion == 'j' || motion == 'k' || motion == 'G' || motion == 'g' ||
         motion == '{' || motion == '}') {
         isLineMotion = true;
     }
-    
+
     switch (motion) {
     case 'h': Motion::charLeft(hwnd, count); break;
     case 'l': Motion::charRight(hwnd, count); break;
@@ -1517,7 +1517,7 @@ void NormalMode::applyOperatorToMotion(HWND hwnd, char op, char motion, int coun
     case '$': Motion::lineEnd(hwnd, count); break;
     case '^': Motion::lineStart(hwnd, count); break;
     case '0': Motion::lineStart(hwnd, 1); break;
-    case 'G': 
+    case 'G':
         if (count == 1) Motion::documentEnd(hwnd);
         else Motion::gotoLine(hwnd, count);
         break;
@@ -1534,7 +1534,7 @@ void NormalMode::applyOperatorToMotion(HWND hwnd, char op, char motion, int coun
     }
     default: break;
     }
-    
+
     int end = Utils::caretPos(hwnd);
     int endLine = Utils::caretLine(hwnd);
 
@@ -1555,7 +1555,7 @@ void NormalMode::applyOperatorToMotion(HWND hwnd, char op, char motion, int coun
             selectedText = buffer.data();
         }
     }
-    
+
     // Store in register before deletion
     if (op == 'd' || op == 'c') {
         if (!state.deleteToBlackhole && !selectedText.empty()) {
@@ -1586,15 +1586,15 @@ void NormalMode::applyOperatorToMotion(HWND hwnd, char op, char motion, int coun
         state.lastYankLinewise = true;
     } else {
         if (start > end) std::swap(start, end);
-        
+
         // For word-end motions, include the character under cursor
-        if (motion == 'e' || motion == 'E' || motion == 'w' || motion == 'W') {
+        if (motion == 'e' || motion == 'E') {
             int docLen = ::SendMessage(hwnd, SCI_GETTEXTLENGTH, 0, 0);
             if (end < docLen) end = ::SendMessage(hwnd, SCI_POSITIONAFTER, end, 0);
         }
         state.lastYankLinewise = false;
     }
-    
+
     Utils::select(hwnd, start, end);
     switch (op) {
     case 'd':
@@ -1622,7 +1622,7 @@ void NormalMode::applyOperatorToMotion(HWND hwnd, char op, char motion, int coun
 
 void NormalMode::handlePasteFromRegister(HWND hwnd, char pasteCmd, char reg) {
     std::string content;
-    
+
     if (reg == '+' || reg == '*') {
         // Get from system clipboard
         if (OpenClipboard(hwnd)) {
@@ -1639,10 +1639,10 @@ void NormalMode::handlePasteFromRegister(HWND hwnd, char pasteCmd, char reg) {
     } else {
         content = Utils::getRegisterContent(reg);
     }
-    
+
     if (!content.empty()) {
         Utils::beginUndo(hwnd);
-        
+
         if (pasteCmd == 'p') {
             // Paste after cursor
             Utils::pasteAfter(hwnd, 1, false);
@@ -1650,13 +1650,13 @@ void NormalMode::handlePasteFromRegister(HWND hwnd, char pasteCmd, char reg) {
             // Paste before cursor
             Utils::pasteBefore(hwnd, 1, false);
         }
-        
+
         Utils::endUndo(hwnd);
         state.recordLastOp(OP_PASTE, 1);
     } else {
         Utils::setStatus(TEXT("-- Register empty --"));
     }
-    
+
     // Reset to default register
     Utils::setCurrentRegister('"');
     state.deleteToBlackhole = false;
@@ -1664,17 +1664,17 @@ void NormalMode::handlePasteFromRegister(HWND hwnd, char pasteCmd, char reg) {
 
 void NormalMode::handleDeleteCharToRegister(HWND hwnd, char deleteCmd, char reg) {
     Utils::beginUndo(hwnd);
-    
+
     int pos = Utils::caretPos(hwnd);
     int docLen = ::SendMessage(hwnd, SCI_GETTEXTLENGTH, 0, 0);
-    
+
     if (deleteCmd == 'x') {
         // Delete character under cursor
         if (pos >= docLen) {
             Utils::endUndo(hwnd);
             return;
         }
-        
+
         int next = ::SendMessage(hwnd, SCI_POSITIONAFTER, pos, 0);
         std::vector<char> buffer(next - pos + 1);
         Sci_TextRangeFull tr;
@@ -1682,7 +1682,7 @@ void NormalMode::handleDeleteCharToRegister(HWND hwnd, char deleteCmd, char reg)
         tr.chrg.cpMax = next;
         tr.lpstrText = buffer.data();
         ::SendMessage(hwnd, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
-        
+
         // Store in register
         if (reg != '_') {  // Skip blackhole register
             if (reg == '+' || reg == '*') {
@@ -1691,17 +1691,17 @@ void NormalMode::handleDeleteCharToRegister(HWND hwnd, char deleteCmd, char reg)
                 Utils::setRegisterContent(reg, buffer.data());
             }
         }
-        
+
         ::SendMessage(hwnd, SCI_SETSEL, pos, next);
         ::SendMessage(hwnd, SCI_CLEAR, 0, 0);
-        
+
     } else if (deleteCmd == 'X') {
         // Delete character before cursor
         if (pos <= 0) {
             Utils::endUndo(hwnd);
             return;
         }
-        
+
         int prev = ::SendMessage(hwnd, SCI_POSITIONBEFORE, pos, 0);
         std::vector<char> buffer(pos - prev + 1);
         Sci_TextRangeFull tr;
@@ -1709,7 +1709,7 @@ void NormalMode::handleDeleteCharToRegister(HWND hwnd, char deleteCmd, char reg)
         tr.chrg.cpMax = pos;
         tr.lpstrText = buffer.data();
         ::SendMessage(hwnd, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
-        
+
         // Store in register
         if (reg != '_') {  // Skip blackhole register
             if (reg == '+' || reg == '*') {
@@ -1718,14 +1718,14 @@ void NormalMode::handleDeleteCharToRegister(HWND hwnd, char deleteCmd, char reg)
                 Utils::setRegisterContent(reg, buffer.data());
             }
         }
-        
+
         ::SendMessage(hwnd, SCI_SETSEL, prev, pos);
         ::SendMessage(hwnd, SCI_CLEAR, 0, 0);
     }
-    
+
     Utils::endUndo(hwnd);
     state.recordLastOp(OP_MOTION, 1, deleteCmd);
-    
+
     Utils::setCurrentRegister('"');
     state.deleteToBlackhole = false;
 }
