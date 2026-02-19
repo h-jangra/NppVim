@@ -8,6 +8,7 @@
 #include "../include/CommandMode.h"
 #include "../include/VisualMode.h"
 #include "../include/Keymap.h"
+#include "../include/NppVim.h"
 #include "../include/Marks.h"
 #include "../include/TextObject.h"
 #include "../include/Utils.h"
@@ -23,6 +24,8 @@ extern CommandMode* g_commandMode;
 extern NppData nppData;
 
 int g_macroDepth = 0;
+
+extern VimConfig g_config;
 
 NormalMode::NormalMode(VimState& state) : state(state) {
     g_normalKeymap = std::make_unique<Keymap>(state);
@@ -440,6 +443,27 @@ void NormalMode::setupKeyMaps() {
              int line = Utils::caretLine(h);
              int end = Utils::lineEnd(h, line);
              if (pos < end) {
+                 // Get the text being deleted
+                 std::vector<char> buffer(end - pos + 1);
+                 Sci_TextRangeFull tr;
+                 tr.chrg.cpMin = pos;
+                 tr.chrg.cpMax = end;
+                 tr.lpstrText = buffer.data();
+                 ::SendMessage(h, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
+                 
+                 // Store in register if not blackhole
+                 if (!state.deleteToBlackhole) {
+                     char reg = Utils::getCurrentRegister();
+                     if (reg != '_') {  // Skip blackhole register
+                         if (reg == '+' || reg == '*') {
+                             // System clipboard
+                             Utils::setClipboardText(buffer.data());
+                         } else {
+                             Utils::setRegisterContent(reg, buffer.data());
+                         }
+                     }
+                 }
+                 
                  ::SendMessage(h, SCI_SETSEL, pos, end);
                  ::SendMessage(h, SCI_CLEAR, 0, 0);
              }
@@ -455,6 +479,28 @@ void NormalMode::setupKeyMaps() {
              int docLen = ::SendMessage(h, SCI_GETTEXTLENGTH, 0, 0);
              if (pos >= docLen) break;
              int next = ::SendMessage(h, SCI_POSITIONAFTER, pos, 0);
+             
+             // Get the character before deleting
+             std::vector<char> buffer(next - pos + 1);
+             Sci_TextRangeFull tr;
+             tr.chrg.cpMin = pos;
+             tr.chrg.cpMax = next;
+             tr.lpstrText = buffer.data();
+             ::SendMessage(h, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
+             
+             // Store in register if not blackhole
+             if (!state.deleteToBlackhole && g_config.xStoreClipboard) {
+                 char reg = Utils::getCurrentRegister();
+                 if (reg != '_') {  // Skip blackhole register
+                     if (reg == '+' || reg == '*') {
+                         // System clipboard
+                         Utils::setClipboardText(buffer.data());
+                     } else {
+                         Utils::setRegisterContent(reg, buffer.data());
+                     }
+                 }
+             }
+             
              ::SendMessage(h, SCI_SETSEL, pos, next);
              ::SendMessage(h, SCI_CLEAR, 0, 0);
          }
@@ -467,6 +513,28 @@ void NormalMode::setupKeyMaps() {
              int pos = Utils::caretPos(h);
              if (pos <= 0) break;
              int prev = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
+             
+             // Get the character before deleting
+             std::vector<char> buffer(pos - prev + 1);
+             Sci_TextRangeFull tr;
+             tr.chrg.cpMin = prev;
+             tr.chrg.cpMax = pos;
+             tr.lpstrText = buffer.data();
+             ::SendMessage(h, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
+             
+             // Store in register if not blackhole
+             if (!state.deleteToBlackhole) {
+                 char reg = Utils::getCurrentRegister();
+                 if (reg != '_') {  // Skip blackhole register
+                     if (reg == '+' || reg == '*') {
+                         // System clipboard
+                         Utils::setClipboardText(buffer.data());
+                     } else {
+                         Utils::setRegisterContent(reg, buffer.data());
+                     }
+                 }
+             }
+             
              ::SendMessage(h, SCI_SETSEL, prev, pos);
              ::SendMessage(h, SCI_CLEAR, 0, 0);
          }
@@ -512,12 +580,27 @@ void NormalMode::setupKeyMaps() {
             }
         } else {
             content = Utils::getRegisterContent(reg);
+            if (content.empty() && reg == '"') {
+                if (OpenClipboard(h)) {
+                    HANDLE hData = GetClipboardData(CF_TEXT);
+                    if (hData) {
+                        char* pszText = (char*)GlobalLock(hData);
+                        if (pszText) { content = pszText; GlobalUnlock(hData); }
+                    }
+                    CloseClipboard();
+                }
+            }
         }
 
         if (!content.empty()) {
             Utils::beginUndo(h);
-            for (int i = 0; i < c; i++) {
-                ::SendMessage(h, SCI_REPLACESEL, 0, (LPARAM)content.c_str());
+            bool linewise = state.lastYankLinewise;
+            if (linewise) {
+                Utils::pasteAfter(h, c, true);
+            } else {
+                for (int i = 0; i < c; i++) {
+                    ::SendMessage(h, SCI_REPLACESEL, 0, (LPARAM)content.c_str());
+                }
             }
             Utils::endUndo(h);
         }
@@ -1435,7 +1518,7 @@ void NormalMode::deleteLineOnce(HWND hwnd) {
     ::SendMessage(hwnd, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
 
     // Store in register if not blackhole
-    if (!state.deleteToBlackhole) {
+    if (!state.deleteToBlackhole && g_config.dStoreClipboard) {
         char reg = Utils::getCurrentRegister();
         if (reg != '_') {  // Skip blackhole register
             if (reg == '+' || reg == '*') {
@@ -1443,6 +1526,7 @@ void NormalMode::deleteLineOnce(HWND hwnd) {
                 Utils::setClipboardText(buffer.data());
             } else {
                 Utils::setRegisterContent(reg, buffer.data());
+                Utils::setClipboardText(buffer.data());
             }
         }
     }
@@ -1558,7 +1642,8 @@ void NormalMode::applyOperatorToMotion(HWND hwnd, char op, char motion, int coun
 
     // Store in register before deletion
     if (op == 'd' || op == 'c') {
-        if (!state.deleteToBlackhole && !selectedText.empty()) {
+        bool shouldStore = (op == 'd') ? g_config.dStoreClipboard : g_config.cStoreClipboard;
+        if (shouldStore && !state.deleteToBlackhole && !selectedText.empty()) {
             char reg = Utils::getCurrentRegister();
             if (reg != '_') {  // Skip blackhole register
                 if (reg == '+' || reg == '*') {

@@ -34,6 +34,24 @@ enum TextObjectType {
     TEXT_OBJECT_ANGLE
 };
 
+struct VimConfig {
+    std::string escapeKey = "esc";
+    std::string customEscape = "";
+    int escapeTimeout = 300;
+    bool overrideCtrlD = false;
+    bool overrideCtrlU = false;
+    bool overrideCtrlR = false;
+    bool overrideCtrlF = false;
+    bool overrideCtrlB = false;
+    bool overrideCtrlO = false;
+    bool overrideCtrlI = false;
+    bool xStoreClipboard = true;
+    bool dStoreClipboard = true;
+    bool cStoreClipboard = true;
+};
+
+extern VimConfig g_config;
+
 struct LastOperation {
     OperationType type = OP_NONE;
     int count = 0;

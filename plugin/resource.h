@@ -27,6 +27,10 @@
 #define IDC_TITLE                       1010
 #define IDC_DESC1                       1011
 #define IDC_DESC2                       1012
+
+#define IDC_CHECK_D_CLIPBOARD           116
+#define IDC_CHECK_C_CLIPBOARD           117
+#define IDC_CHECK_X_CLIPBOARD           118
 // //
 // #define SW_HIDE                         0
 // #define HIDE_WINDOW                     0

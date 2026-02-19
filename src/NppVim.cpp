@@ -48,20 +48,6 @@ static HFONT g_hFontNormal = NULL;
 static HFONT g_hFontButton = NULL;
 static std::map<HWND, WNDPROC> origProcMap;
 
-// Configuration
-struct VimConfig {
-    std::string escapeKey = "esc";
-    std::string customEscape = "";
-    int escapeTimeout = 300;
-    bool overrideCtrlD = false;
-    bool overrideCtrlU = false;
-    bool overrideCtrlR = false;
-    bool overrideCtrlF = false;
-    bool overrideCtrlB = false;
-    bool overrideCtrlO = false;
-    bool overrideCtrlI = false;
-};
-
 VimConfig g_config;
 
 // Forward declarations
@@ -186,6 +172,15 @@ void loadConfig() {
             else if (key == "override_ctrl_i") {
                 g_config.overrideCtrlI = (value == "1" || value == "true");
             }
+            else if (key == "x_store_clipboard") {
+                g_config.xStoreClipboard = (value == "1" || value == "true");
+            }
+            else if (key == "d_store_clipboard") {
+                g_config.dStoreClipboard = (value == "1" || value == "true");
+            }
+            else if (key == "c_store_clipboard") {
+                g_config.cStoreClipboard = (value == "1" || value == "true");
+            }
         }
     }
     file.close();
@@ -216,6 +211,10 @@ void saveConfig() {
         file << "override_ctrl_b=" << (g_config.overrideCtrlB ? "1" : "0") << "\n";
         file << "override_ctrl_o=" << (g_config.overrideCtrlO ? "1" : "0") << "\n";
         file << "override_ctrl_i=" << (g_config.overrideCtrlI ? "1" : "0") << "\n";
+        file << "# Store deleted/changed text in clipboard\n";
+        file << "x_store_clipboard=" << (g_config.xStoreClipboard ? "1" : "0") << "\n";
+        file << "d_store_clipboard=" << (g_config.dStoreClipboard ? "1" : "0") << "\n";
+        file << "c_store_clipboard=" << (g_config.cStoreClipboard ? "1" : "0") << "\n";
         file.close();
     }
 }
@@ -409,6 +408,9 @@ INT_PTR CALLBACK ConfigDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM
         CheckDlgButton(hwnd, IDC_CHECK_CTRL_D, g_config.overrideCtrlD ? BST_CHECKED : BST_UNCHECKED);
         CheckDlgButton(hwnd, IDC_CHECK_CTRL_U, g_config.overrideCtrlU ? BST_CHECKED : BST_UNCHECKED);
         CheckDlgButton(hwnd, IDC_CHECK_CTRL_R, g_config.overrideCtrlR ? BST_CHECKED : BST_UNCHECKED);
+        CheckDlgButton(hwnd, IDC_CHECK_D_CLIPBOARD, g_config.dStoreClipboard ? BST_CHECKED : BST_UNCHECKED);
+        CheckDlgButton(hwnd, IDC_CHECK_C_CLIPBOARD, g_config.cStoreClipboard ? BST_CHECKED : BST_UNCHECKED);
+        CheckDlgButton(hwnd, IDC_CHECK_X_CLIPBOARD, g_config.xStoreClipboard ? BST_CHECKED : BST_UNCHECKED);
         SetDlgItemTextA(hwnd, IDC_CUSTOM_ESCAPE, g_config.customEscape.c_str());
         EnableWindow(GetDlgItem(hwnd, IDC_CUSTOM_ESCAPE), selIndex == 4);
 
@@ -456,6 +458,9 @@ INT_PTR CALLBACK ConfigDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM
             CheckDlgButton(hwnd, IDC_CHECK_CTRL_D, BST_UNCHECKED);
             CheckDlgButton(hwnd, IDC_CHECK_CTRL_U, BST_UNCHECKED);
             CheckDlgButton(hwnd, IDC_CHECK_CTRL_R, BST_UNCHECKED);
+            CheckDlgButton(hwnd, IDC_CHECK_D_CLIPBOARD, BST_CHECKED);
+            CheckDlgButton(hwnd, IDC_CHECK_C_CLIPBOARD, BST_CHECKED);
+            CheckDlgButton(hwnd, IDC_CHECK_X_CLIPBOARD, BST_CHECKED);
             MessageBox(hwnd, TEXT("Settings reset to defaults."), TEXT("Reset"), MB_OK | MB_ICONINFORMATION);
             break;
 
@@ -498,6 +503,9 @@ INT_PTR CALLBACK ConfigDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM
             g_config.overrideCtrlD = (IsDlgButtonChecked(hwnd, IDC_CHECK_CTRL_D) == BST_CHECKED);
             g_config.overrideCtrlU = (IsDlgButtonChecked(hwnd, IDC_CHECK_CTRL_U) == BST_CHECKED);
             g_config.overrideCtrlR = (IsDlgButtonChecked(hwnd, IDC_CHECK_CTRL_R) == BST_CHECKED);
+            g_config.dStoreClipboard = (IsDlgButtonChecked(hwnd, IDC_CHECK_D_CLIPBOARD) == BST_CHECKED);
+            g_config.cStoreClipboard = (IsDlgButtonChecked(hwnd, IDC_CHECK_C_CLIPBOARD) == BST_CHECKED);
+            g_config.xStoreClipboard = (IsDlgButtonChecked(hwnd, IDC_CHECK_X_CLIPBOARD) == BST_CHECKED);
 
             saveConfig();
             EndDialog(hwnd, IDOK);

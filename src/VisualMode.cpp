@@ -2,6 +2,7 @@
 #include "../include/NormalMode.h"
 #include "../include/CommandMode.h"
 #include "../include/Keymap.h"
+#include "../include/NppVim.h"
 #include "../include/TextObject.h"
 #include "../include/Utils.h"
 #include "../plugin/menuCmdID.h"
@@ -12,6 +13,8 @@
 extern NormalMode* g_normalMode;
 extern CommandMode* g_commandMode;
 extern NppData nppData;
+
+extern VimConfig g_config;
 
 VisualMode::VisualMode(VimState& state) : state(state) {
     g_visualKeymap = std::make_unique<Keymap>(state);
@@ -58,7 +61,7 @@ void VisualMode::setupKeyMaps() {
             BlockSelection blk = Utils::blockSelection(h);
 
             // Store in register unless it's blackhole
-            if (!toBlackhole) {
+            if (!toBlackhole && g_config.dStoreClipboard) {
                 std::string content = getSelectedText(h);
 
                 if (!content.empty()) {
@@ -79,7 +82,7 @@ void VisualMode::setupKeyMaps() {
             int endPos = ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
 
             // Store in register unless it's blackhole
-            if (!toBlackhole) {
+            if (!toBlackhole && g_config.dStoreClipboard) {
                 std::string content = getSelectedText(h);
                 if (!content.empty()) {
                     Utils::setRegisterContent(reg, content);
@@ -96,7 +99,7 @@ void VisualMode::setupKeyMaps() {
             int endPos = ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
 
             // Store in register unless it's blackhole
-            if (!toBlackhole) {
+            if (!toBlackhole && g_config.dStoreClipboard) {
                 std::string content = getSelectedText(h);
                 if (!content.empty()) {
                     Utils::setRegisterContent(reg, content);
@@ -203,7 +206,7 @@ void VisualMode::setupKeyMaps() {
             int endPos = ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
 
             // Store in register unless it's blackhole
-            if (!toBlackhole) {
+            if (!toBlackhole && g_config.cStoreClipboard) {
                 std::string content = getSelectedText(h);
                 if (!content.empty()) {
                     Utils::setRegisterContent(reg, content);
@@ -944,7 +947,7 @@ void VisualMode::setupKeyMaps() {
         Utils::beginUndo(h);
 
         // Store the selected text in register unless it's blackhole
-        if (!toBlackhole) {
+        if (!toBlackhole && g_config.cStoreClipboard) {
             std::string content = getSelectedText(h);
             if (!content.empty()) {
                 Utils::setRegisterContent(reg, content);
