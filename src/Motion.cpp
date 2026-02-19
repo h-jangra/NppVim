@@ -2,16 +2,18 @@
 #include "../include/Motion.h"
 #include "../plugin/Scintilla.h"
 #include "../include/NppVim.h"
+#include <Utils.h>
 
 Motion motion;
 
 void Motion::charLeft(HWND hwndEdit, int count) {
     if (state.mode == VISUAL) {
         for (int i = 0; i < count; i++) {
-            ::SendMessage(hwndEdit, SCI_CHARLEFTEXTEND, 0, 0);
+            int caret = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+            int prev = (int)::SendMessage(hwndEdit, SCI_POSITIONBEFORE, caret, 0);
+            ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, prev, 0);
         }
-    }
-    else {
+    } else {
         for (int i = 0; i < count; i++) {
             ::SendMessage(hwndEdit, SCI_CHARLEFT, 0, 0);
         }
@@ -21,16 +23,14 @@ void Motion::charLeft(HWND hwndEdit, int count) {
 void Motion::charRight(HWND hwndEdit, int count) {
     if (state.mode == VISUAL) {
         for (int i = 0; i < count; i++) {
-            ::SendMessage(hwndEdit, SCI_CHARRIGHTEXTEND, 0, 0);
+            int caret = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+            int next = (int)::SendMessage(hwndEdit, SCI_POSITIONAFTER, caret, 0);
+            ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, next, 0);
         }
-    }
-    else {
-        int caret = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
-        int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
+    } else {
         for (int i = 0; i < count; i++) {
-            if (caret < docLen) caret++;
+            ::SendMessage(hwndEdit, SCI_CHARRIGHT, 0, 0);
         }
-        ::SendMessage(hwndEdit, SCI_SETSEL, caret, caret);
     }
 }
 
@@ -96,7 +96,7 @@ void Motion::wordRightBig(HWND hwndEdit, int count) {
     }
 
     if (state.mode == VISUAL) {
-        int anchor = (int)::SendMessage(hwndEdit, SCI_GETANCHOR, 0, 0);
+        int anchor = state.visualAnchor;
         ::SendMessage(hwndEdit, SCI_SETSEL, anchor, pos);
     }
     else {
@@ -144,7 +144,7 @@ void Motion::wordLeftBig(HWND hwndEdit, int count) {
     }
 
     if (state.mode == VISUAL) {
-        int anchor = (int)::SendMessage(hwndEdit, SCI_GETANCHOR, 0, 0);
+        int anchor = state.visualAnchor;
         ::SendMessage(hwndEdit, SCI_SETSEL, anchor, pos);
     }
     else {
@@ -196,7 +196,7 @@ void Motion::wordEndBig(HWND hwndEdit, int count) {
     }
 
     if (state.mode == VISUAL) {
-        int anchor = (int)::SendMessage(hwndEdit, SCI_GETANCHOR, 0, 0);
+        int anchor = state.visualAnchor;
         ::SendMessage(hwndEdit, SCI_SETSEL, anchor, pos + 1);
     }
     else {
@@ -266,7 +266,18 @@ void Motion::nextChar(HWND hwndEdit, int count, char target) {
         if (!found) return;
     }
 
-    setCursorPosition(hwndEdit, foundPos, false);
+    if (state.mode == VISUAL) {
+        int anchor = state.visualAnchor;
+        if (foundPos < anchor) {
+            ::SendMessage(hwndEdit, SCI_SETSEL, foundPos, anchor);
+        } else {
+            ::SendMessage(hwndEdit, SCI_SETSEL, anchor, foundPos);
+        }
+        ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, foundPos, 0);
+    } else {
+        ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, foundPos, 0);
+        ::SendMessage(hwndEdit, SCI_SETSEL, foundPos, foundPos);
+    }
 }
 
 void Motion::prevChar(HWND hwndEdit, int count, char target) {
@@ -291,7 +302,18 @@ void Motion::prevChar(HWND hwndEdit, int count, char target) {
         if (!found) return;
     }
 
-    setCursorPosition(hwndEdit, foundPos, false);
+    if (state.mode == VISUAL) {
+        int anchor = state.visualAnchor;
+        if (foundPos < anchor) {
+            ::SendMessage(hwndEdit, SCI_SETSEL, foundPos, anchor);
+        } else {
+            ::SendMessage(hwndEdit, SCI_SETSEL, anchor, foundPos);
+        }
+        ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, foundPos, 0);
+    } else {
+        ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, foundPos, 0);
+        ::SendMessage(hwndEdit, SCI_SETSEL, foundPos, foundPos);
+    }
 }
 
 void Motion::tillChar(HWND hwndEdit, int count, char target) {
@@ -303,14 +325,6 @@ void Motion::tillChar(HWND hwndEdit, int count, char target) {
 
     for (int i = 0; i < count; ++i) {
         int searchPos = searchStart + 1;
-
-        // If we're sitting one position before a target character, skip past it
-        if (searchPos <= lineEnd) {
-            char nextChar = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, searchPos, 0);
-            if (nextChar == target) {
-                searchPos++; // Skip past this occurrence to find the next one
-            }
-        }
 
         bool found = false;
         while (searchPos <= lineEnd) {
@@ -327,7 +341,21 @@ void Motion::tillChar(HWND hwndEdit, int count, char target) {
 
     // Move to one position BEFORE the final target found
     int finalPos = searchStart - 1;
-    setCursorPosition(hwndEdit, finalPos, true);
+    if (finalPos < Utils::lineStart(hwndEdit, line)) {
+        finalPos = Utils::lineStart(hwndEdit, line);
+    }
+    if (state.mode == VISUAL) {
+        int anchor = state.visualAnchor;
+        if (finalPos < anchor) {
+            ::SendMessage(hwndEdit, SCI_SETSEL, finalPos, anchor);
+        } else {
+            ::SendMessage(hwndEdit, SCI_SETSEL, anchor, finalPos);
+        }
+        ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, finalPos, 0);
+    } else {
+        ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, finalPos, 0);
+        ::SendMessage(hwndEdit, SCI_SETSEL, finalPos, finalPos);
+    }
 }
 
 void Motion::tillCharBack(HWND hwndEdit, int count, char target) {
@@ -339,13 +367,6 @@ void Motion::tillCharBack(HWND hwndEdit, int count, char target) {
 
     for (int i = 0; i < count; ++i) {
         int searchPos = searchStart - 1;
-
-        if (searchPos >= lineStart) {
-            char prevChar = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, searchPos, 0);
-            if (prevChar == target) {
-                searchPos--;
-            }
-        }
 
         bool found = false;
         while (searchPos >= lineStart) {
@@ -361,32 +382,22 @@ void Motion::tillCharBack(HWND hwndEdit, int count, char target) {
     }
 
     int finalPos = searchStart + 1;
-    setCursorPosition(hwndEdit, finalPos, true);
-}
-
-void Motion::setCursorPosition(HWND hwndEdit, int pos, bool isTillMotion) {
-    if (state.mode == VISUAL) {
-        int anchor = (int)::SendMessage(hwndEdit, SCI_GETANCHOR, 0, 0);
-        int currentPos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
-        int selectionEnd = pos;
-
-        bool isMovingForward = (pos >= currentPos);
-
-        if (isMovingForward) {
-            // Moving forward - extend to include the character
-            selectionEnd = pos + 1;
-        }
-        else {
-            // Moving backward - just go to the position
-            selectionEnd = pos;
-        }
-
-        ::SendMessage(hwndEdit, SCI_SETSEL, anchor, selectionEnd);
-        ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, selectionEnd, 0);
+    int lineEnd = Utils::lineEnd(hwndEdit, line);
+    if (finalPos > lineEnd) {
+        finalPos = lineEnd;
     }
-    else {
-        ::SendMessage(hwndEdit, SCI_SETSEL, pos, pos);
-        ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, pos, 0);
+
+    if (state.mode == VISUAL) {
+        int anchor = state.visualAnchor;
+        if (finalPos < anchor) {
+            ::SendMessage(hwndEdit, SCI_SETSEL, finalPos, anchor);
+        } else {
+            ::SendMessage(hwndEdit, SCI_SETSEL, anchor, finalPos);
+        }
+        ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, finalPos, 0);
+    } else {
+        ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, finalPos, 0);
+        ::SendMessage(hwndEdit, SCI_SETSEL, finalPos, finalPos);
     }
 }
 
@@ -418,7 +429,7 @@ void Motion::paragraphDown(HWND hwndEdit, int count) {
 
 void Motion::gotoLine(HWND hwndEdit, int lineNum) {
     if (state.mode == VISUAL) {
-        int anchor = (int)::SendMessage(hwndEdit, SCI_GETANCHOR, 0, 0);
+        int anchor = state.visualAnchor;
         ::SendMessage(hwndEdit, SCI_GOTOLINE, lineNum - 1, 0);
         int newPos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
         ::SendMessage(hwndEdit, SCI_SETSEL, anchor, newPos);
@@ -474,7 +485,7 @@ void Motion::matchPair(HWND hwndEdit) {
 
     if (matchPos != -1) {
         if (state.mode == VISUAL) {
-            int anchor = (int)::SendMessage(hwndEdit, SCI_GETANCHOR, 0, 0);
+            int anchor = state.visualAnchor;
 
             if (matchPos > anchor)
                 ::SendMessage(hwndEdit, SCI_SETSEL, anchor, matchPos + 1);

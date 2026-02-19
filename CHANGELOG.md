@@ -1,3 +1,24 @@
+# 1.12.0.0
+
+## Fixed
+
+### Visual Line Mode
+- `j` / `k` – Fixed selection not extending correctly
+- View now scrolls to follow cursor during visual line selection
+- `f/`t` - Fixed forward and till motions in visual mode.
+
+### Visual Mode
+- `o` – Fixed character visual mode losing selection on first switch
+
+## Added
+
+### Visual Mode
+- `zz` / `zt` / `zb` – Center / top / bottom cursor in view
+- `Ctrl+D` / `Ctrl+U` – Half page down / up (extends selection)
+- `Ctrl+F` / `Ctrl+B` – Page forward / backward
+- `Ctrl+E` / `Ctrl+Y` – Scroll window down / up
+- `Ctrl+R` – Redo
+
 # 1.11.0.0
 - Fix h-jangra#40: escape (jj,jk) deletes extra character
 - Add custom keymap for esc in config #41
