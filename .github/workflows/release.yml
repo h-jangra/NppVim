@@ -53,6 +53,11 @@ jobs:
     - name: Setup CMake
       uses: lukka/get-cmake@v3.30.0
 
+    - name: Setup MSVC Compiler
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: ${{ matrix.arch.name }}
+
     - name: Configure
       run: >
         cmake
