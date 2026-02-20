@@ -252,13 +252,11 @@ void CommandMode::handleColonCommand(HWND hwndEdit, const std::string &cmd) {
 
   if (cmd == "wrap" || cmd == "wrapmode" || cmd == "wrap on") {
     ::SendMessage(hwndEdit, SCI_SETWRAPMODE, SC_WRAP_WORD, 0);
-    ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_VIEW_WRAP);
     Utils::setStatus(TEXT("Word wrap enabled"));
     return;
   }
   if (cmd == "nowrap" || cmd == "wrap off") {
       ::SendMessage(hwndEdit, SCI_SETWRAPMODE, SC_WRAP_NONE, 0);
-      ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_VIEW_WRAP);
       Utils::setStatus(TEXT("Word wrap disabled"));
       return;
   }
@@ -355,10 +353,10 @@ CommandMode::CommandMode(VimState &state) : state(state)
         ::SendMessage(nppData._nppHandle, IDM_FILE_RELOAD, 0, 0);
     })
     .set("q", "Close current file", [](HWND, int) {
-        ::SendMessage(nppData._nppHandle, IDM_FILE_CLOSE, 0, 0);
+        ::SendMessage(nppData._nppHandle, WM_COMMAND, IDM_FILE_CLOSE, 0);
     })
     .set("qa", "Close all files", [](HWND, int) {
-        ::SendMessage(nppData._nppHandle, IDM_FILE_CLOSEALL, 0, 0);
+        ::SendMessage(nppData._nppHandle, WM_COMMAND, IDM_FILE_CLOSEALL, 0);
     })
     .set("wq", "Save and close file", [](HWND, int) {
         ::SendMessage(nppData._nppHandle, NPPM_SAVECURRENTFILE, 0, 0);
@@ -375,7 +373,7 @@ CommandMode::CommandMode(VimState &state) : state(state)
         ::SendMessage(nppData._nppHandle, IDM_VIEW_TAB_PREV, 0, 0);
     })
     .set("bd", "Close current tab", [](HWND, int) {
-        ::SendMessage(nppData._nppHandle, IDM_FILE_CLOSE, 0, 0);
+        ::SendMessage(nppData._nppHandle, WM_COMMAND, IDM_FILE_CLOSE, 0);
     })
     .set("sp", "Split window", [](HWND, int) {
         ::SendMessage(nppData._nppHandle, IDM_VIEW_CLONE_TO_ANOTHER_VIEW, 0, 0);
