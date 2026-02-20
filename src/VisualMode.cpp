@@ -132,7 +132,14 @@ void VisualMode::setupKeyMaps() {
             std::string content = getSelectedText(h);
 
             if (!content.empty() && reg != '_') {
-                Utils::setRegisterContent(reg, content);
+                if (reg == '+' || reg == '*') {
+                    Utils::setClipboardText(content);
+                } else {
+                    Utils::setRegisterContent(reg, content);
+                    if (reg == '"') {
+                        Utils::setClipboardText(content);
+                    }
+                }
             }
             Utils::clearBlockSelection(h);
         }
@@ -142,7 +149,14 @@ void VisualMode::setupKeyMaps() {
 
             std::string content = getSelectedText(h);
             if (!content.empty() && reg != '_') {
-                Utils::setRegisterContent(reg, content);
+                if (reg == '+' || reg == '*') {
+                    Utils::setClipboardText(content);
+                } else {
+                    Utils::setRegisterContent(reg, content);
+                    if (reg == '"') {
+                        Utils::setClipboardText(content);
+                    }
+                }
             }
             state.lastYankLinewise = true;
         }
@@ -152,7 +166,14 @@ void VisualMode::setupKeyMaps() {
 
             std::string content = getSelectedText(h);
             if (!content.empty() && reg != '_') {
-                Utils::setRegisterContent(reg, content);
+                if (reg == '+' || reg == '*') {
+                    Utils::setClipboardText(content);
+                } else {
+                    Utils::setRegisterContent(reg, content);
+                    if (reg == '"') {
+                        Utils::setClipboardText(content);
+                    }
+                }
             }
             state.lastYankLinewise = false;
         }
