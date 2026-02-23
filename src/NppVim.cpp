@@ -181,6 +181,9 @@ void loadConfig() {
             else if (key == "c_store_clipboard") {
                 g_config.cStoreClipboard = (value == "1" || value == "true");
             }
+            else if (key == "vim_enabled") {
+                g_config.vimEnabled = (value == "1" || value == "true");
+            }
         }
     }
     file.close();
@@ -215,6 +218,8 @@ void saveConfig() {
         file << "x_store_clipboard=" << (g_config.xStoreClipboard ? "1" : "0") << "\n";
         file << "d_store_clipboard=" << (g_config.dStoreClipboard ? "1" : "0") << "\n";
         file << "c_store_clipboard=" << (g_config.cStoreClipboard ? "1" : "0") << "\n";
+        file << "\n";
+        file << "vim_enabled=" << (g_config.vimEnabled ? "1" : "0") << "\n";
         file.close();
     }
 }
@@ -907,7 +912,8 @@ void updateCursorForCurrentMode() {
 }
 
 void toggleVimMode() {
-    state.vimEnabled = !state.vimEnabled;
+    g_config.vimEnabled = state.vimEnabled = !state.vimEnabled;
+    saveConfig();
 
     HMENU hMenu = (HMENU)::SendMessage(nppData._nppHandle, NPPM_GETMENUHANDLE, NPPPLUGINMENU, 0);
     if (hMenu) {
@@ -984,7 +990,7 @@ extern "C" __declspec(dllexport) void setInfo(NppData notpadPlusData) {
     g_visualMode = new VisualMode(state);
     g_commandMode = new CommandMode(state);
 
-    state.vimEnabled = true;
+    state.vimEnabled = g_config.vimEnabled;
     ensureScintillaHooks();
     g_normalMode->enter();
     updateCursorForCurrentMode();
@@ -1000,7 +1006,7 @@ extern "C" __declspec(dllexport) FuncItem* getFuncsArray(int* nbF) {
     lstrcpy(funcItem[0]._itemName, TEXT("Toggle Vim Mode"));
     funcItem[0]._pFunc = toggleVimMode;
     funcItem[0]._pShKey = NULL;
-    funcItem[0]._init2Check = true;
+    funcItem[0]._init2Check = g_config.vimEnabled;
 
     lstrcpy(funcItem[1]._itemName, TEXT("Configuration"));
     funcItem[1]._pFunc = showConfigDialog;

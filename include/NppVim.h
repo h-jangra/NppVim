@@ -6,6 +6,8 @@
 #include <string>
 #include <map>
 
+auto constexpr vimEnabled = false;
+
 enum VimMode {
     NORMAL,
     INSERT,
@@ -48,6 +50,7 @@ struct VimConfig {
     bool xStoreClipboard = true;
     bool dStoreClipboard = true;
     bool cStoreClipboard = true;
+    bool vimEnabled = vimEnabled;
 };
 
 extern VimConfig g_config;
@@ -72,7 +75,7 @@ const int MAX_MACRO_DEPTH = 10;
 
 struct VimState {
     VimMode mode = NORMAL;
-    bool vimEnabled = true;
+    bool vimEnabled = vimEnabled;
     bool commandMode = false;
     bool isLineVisual = false;
     bool isBlockVisual = false;

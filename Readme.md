@@ -5,7 +5,7 @@
 NppVim brings **Vim-like modal editing** to Notepad++.
 
 ## Features
- -  Movement and navigation ```h, j, k, l, w, b, e, 0, $, ^, gg, G, {, }, H, L```
+ - Movement and navigation ```h, j, k, l, w, b, e, 0, $, ^, gg, G, {, }, H, L```
  - Insert & edit ```i,I,a,A,o,O```
  - Delete, copy, & paste ```d,y,p,x,X```
  - Delete/change to endline & join ```D, C, J```
