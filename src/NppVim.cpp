@@ -912,7 +912,8 @@ void updateCursorForCurrentMode() {
 }
 
 void toggleVimMode() {
-    g_config.vimEnabled = state.vimEnabled = !state.vimEnabled;
+    state.vimEnabled = !state.vimEnabled;
+    g_config.vimEnabled = state.vimEnabled;
     saveConfig();
 
     HMENU hMenu = (HMENU)::SendMessage(nppData._nppHandle, NPPM_GETMENUHANDLE, NPPPLUGINMENU, 0);
