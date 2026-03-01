@@ -23,8 +23,6 @@ public:
     static void tillChar(HWND hwndEdit, int count, char target);
     static void tillCharBack(HWND hwndEdit, int count, char target);
 
-    static void setCursorPosition(HWND hwndEdit, int pos, bool isTillMotion = false);
-
     static void paragraphUp(HWND hwndEdit, int count);
     static void paragraphDown(HWND hwndEdit, int count);
     static void gotoLine(HWND hwndEdit, int lineNum);

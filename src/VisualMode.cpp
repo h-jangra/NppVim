@@ -417,10 +417,12 @@ void VisualMode::setupKeyMaps() {
                 updateBlockAfterMove(h, caret - 1);
             }
         } else {
+            int anchor = state.visualAnchor;
             int caret = Utils::caretPos(h);
+            int curChar = (caret > anchor) ? caret - 1 : caret;
             for (int i = 0; i < c; ++i)
-                caret = (int)::SendMessage(h, SCI_POSITIONBEFORE, caret, 0);
-            extendSelection(h, caret);
+                curChar = (int)::SendMessage(h, SCI_POSITIONBEFORE, curChar, 0);
+            extendSelection(h, curChar);
         }
     })
     .motion("l", 'l', [this](HWND h, int c) {
@@ -430,10 +432,12 @@ void VisualMode::setupKeyMaps() {
                 updateBlockAfterMove(h, caret + 1);
             }
         } else {
+            int anchor = state.visualAnchor;
             int caret = Utils::caretPos(h);
+            int curChar = (caret > anchor) ? caret - 1 : caret;
             for (int i = 0; i < c; ++i)
-                caret = (int)::SendMessage(h, SCI_POSITIONAFTER, caret, 0);
-            extendSelection(h, caret);
+                curChar = (int)::SendMessage(h, SCI_POSITIONAFTER, curChar, 0);
+            extendSelection(h, curChar);
         }
     })
     .motion("j", 'j', [this](HWND h, int c) {
@@ -745,32 +749,64 @@ void VisualMode::setupKeyMaps() {
          Utils::setStatus(TEXT("-- till char backward --"));
      })
      .set(";", [this](HWND h, int c) {
-         if (state.lastSearchChar == 0) return;
-         bool fwd = state.lastSearchForward;
-         bool till = state.lastSearchTill;
-         char ch = state.lastSearchChar;
-         if (till) {
-             if (fwd) Motion::tillChar(h, c, ch);
-             else Motion::tillCharBack(h, c, ch);
-         } else {
-             if (fwd) Motion::nextChar(h, c, ch);
-             else Motion::prevChar(h, c, ch);
-         }
+        if (state.lastSearchChar == 0) return;
+        bool fwd = state.lastSearchForward;
+        bool till = state.lastSearchTill;
+        char ch = state.lastSearchChar;
+            
+        int before = Utils::caretPos(h);
+        int anchor = state.visualAnchor;
+        int realPos = (before > anchor)
+            ? (int)::SendMessage(h, SCI_POSITIONBEFORE, before, 0)
+            : before;
 
+        ::SendMessage(h, SCI_SETCURRENTPOS, realPos, 0);
+        ::SendMessage(h, SCI_SETSEL, realPos, realPos);
+        
+        if (till) {
+            if (fwd) Motion::tillChar(h, c, ch);
+            else     Motion::tillCharBack(h, c, ch);
+        } else {
+            if (fwd) Motion::nextChar(h, c, ch);
+            else     Motion::prevChar(h, c, ch);
+        }
+
+        int after = Utils::caretPos(h);
+        if (after == realPos) {
+            extendSelection(h, realPos);
+            return;
+        }
+        extendSelection(h, after);
      })
      .set(",", [this](HWND h, int c) {
-         if (state.lastSearchChar == 0) return;
-         bool fwd = state.lastSearchForward;
-         bool till = state.lastSearchTill;
-         char ch = state.lastSearchChar;
-         if (till) {
-             if (fwd) Motion::tillCharBack(h, c, ch);
-             else Motion::tillChar(h, c, ch);
-         } else {
-             if (fwd) Motion::prevChar(h, c, ch);
-             else Motion::nextChar(h, c, ch);
-         }
+        if (state.lastSearchChar == 0) return;
+        bool fwd = !state.lastSearchForward;
+        bool till = state.lastSearchTill;
+        char ch = state.lastSearchChar;
 
+        int before = Utils::caretPos(h);
+        int anchor = state.visualAnchor;
+        int realPos = (before > anchor)
+            ? (int)::SendMessage(h, SCI_POSITIONBEFORE, before, 0)
+            : before;
+
+        ::SendMessage(h, SCI_SETCURRENTPOS, realPos, 0);
+        ::SendMessage(h, SCI_SETSEL, realPos, realPos);
+
+        if (till) {
+            if (fwd) Motion::tillChar(h, c, ch);
+            else     Motion::tillCharBack(h, c, ch);
+        } else {
+            if (fwd) Motion::nextChar(h, c, ch);
+            else     Motion::prevChar(h, c, ch);
+        }
+
+        int after = Utils::caretPos(h);
+        if (after == realPos) {
+            extendSelection(h, realPos);
+            return;
+        }
+        extendSelection(h, after);
      });
     
     k.set("zz", [this](HWND h, int c) {
@@ -1126,32 +1162,29 @@ void VisualMode::handleCharSearchInput(HWND hwnd, char searchChar, char searchTy
     state.lastSearchChar = searchChar;
     state.lastSearchForward = isForward;
     state.lastSearchTill = isTill;
+   
+    int before = Utils::caretPos(hwnd);
 
-    int pos = Utils::caretPos(hwnd);
-    
     if (isTill) {
-        if (isForward) {
-            Motion::tillChar(hwnd, count, searchChar);
-        } else {
-            Motion::tillCharBack(hwnd, count, searchChar);
-        }
+        if (isForward) Motion::tillChar(hwnd, count, searchChar);
+        else           Motion::tillCharBack(hwnd, count, searchChar);
     } else {
-        if (isForward) {
-            Motion::nextChar(hwnd, count, searchChar);
-        } else {
-            Motion::prevChar(hwnd, count, searchChar);
-        }
+        if (isForward) Motion::nextChar(hwnd, count, searchChar);
+        else           Motion::prevChar(hwnd, count, searchChar);
     }
 
-    int newPos = Utils::caretPos(hwnd);
-    
-    if (isForward) {
-        newPos = (int)::SendMessage(hwnd, SCI_POSITIONAFTER, newPos, 0);
+    int after = Utils::caretPos(hwnd);
+    if (after == before) {
+        state.opPending = 0;
+        state.textObjectPending = 0;
+        state.repeatCount = 0;
+        Utils::setStatus(TEXT(""));
+        return;
     }
-    extendSelection(hwnd, newPos);
 
-    state.recordLastOp(OP_MOTION, count, isForward ? (isTill ? 't' : 'f') : (isTill ? 'T' : 'F'), searchChar);
+    extendSelection(hwnd, after);
 
+    state.recordLastOp(OP_MOTION, count, searchType, searchChar);
     state.opPending = 0;
     state.textObjectPending = 0;
     state.repeatCount = 0;
@@ -1282,7 +1315,15 @@ void VisualMode::extendSelection(HWND h, int newPos) {
     }
                         
     int anchor = state.visualAnchor;
-    ::SendMessage(h, SCI_SETSEL, anchor, newPos);
+
+    int selEnd = newPos;
+
+    if (newPos >= anchor) {
+        selEnd = (int)::SendMessage(h, SCI_POSITIONAFTER, newPos, 0);
+    }
+
+    ::SendMessage(h, SCI_SETANCHOR, anchor, 0);
+    ::SendMessage(h, SCI_SETCURRENTPOS, selEnd, 0);
 }
 
 void VisualMode::handleVisualReplaceInput(HWND hwnd, char replaceChar) {

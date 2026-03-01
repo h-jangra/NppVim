@@ -705,36 +705,41 @@ void NormalMode::setupKeyMaps() {
          Utils::setStatus(TEXT("-- till char (backward) --"));
      })
      .set(";", "Repeat find", [this](HWND h, int c) {
-         if (state.lastSearchChar == 0) return;
-         bool fwd = state.lastSearchForward;
-         bool till = state.lastSearchTill;
-         char ch = state.lastSearchChar;
-         if (till) {
-             if (fwd) Motion::tillChar(h, c, ch);
-             else Motion::tillCharBack(h, c, ch);
-         } else {
-             if (fwd) Motion::nextChar(h, c, ch);
-             else Motion::prevChar(h, c, ch);
-         }
-         state.recordLastOp(OP_MOTION, c, ';');
-         int pos = Utils::caretPos(h);
-         Utils::select(h, pos, pos);
+        if (state.lastSearchChar == 0) return;
+        bool fwd = state.lastSearchForward;
+        bool till = state.lastSearchTill;
+        char ch = state.lastSearchChar;
+        int before = Utils::caretPos(h);
+        if (till) {
+            int nudge = fwd ? before + 1 : before - 1;
+            ::SendMessage(h, SCI_SETCURRENTPOS, nudge, 0);
+            ::SendMessage(h, SCI_SETSEL, nudge, nudge);
+            if (fwd) Motion::tillChar(h, c, ch);
+            else Motion::tillCharBack(h, c, ch);
+        } else {
+            if (fwd) Motion::nextChar(h, c, ch);
+            else Motion::prevChar(h, c, ch);
+        }
+        state.recordLastOp(OP_MOTION, c, ';');
+        int pos = Utils::caretPos(h);
+        Utils::select(h, pos, pos);
      })
      .set(",", "Reverse find", [this](HWND h, int c) {
-         if (state.lastSearchChar == 0) return;
-         bool fwd = state.lastSearchForward;
-         bool till = state.lastSearchTill;
-         char ch = state.lastSearchChar;
-         if (till) {
-             if (fwd) Motion::tillCharBack(h, c, ch);
-             else Motion::tillChar(h, c, ch);
-         } else {
-             if (fwd) Motion::prevChar(h, c, ch);
-             else Motion::nextChar(h, c, ch);
-         }
-         state.recordLastOp(OP_MOTION, c, ',');
-         int pos = Utils::caretPos(h);
-         Utils::select(h, pos, pos);
+        if (state.lastSearchChar == 0) return;
+        bool fwd = !state.lastSearchForward;
+        bool till = state.lastSearchTill;
+        char ch = state.lastSearchChar;
+        int before = Utils::caretPos(h);
+        if (till) {
+            if (fwd) Motion::tillChar(h, c, ch);
+            else Motion::tillCharBack(h, c, ch);
+        } else {
+            if (fwd) Motion::nextChar(h, c, ch);
+            else Motion::prevChar(h, c, ch);
+        }
+        state.recordLastOp(OP_MOTION, c, ',');
+        int pos = Utils::caretPos(h);
+        Utils::select(h, pos, pos);
      });
 
     k.set("v", [](HWND h, int c) { if (g_visualMode) g_visualMode->enterChar(h); })
@@ -1439,7 +1444,20 @@ void NormalMode::handleKey(HWND hwnd, char c) {
 }
 
 void NormalMode::handleCharSearchInput(HWND hwnd, char searchChar, char searchType, int count) {
-    Utils::charSearch(hwnd, state, searchType, searchChar, count);
+    bool isTill = (searchType == 't' || searchType == 'T');
+    bool isForward = (searchType == 'f' || searchType == 't');
+
+    state.lastSearchChar = searchChar;
+    state.lastSearchForward = isForward;
+    state.lastSearchTill = isTill;
+
+    if (isTill) {
+        if (isForward) Motion::tillChar(hwnd, count, searchChar);
+        else Motion::tillCharBack(hwnd, count, searchChar);
+    } else {
+        if (isForward) Motion::nextChar(hwnd, count, searchChar);
+        else Motion::prevChar(hwnd, count, searchChar);
+    }
 
     state.recordLastOp(
         OP_MOTION,
