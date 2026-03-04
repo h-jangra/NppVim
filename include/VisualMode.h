@@ -24,7 +24,6 @@ private:
     
     void handleCharSearchInput(HWND hwnd, char searchChar, char searchType, int count);
     
-    bool iswalnum(char c);
     std::string getSelectedText(HWND h);
     void updateBlockAfterMove(HWND h, int newCaret);
     void handleBlockWordRight(HWND hwnd, bool bigWord);
@@ -32,8 +31,6 @@ private:
     void handleBlockWordEnd(HWND hwnd, bool bigWord);
 
     void extendSelection(HWND hwndEdit, int newPos);
-    void setSelection(HWND hwndEdit, int startPos, int endPos);
-    void moveCursor(HWND hwndEdit, int newPos, bool extend = false);
     void handleVisualReplaceInput(HWND hwnd, char replaceChar);
 };
 

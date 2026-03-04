@@ -1178,7 +1178,7 @@ void VisualMode::handleBlockWordRight(HWND hwnd, bool bigWord) {
 
     while (pos < lineEnd) {
         char ch = ::SendMessage(hwnd, SCI_GETCHARAT, pos, 0);
-        if (bigWord ? (ch == ' ' || ch == '\t') : !iswalnum(ch)) break;
+        if (bigWord ? (ch == ' ' || ch == '\t') : !std::isalnum((unsigned char)ch)) break;
         pos++;
     }
 
@@ -1215,7 +1215,7 @@ void VisualMode::handleBlockWordLeft(HWND hwnd, bool bigWord) {
 
     while (pos > lineStart) {
         char ch = ::SendMessage(hwnd, SCI_GETCHARAT, pos - 1, 0);
-        if (bigWord ? (ch == ' ' || ch == '\t') : !iswalnum(ch)) break;
+        if (bigWord ? (ch == ' ' || ch == '\t') : !std::isalnum((unsigned char)ch)) break;
         pos--;
     }
 
@@ -1233,7 +1233,7 @@ void VisualMode::handleBlockWordEnd(HWND hwnd, bool bigWord) {
 
     while (pos < lineEnd) {
         char ch = ::SendMessage(hwnd, SCI_GETCHARAT, pos, 0);
-        if (bigWord ? (ch == ' ' || ch == '\t') : !iswalnum(ch)) break;
+        if (bigWord ? (ch == ' ' || ch == '\t') : !std::isalnum((unsigned char)ch)) break;
         pos++;
     }
 
