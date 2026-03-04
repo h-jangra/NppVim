@@ -1,17 +1,15 @@
 # NppVim – Vim Mode for Notepad++
 
-![Release](https://img.shields.io/github/v/release/h-jangra/NppVim)
-![Downloads](https://img.shields.io/github/downloads/h-jangra/NppVim/total)
-![Stars](https://img.shields.io/github/stars/h-jangra/NppVim)
-![Issues](https://img.shields.io/github/issues/h-jangra/NppVim)
+[![Release](https://img.shields.io/github/v/release/h-jangra/NppVim)](https://github.com/h-jangra/NppVim/releases)
+[![Downloads](https://img.shields.io/github/downloads/h-jangra/NppVim/total)](https://github.com/h-jangra/NppVim/releases)
+[![Stars](https://img.shields.io/github/stars/h-jangra/NppVim)](https://github.com/h-jangra/NppVim/stargazers)
+[![Issues](https://img.shields.io/github/issues/h-jangra/NppVim)](https://github.com/h-jangra/NppVim/issues)
 
 ![Editor](https://img.shields.io/badge/Editor-Notepad++-90E59A?logo=notepadplusplus&logoColor=black)
 ![Platform](https://img.shields.io/badge/Platform-Windows-0078D6?logo=windows&logoColor=white)
 ![Vim](https://img.shields.io/badge/Vim-Modal%20Editing-019733?logo=vim&logoColor=white)
 ![Build](https://img.shields.io/badge/Build-Stable-brightgreen)
-![Donate](https://img.shields.io/badge/Donate-PayPal-00457C?logo=paypal&logoColor=white)
-
-> 💖 Support the project: [PayPal](https://paypal.me/h8imansh8u)
+[![Donate](https://img.shields.io/badge/Donate-PayPal-00457C?logo=paypal&logoColor=white)](https://paypal.me/h8imansh8u)
 
 NppVim brings **Vim-like modal editing** to Notepad++.
 
@@ -28,6 +26,7 @@ NppVim brings **Vim-like modal editing** to Notepad++.
 - **Command Mode:** `:w :q :wq :bn :bp`
 - **Substitution:** `:s / %s`
 - **Marks & Registers:** `m ' :reg`
+- **Full Features**: `:tutor`/`t` or `:help`/`:h`
 
 ## Quick Start
 
