@@ -157,9 +157,6 @@ void loadConfig() {
             else if (key == "override_ctrl_r") {
                 g_config.overrideCtrlR = (value == "1" || value == "true");
             }
-            else if (key == "override_ctrl_r") {
-                g_config.overrideCtrlR = (value == "1" || value == "true");
-            }
             else if (key == "override_ctrl_f") {
                 g_config.overrideCtrlF = (value == "1" || value == "true");
             }
@@ -899,15 +896,22 @@ void updateCursorForCurrentMode() {
     if (!hwndEdit || !IsWindow(hwndEdit)) return;
 
     if (state.vimEnabled) {
-        if (state.mode == NORMAL || state.mode == VISUAL) {
+        if (state.mode == NORMAL) {
             ::SendMessage(hwndEdit, SCI_SETCARETSTYLE, CARETSTYLE_BLOCK, 0);
+            ::SendMessage(hwndEdit, SCI_SETCARETSTICKY, SC_CARETSTICKY_OFF, 0);
+        }
+        else if (state.mode == VISUAL) {
+            ::SendMessage(hwndEdit, SCI_SETCARETSTYLE, CARETSTYLE_BLOCK, 0);
+            ::SendMessage(hwndEdit, SCI_SETCARETSTICKY, SC_CARETSTICKY_ON, 0);
         }
         else if (state.mode == INSERT) {
             ::SendMessage(hwndEdit, SCI_SETCARETSTYLE, CARETSTYLE_LINE, 0);
+            ::SendMessage(hwndEdit, SCI_SETCARETSTICKY, SC_CARETSTICKY_OFF, 0);
         }
     }
     else {
         ::SendMessage(hwndEdit, SCI_SETCARETSTYLE, CARETSTYLE_LINE, 0);
+        ::SendMessage(hwndEdit, SCI_SETCARETSTICKY, SC_CARETSTICKY_OFF, 0);
     }
 }
 

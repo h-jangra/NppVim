@@ -80,6 +80,7 @@ struct VimState {
     bool isLineVisual = false;
     bool isBlockVisual = false;
     bool lastYankLinewise = false;
+    int visualPreferredColumn = -1;
 
     int lastVisualStart = -1;
     int lastVisualEnd = -1;

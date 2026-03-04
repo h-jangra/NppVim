@@ -36,6 +36,7 @@ public:
     static void handleAutoIndent(HWND hwndEdit, int count);
 
     static int caretPos(HWND hwnd);
+    static int caretColumn(HWND hwnd);
     static int caretLine(HWND hwnd);
     static int lineStart(HWND hwnd, int line);
     static int lineEnd(HWND hwnd, int line);
@@ -83,6 +84,10 @@ public:
     static bool isValidRegister(char c);
     static char getCurrentRegister();
     static void setCurrentRegister(char reg);
+    static void storeRegister(char reg, const std::string& text);
+
+    static std::string getTextRange(HWND h, int start, int end);
+    static int sci(HWND h, int msg, WPARAM w = 0, LPARAM l = 0);
 
   private:
     static NppData nppData;

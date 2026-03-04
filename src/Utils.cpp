@@ -11,6 +11,10 @@ NppData Utils::nppData;
 extern NormalMode* g_normalMode;
 extern VisualMode* g_visualMode;
 
+int Utils::sci(HWND h, int msg, WPARAM w, LPARAM l) {
+    return (int)::SendMessage(h, msg, w, l);
+}
+
 HWND Utils::getCurrentScintillaHandle()
 {
   int which = 0;
@@ -51,47 +55,11 @@ std::pair<int, int> Utils::findWordBoundsEx(HWND hwndEdit, int pos, bool bigWord
     return {wordStart, wordEnd};
 }
 
-int Utils::findMatchingBracket(HWND hwndEdit, int pos, char openChar, char closeChar)
-{
-  int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
-  if (pos >= docLen)
-    return -1;
-
-  char currentChar = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, pos, 0);
-
-  if (currentChar == closeChar)
-  {
-    int depth = 1;
-    for (int i = pos - 1; i >= 0; i--)
-    {
-      char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, i, 0);
-      if (ch == closeChar)
-        depth++;
-      else if (ch == openChar)
-      {
-        depth--;
-        if (depth == 0)
-          return i;
-      }
-    }
-  }
-  else
-  {
-    int depth = 1;
-    for (int i = pos + 1; i < docLen; i++)
-    {
-      char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, i, 0);
-      if (ch == openChar)
-        depth++;
-      else if (ch == closeChar)
-      {
-        depth--;
-        if (depth == 0)
-          return i;
-      }
-    }
-  }
-  return -1;
+int Utils::findMatchingBracket(HWND hwndEdit, int pos, char openChar, char closeChar) {
+    int m = (int)SendMessage(hwndEdit, SCI_BRACEMATCH, pos, 0);
+    if (m == -1)
+        m = (int)SendMessage(hwndEdit, SCI_BRACEMATCH, pos - 1, 0);
+    return m;
 }
 
 std::pair<int, int> Utils::findQuoteBounds(HWND hwndEdit, int pos, char quoteChar) {
@@ -313,6 +281,10 @@ int Utils::caretPos(HWND hwnd) {
     return (int)::SendMessage(hwnd, SCI_GETCURRENTPOS, 0, 0);
 }
 
+int Utils::caretColumn(HWND hwnd) {
+    return (int)SendMessage(hwnd, SCI_GETCOLUMN, caretPos(hwnd), 0);
+}
+
 int Utils::caretLine(HWND hwnd) {
     int pos = caretPos(hwnd);
     return (int)::SendMessage(hwnd, SCI_LINEFROMPOSITION, pos, 0);
@@ -373,25 +345,13 @@ void Utils::clear(HWND hwnd, int a, int b) {
 }
 
 void Utils::toUpper(HWND hwnd, int a, int b) {
-    for (int i = a; i < b; i++) {
-        char ch = (char)::SendMessage(hwnd, SCI_GETCHARAT, i, 0);
-        if (std::islower((unsigned char)ch)) {
-            ::SendMessage(hwnd, SCI_SETTARGETRANGE, i, i + 1);
-            char c = (char)std::toupper(ch);
-            ::SendMessage(hwnd, SCI_REPLACETARGET, 1, (LPARAM)&c);
-        }
-    }
+    select(hwnd, a, b);
+    SendMessage(hwnd, SCI_UPPERCASE, 0, 0);
 }
 
 void Utils::toLower(HWND hwnd, int a, int b) {
-    for (int i = a; i < b; i++) {
-        char ch = (char)::SendMessage(hwnd, SCI_GETCHARAT, i, 0);
-        if (std::isupper((unsigned char)ch)) {
-            ::SendMessage(hwnd, SCI_SETTARGETRANGE, i, i + 1);
-            char c = (char)std::tolower(ch);
-            ::SendMessage(hwnd, SCI_REPLACETARGET, 1, (LPARAM)&c);
-        }
-    }
+    select(hwnd, a, b);
+    SendMessage(hwnd, SCI_LOWERCASE, 0, 0);
 }
 
 void Utils::replaceChar(HWND hwnd, int pos, char ch) {
@@ -481,7 +441,7 @@ void Utils::joinLines(HWND hwnd, int startLine, int count, bool withSpace) {
     for (int i = 0; i < count; i++) {
         int end = lineEnd(hwnd, startLine);
         int next = lineStart(hwnd, startLine + 1);
-        if (next <= end) break;
+        if (startLine + i + 1 >= lineCount(hwnd)) break;
         select(hwnd, end, next);
         ::SendMessage(hwnd, SCI_REPLACESEL, 0, (LPARAM)(withSpace ? " " : ""));
     }
@@ -626,4 +586,23 @@ void Utils::setCurrentRegister(char reg) {
     if (isValidRegister(reg)) {
         state.defaultRegister = reg;
     }
+}
+
+void Utils::storeRegister(char reg, const std::string& text){
+    if (reg == '+' || reg == '*')
+        Utils::setClipboardText(text);
+    else
+        Utils::setRegisterContent(reg, text);
+        if(reg=='"')
+            Utils::setClipboardText(text);
+}
+
+std::string Utils::getTextRange(HWND h, int start, int end){
+    std::vector<char> buffer(end - start + 1);
+    Sci_TextRangeFull tr;
+    tr.chrg.cpMin = start;
+    tr.chrg.cpMax = end;
+    tr.lpstrText = buffer.data();
+    ::SendMessage(h, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
+    return std::string(buffer.data());
 }

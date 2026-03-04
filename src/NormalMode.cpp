@@ -16,7 +16,6 @@
 #include "../plugin/Notepad_plus_msgs.h"
 #include "../plugin/PluginInterface.h"
 #include "../plugin/Scintilla.h"
-#include "NormalMode.h"
 
 extern NormalMode* g_normalMode;
 extern VisualMode* g_visualMode;
@@ -61,30 +60,14 @@ void NormalMode::setupKeyMaps() {
         Motion::paragraphDown(h, c);
      })
      .motion(")", ')', "Next sentence", [](HWND h, int c) {
-        for (int i = 0; i < c; i++) {
-            int pos = Utils::caretPos(h);
-            int lineEnd = ::SendMessage(h, SCI_GETLINEENDPOSITION,
-                Utils::caretLine(h), 0);
-            if (pos < lineEnd) {
-                ::SendMessage(h, SCI_GOTOPOS, lineEnd, 0);
-            } else {
-                ::SendMessage(h, SCI_LINEDOWN, 0, 0);
-                ::SendMessage(h, SCI_VCHOME, 0, 0);
-            }
-        }
+         ::SendMessage(h, SCI_LINEEND, c, 0);
+         ::SendMessage(h, SCI_LINEDOWN, c, 0);
+         ::SendMessage(h, SCI_VCHOME, c, 0);
     })
     .motion("(", '(', "Previous sentence", [](HWND h, int c) {
-        for (int i = 0; i < c; i++) {
-            int pos = Utils::caretPos(h);
-            int lineStart = ::SendMessage(h, SCI_POSITIONFROMLINE,
-                Utils::caretLine(h), 0);
-            if (pos > lineStart) {
-                ::SendMessage(h, SCI_GOTOPOS, lineStart, 0);
-            } else {
-                ::SendMessage(h, SCI_LINEUP, 0, 0);
-                ::SendMessage(h, SCI_VCHOME, 0, 0);
-            }
-        }
+        ::SendMessage(h, SCI_VCHOME, c, 0);
+        ::SendMessage(h, SCI_LINEUP, c, 0);
+        ::SendMessage(h, SCI_VCHOME, c, 0);
     })
      .motion("%", '%', "Matching bracket", [this](HWND h, int c) {
         long pos = Utils::caretPos(h);
@@ -105,7 +88,7 @@ void NormalMode::setupKeyMaps() {
         state.recordJump(pos, line);
         Motion::pageDown(h);
      })
-    .set("M", "Screen middle", [](HWND h, int c) {
+    .set("M", "Screen middle", [this](HWND h, int c) {
         int firstVisible = ::SendMessage(h, SCI_GETFIRSTVISIBLELINE, 0, 0);
         int linesOnScreen = ::SendMessage(h, SCI_LINESONSCREEN, 0, 0);
         int middleLine = firstVisible + linesOnScreen / 2;
@@ -125,8 +108,8 @@ void NormalMode::setupKeyMaps() {
          state.recordJump(pos, line);
          if (c > 1) Motion::gotoLine(h, c);
          else Motion::documentStart(h);
-         int caret = Utils::caretPos(h);
-         ::SendMessage(h, SCI_SETSEL, caret, caret);
+         pos = Utils::caretPos(h);
+         Utils::select(h, pos, pos);
          state.recordLastOp(OP_MOTION, c, 'g');
      })
      .set("ge", "Previous word end",  [](HWND h, int c) {
@@ -165,7 +148,7 @@ void NormalMode::setupKeyMaps() {
             }
         }
     })
-    .set("gf", "Goto file", [this](HWND h, int c) {
+    .set("gf", "Goto file", [](HWND h, int c) {
         int pos = Utils::caretPos(h);
         int line = Utils::caretLine(h);
         int lineStart = Utils::lineStart(h, line);
@@ -186,17 +169,12 @@ void NormalMode::setupKeyMaps() {
         }
 
         if (right > left) {
-            std::vector<char> pathBytes(right - left + 1);
-            Sci_TextRangeFull tr;
-            tr.chrg.cpMin = left;
-            tr.chrg.cpMax = right;
-            tr.lpstrText = pathBytes.data();
-            ::SendMessage(h, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
+            std::string text = Utils::getTextRange(h, left, right);
 
-            int wideLen = MultiByteToWideChar(CP_UTF8, 0, pathBytes.data(), -1, NULL, 0);
+            int wideLen = MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1, NULL, 0);
             if (wideLen > 0) {
                 std::vector<wchar_t> pathWide(wideLen);
-                MultiByteToWideChar(CP_UTF8, 0, pathBytes.data(), -1, pathWide.data(), wideLen);
+                MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1, pathWide.data(), wideLen);
 
                 wchar_t currentFile[MAX_PATH] = {0};
                 ::SendMessageW(nppData._nppHandle, NPPM_GETFULLCURRENTPATH, MAX_PATH, (LPARAM)currentFile);
@@ -241,17 +219,12 @@ void NormalMode::setupKeyMaps() {
         }
 
         if (right > left) {
-            std::vector<char> urlBytes(right - left + 1);
-            Sci_TextRangeFull tr;
-            tr.chrg.cpMin = left;
-            tr.chrg.cpMax = right;
-            tr.lpstrText = urlBytes.data();
-            ::SendMessage(h, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
+            std::string text = Utils::getTextRange(h, left, right);
 
-            int wideLen = MultiByteToWideChar(CP_UTF8, 0, urlBytes.data(), -1, NULL, 0);
+            int wideLen = MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1, NULL, 0);
             if (wideLen > 0) {
                 std::vector<wchar_t> urlWide(wideLen);
-                MultiByteToWideChar(CP_UTF8, 0, urlBytes.data(), -1, urlWide.data(), wideLen);
+                MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1, urlWide.data(), wideLen);
                 ShellExecuteW(NULL, L"open", urlWide.data(), NULL, NULL, SW_SHOWNORMAL);
             }
         }
@@ -296,102 +269,102 @@ void NormalMode::setupKeyMaps() {
 
     k.set("iw", "Inner word", [this](HWND h, int c) {
         if (!state.opPending) return;
-        TextObject t; t.apply(h, state, state.opPending, 'i', 'w');
+        static TextObject t; t.apply(h, state, state.opPending, 'i', 'w');
         state.resetPending();
     })
     .set("aw", "Around word", [this](HWND h, int c) {
         if (!state.opPending) return;
-        TextObject t; t.apply(h, state, state.opPending, 'a', 'w');
+        static TextObject t; t.apply(h, state, state.opPending, 'a', 'w');
         state.resetPending();
     })
     .set("iW", "Inner WORD", [this](HWND h, int c) {
         if (!state.opPending) return;
-        TextObject t; t.apply(h, state, state.opPending, 'i', 'W');
+        static TextObject t; t.apply(h, state, state.opPending, 'i', 'W');
         state.resetPending();
     })
     .set("aW", "Around WORD", [this](HWND h, int c) {
         if (!state.opPending) return;
-        TextObject t; t.apply(h, state, state.opPending, 'a', 'W');
+        static TextObject t; t.apply(h, state, state.opPending, 'a', 'W');
         state.resetPending();
     })
     .set("ip", "Inner paragraph", [this](HWND h, int c) {
         if (!state.opPending) return;
-        TextObject t; t.apply(h, state, state.opPending, 'i', 'p');
+        static TextObject t; t.apply(h, state, state.opPending, 'i', 'p');
         state.resetPending();
     })
     .set("ap", "Around paragraph", [this](HWND h, int c) {
         if (!state.opPending) return;
-        TextObject t; t.apply(h, state, state.opPending, 'a', 'p');
+        static TextObject t; t.apply(h, state, state.opPending, 'a', 'p');
         state.resetPending();
     })
     .set("is", "Inner sentence", [this](HWND h, int c) {
         if (!state.opPending) return;
-        TextObject t; t.apply(h, state, state.opPending, 'i', 's');
+        static TextObject t; t.apply(h, state, state.opPending, 'i', 's');
         state.resetPending();
     })
     .set("as", "Around sentence", [this](HWND h, int c) {
         if (!state.opPending) return;
-        TextObject t; t.apply(h, state, state.opPending, 'a', 's');
+        static TextObject t; t.apply(h, state, state.opPending, 'a', 's');
         state.resetPending();
     })
     .set("i(", "Inner parentheses", [this](HWND h, int c) {
         if (!state.opPending) return;
-        TextObject t; t.apply(h, state, state.opPending, 'i', '(');
+        static TextObject t; t.apply(h, state, state.opPending, 'i', '(');
         state.resetPending();
     })
     .set("a(", "Around parentheses", [this](HWND h, int c) {
         if (!state.opPending) return;
-        TextObject t; t.apply(h, state, state.opPending, 'a', '(');
+        static TextObject t; t.apply(h, state, state.opPending, 'a', '(');
         state.resetPending();
     })
     .set("i[", "Inner brackets", [this](HWND h, int c) {
         if (!state.opPending) return;
-        TextObject t; t.apply(h, state, state.opPending, 'i', '[');
+        static TextObject t; t.apply(h, state, state.opPending, 'i', '[');
         state.resetPending();
     })
     .set("a[", "Around brackets", [this](HWND h, int c) {
         if (!state.opPending) return;
-        TextObject t; t.apply(h, state, state.opPending, 'a', '[');
+        static TextObject t; t.apply(h, state, state.opPending, 'a', '[');
         state.resetPending();
     })
     .set("i{", "Inner braces", [this](HWND h, int c) {
         if (!state.opPending) return;
-        TextObject t; t.apply(h, state, state.opPending, 'i', '{');
+        static TextObject t; t.apply(h, state, state.opPending, 'i', '{');
         state.resetPending();
     })
     .set("a{", "Around braces", [this](HWND h, int c) {
         if (!state.opPending) return;
-        TextObject t; t.apply(h, state, state.opPending, 'a', '{');
+        static TextObject t; t.apply(h, state, state.opPending, 'a', '{');
         state.resetPending();
     })
     .set("i\"", "Inner double quotes", [this](HWND h, int c) {
         if (!state.opPending) return;
-        TextObject t; t.apply(h, state, state.opPending, 'i', '"');
+        static TextObject t; t.apply(h, state, state.opPending, 'i', '"');
         state.resetPending();
     })
     .set("a\"", "Around double quotes", [this](HWND h, int c) {
         if (!state.opPending) return;
-        TextObject t; t.apply(h, state, state.opPending, 'a', '"');
+        static TextObject t; t.apply(h, state, state.opPending, 'a', '"');
         state.resetPending();
     })
     .set("i'", "Inner single quotes", [this](HWND h, int c) {
         if (!state.opPending) return;
-        TextObject t; t.apply(h, state, state.opPending, 'i', '\'');
+        static TextObject t; t.apply(h, state, state.opPending, 'i', '\'');
         state.resetPending();
     })
     .set("a'", "Around single quotes", [this](HWND h, int c) {
         if (!state.opPending) return;
-        TextObject t; t.apply(h, state, state.opPending, 'a', '\'');
+        static TextObject t; t.apply(h, state, state.opPending, 'a', '\'');
         state.resetPending();
     })
     .set("i`", "Inner backticks", [this](HWND h, int c) {
         if (!state.opPending) return;
-        TextObject t; t.apply(h, state, state.opPending, 'i', '`');
+        static TextObject t; t.apply(h, state, state.opPending, 'i', '`');
         state.resetPending();
     })
     .set("a`", "Around backticks", [this](HWND h, int c) {
         if (!state.opPending) return;
-        TextObject t; t.apply(h, state, state.opPending, 'a', '`');
+        static TextObject t; t.apply(h, state, state.opPending, 'a', '`');
         state.resetPending();
     });
 
@@ -444,28 +417,17 @@ void NormalMode::setupKeyMaps() {
              int end = Utils::lineEnd(h, line);
              if (pos < end) {
                  // Get the text being deleted
-                 std::vector<char> buffer(end - pos + 1);
-                 Sci_TextRangeFull tr;
-                 tr.chrg.cpMin = pos;
-                 tr.chrg.cpMax = end;
-                 tr.lpstrText = buffer.data();
-                 ::SendMessage(h, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
+                 std::string text = Utils::getTextRange(h, pos, end);
                  
                  // Store in register if not blackhole
                  if (!state.deleteToBlackhole) {
                      char reg = Utils::getCurrentRegister();
                      if (reg != '_') {  // Skip blackhole register
-                         if (reg == '+' || reg == '*') {
-                             // System clipboard
-                             Utils::setClipboardText(buffer.data());
-                         } else {
-                             Utils::setRegisterContent(reg, buffer.data());
-                         }
+                         Utils::storeRegister(reg, text.c_str());
                      }
                  }
                  
-                 ::SendMessage(h, SCI_SETSEL, pos, end);
-                 ::SendMessage(h, SCI_CLEAR, 0, 0);
+                 ::SendMessage(h, SCI_DELETERANGE, pos, end - pos);
              }
          }
          Utils::endUndo(h);
@@ -476,33 +438,22 @@ void NormalMode::setupKeyMaps() {
          Utils::beginUndo(h);
          for (int i = 0; i < c; ++i) {
              int pos = Utils::caretPos(h);
-             int docLen = ::SendMessage(h, SCI_GETTEXTLENGTH, 0, 0);
+             int docLen = (int)Utils::sci(h, SCI_GETLENGTH);
              if (pos >= docLen) break;
-             int next = ::SendMessage(h, SCI_POSITIONAFTER, pos, 0);
+             int next = Utils::sci(h, SCI_POSITIONAFTER, pos, 0);
              
              // Get the character before deleting
-             std::vector<char> buffer(next - pos + 1);
-             Sci_TextRangeFull tr;
-             tr.chrg.cpMin = pos;
-             tr.chrg.cpMax = next;
-             tr.lpstrText = buffer.data();
-             ::SendMessage(h, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
+             std::string text = Utils::getTextRange(h, pos, next);
              
              // Store in register if not blackhole
              if (!state.deleteToBlackhole && g_config.xStoreClipboard) {
                  char reg = Utils::getCurrentRegister();
                  if (reg != '_') {  // Skip blackhole register
-                     if (reg == '+' || reg == '*') {
-                         // System clipboard
-                         Utils::setClipboardText(buffer.data());
-                     } else {
-                         Utils::setRegisterContent(reg, buffer.data());
-                     }
+                     Utils::storeRegister(reg, text.c_str());
                  }
              }
              
-             ::SendMessage(h, SCI_SETSEL, pos, next);
-             ::SendMessage(h, SCI_CLEAR, 0, 0);
+            Utils::clear(h, pos, next);
          }
          Utils::endUndo(h);
          state.recordLastOp(OP_MOTION, c, 'x');
@@ -512,31 +463,21 @@ void NormalMode::setupKeyMaps() {
          for (int i = 0; i < c; ++i) {
              int pos = Utils::caretPos(h);
              if (pos <= 0) break;
-             int prev = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
+             int prev = Utils::sci(h, SCI_POSITIONBEFORE, pos, 0);
+             if (prev < 0) prev = 0;
              
              // Get the character before deleting
-             std::vector<char> buffer(pos - prev + 1);
-             Sci_TextRangeFull tr;
-             tr.chrg.cpMin = prev;
-             tr.chrg.cpMax = pos;
-             tr.lpstrText = buffer.data();
-             ::SendMessage(h, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
+             std::string text = Utils::getTextRange(h, prev, pos);
              
              // Store in register if not blackhole
              if (!state.deleteToBlackhole) {
                  char reg = Utils::getCurrentRegister();
                  if (reg != '_') {  // Skip blackhole register
-                     if (reg == '+' || reg == '*') {
-                         // System clipboard
-                         Utils::setClipboardText(buffer.data());
-                     } else {
-                         Utils::setRegisterContent(reg, buffer.data());
-                     }
+                     Utils::storeRegister(reg, text.c_str());
                  }
              }
              
-             ::SendMessage(h, SCI_SETSEL, prev, pos);
-             ::SendMessage(h, SCI_CLEAR, 0, 0);
+             Utils::sci(h, SCI_DELETERANGE, prev, pos - prev);
          }
          Utils::endUndo(h);
          state.recordLastOp(OP_MOTION, c, 'X');
@@ -548,8 +489,8 @@ void NormalMode::setupKeyMaps() {
      .set("R", "Replace mode", [this](HWND h, int c) {
          state.mode = INSERT;
          Utils::setStatus(TEXT("-- REPLACE --"));
-         ::SendMessage(h, SCI_SETOVERTYPE, true, 0);
-         ::SendMessage(h, SCI_SETCARETSTYLE, CARETSTYLE_BLOCK, 0);
+         Utils::sci(h, SCI_SETOVERTYPE, true, 0);
+         Utils::sci(h, SCI_SETCARETSTYLE, CARETSTYLE_BLOCK, 0);
          state.recordLastOp(OP_MOTION, c, 'R');
      })
      .motion("~", '~', "Toggle case", [this](HWND h, int c) { motion.toggleCase(h, c); });
@@ -656,13 +597,8 @@ void NormalMode::setupKeyMaps() {
          auto bounds = Utils::findWordBounds(h, pos);
          if (bounds.first != bounds.second && g_commandMode) {
              int len = bounds.second - bounds.first;
-             std::vector<char> word(len + 1);
-             Sci_TextRangeFull tr;
-             tr.chrg.cpMin = bounds.first;
-             tr.chrg.cpMax = bounds.second;
-             tr.lpstrText = word.data();
-             ::SendMessage(h, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
-             g_commandMode->performSearch(h, word.data(), false);
+             std::string text = Utils::getTextRange(h, bounds.first, bounds.second);
+             g_commandMode->performSearch(h, text.c_str(), false);
              g_commandMode->searchNext(h);
              state.recordLastOp(OP_MOTION, c, '*');
          }
@@ -672,13 +608,8 @@ void NormalMode::setupKeyMaps() {
          auto bounds = Utils::findWordBounds(h, pos);
          if (bounds.first != bounds.second && g_commandMode) {
              int len = bounds.second - bounds.first;
-             std::vector<char> word(len + 1);
-             Sci_TextRangeFull tr;
-             tr.chrg.cpMin = bounds.first;
-             tr.chrg.cpMax = bounds.second;
-             tr.lpstrText = word.data();
-             ::SendMessage(h, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
-             g_commandMode->performSearch(h, word.data(), false);
+             std::string text = Utils::getTextRange(h, bounds.first, bounds.second);
+             g_commandMode->performSearch(h, text.c_str(), false);
              g_commandMode->searchPrevious(h);
              state.recordLastOp(OP_MOTION, c, '#');
          }
@@ -721,8 +652,7 @@ void NormalMode::setupKeyMaps() {
             else Motion::prevChar(h, c, ch);
         }
         state.recordLastOp(OP_MOTION, c, ';');
-        int pos = Utils::caretPos(h);
-        Utils::select(h, pos, pos);
+        ::SendMessage(h, SCI_SETEMPTYSELECTION, Utils::caretPos(h), 0);
      })
      .set(",", "Reverse find", [this](HWND h, int c) {
         if (state.lastSearchChar == 0) return;
@@ -766,7 +696,7 @@ void NormalMode::setupKeyMaps() {
              break;
          case OP_MOTION:
              if (state.lastOp.textModifier && state.lastOp.textObject) {
-                TextObject t;
+                static TextObject t;
                 t.apply(
                     h,
                     state,
@@ -878,11 +808,11 @@ void NormalMode::setupKeyMaps() {
                 }
 
                 // Process Windows messages to keep UI responsive
-                MSG msg;
-                while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
-                    TranslateMessage(&msg);
-                    DispatchMessage(&msg);
-                }
+                // MSG msg;
+                // while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+                //     TranslateMessage(&msg);
+                //     DispatchMessage(&msg);
+                // }
 
                 handleKey(h, key);
             }
@@ -918,14 +848,8 @@ void NormalMode::setupKeyMaps() {
                  std::swap(state.jumpList[last], state.jumpList[last - 1]);
                  auto jump = state.jumpList[last];
                  if (jump.lineNumber != -1) {
-                     int start = ::SendMessage(h, SCI_POSITIONFROMLINE, jump.lineNumber, 0);
-                     int end = ::SendMessage(h, SCI_GETLINEENDPOSITION, jump.lineNumber, 0);
-                     int target = start;
-                     while (target < end) {
-                         char ch = ::SendMessage(h, SCI_GETCHARAT, target, 0);
-                         if (!std::isspace((unsigned char)ch)) break;
-                         target++;
-                     }
+                     int target = ::SendMessage(h, SCI_GETLINEINDENTPOSITION, jump.lineNumber, 0);
+
                      ::SendMessage(h, SCI_GOTOPOS, target, 0);
                      ::SendMessage(h, SCI_SETSEL, target, target);
                      ::SendMessage(h, SCI_SCROLLCARET, 0, 0);
@@ -945,14 +869,7 @@ void NormalMode::setupKeyMaps() {
          std::swap(state.jumpList[last], state.jumpList[last - 1]);
          auto jump = state.jumpList[last];
          if (jump.lineNumber != -1) {
-             int start = ::SendMessage(h, SCI_POSITIONFROMLINE, jump.lineNumber, 0);
-             int end = ::SendMessage(h, SCI_GETLINEENDPOSITION, jump.lineNumber, 0);
-             int target = start;
-             while (target < end) {
-                 char ch = ::SendMessage(h, SCI_GETCHARAT, target, 0);
-                 if (!std::isspace((unsigned char)ch)) break;
-                 target++;
-             }
+             int target = ::SendMessage(h, SCI_GETLINEINDENTPOSITION, jump.lineNumber, 0);
              ::SendMessage(h, SCI_GOTOPOS, target, 0);
              ::SendMessage(h, SCI_SETSEL, target, target);
              ::SendMessage(h, SCI_SCROLLCARET, 0, 0);
@@ -1027,6 +944,7 @@ void NormalMode::setupKeyMaps() {
      });
 
     k.set("gUU", "Uppercase Whole Line", [this](HWND h, int c) {
+        Utils::beginUndo(h);
         int line = Utils::caretLine(h);
         int last = Utils::lineCount(h) - 1;
         for (int i = 0; i < c && line + i <= last; i++) {
@@ -1101,16 +1019,11 @@ void NormalMode::setupKeyMaps() {
         auto bounds = Utils::findWordBounds(h, pos);
         if (bounds.first != bounds.second) {
             int len = bounds.second - bounds.first;
-            std::vector<char> word(len + 1);
-            Sci_TextRangeFull tr;
-            tr.chrg.cpMin = bounds.first;
-            tr.chrg.cpMax = bounds.second;
-            tr.lpstrText = word.data();
-            ::SendMessage(h, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
+            std::string text = Utils::getTextRange(h, bounds.first, bounds.second);
 
             ::SendMessage(h, SCI_SETTARGETRANGE, 0, pos);
             ::SendMessage(h, SCI_SETSEARCHFLAGS, SCFIND_WHOLEWORD, 0);
-            int found = ::SendMessage(h, SCI_SEARCHINTARGET, len, (LPARAM)word.data());
+            int found = ::SendMessage(h, SCI_SEARCHINTARGET, len, (LPARAM)text.c_str());
             if (found != -1) {
                 ::SendMessage(h, SCI_GOTOPOS, found, 0);
             }
@@ -1158,8 +1071,7 @@ void NormalMode::setupKeyMaps() {
         int line = Utils::caretLine(h);
         int start = Utils::lineStart(h, line);
         int end = Utils::lineEnd(h, line);
-        Utils::select(h, start, end);
-        ::SendMessage(h, SCI_CLEAR, 0, 0);
+        ::SendMessage(h, SCI_DELETERANGE, start, end - start);
         Utils::endUndo(h);
         enterInsertMode();
     });
@@ -1209,7 +1121,7 @@ void NormalMode::enter() {
 
     if (!state.restoringVisual) {
         int caret = Utils::caretPos(hwnd);
-        ::SendMessage(hwnd, SCI_SETSEL, caret, caret);
+        Utils::select(hwnd, caret, caret);
     }
 
     state.restoringVisual = false;
@@ -1232,7 +1144,7 @@ void NormalMode::enterInsertMode() {
     ::SendMessage(hwnd, SCI_SETCARETSTYLE, CARETSTYLE_LINE, 0);
 }
 
-void handleInsertModeChar(HWND hwnd, char c) {
+void handleInsertModeChar(HWND hwnd, char c, VimState& state) {
     if (state.mode != INSERT) return;
 
     if (state.recordingInsertMacro) {
@@ -1507,13 +1419,13 @@ void NormalMode::handleMarkJumpInput(HWND hwnd, char mark, bool exactPosition) {
 
 void NormalMode::handleReplaceInput(HWND hwnd, char replaceChar) {
     int pos = Utils::caretPos(hwnd);
-    int len = ::SendMessage(hwnd, SCI_GETTEXTLENGTH, 0, 0);
+    int len = ::SendMessage(hwnd, SCI_GETLENGTH, 0, 0);
 
     if (pos < len) {
-        char ch = ::SendMessage(hwnd, SCI_GETCHARAT, pos, 0);
+        char ch = (char)Utils::sci(hwnd, SCI_GETCHARAT, pos);
         if (ch != '\r' && ch != '\n') {
             Utils::replaceChar(hwnd, pos, replaceChar);
-            ::SendMessage(hwnd, SCI_SETCURRENTPOS, pos, 0);
+            Utils::sci(hwnd, SCI_SETCURRENTPOS, pos);
         }
     }
 
@@ -1523,29 +1435,20 @@ void NormalMode::handleReplaceInput(HWND hwnd, char replaceChar) {
 }
 
 void NormalMode::deleteLineOnce(HWND hwnd) {
+    Utils::beginUndo(hwnd);
     int pos = Utils::caretPos(hwnd);
     int line = Utils::caretLine(hwnd);
     auto range = Utils::lineRange(hwnd, line, true);
 
     // Get the text before deleting
-    std::vector<char> buffer(range.second - range.first + 1);
-    Sci_TextRangeFull tr;
-    tr.chrg.cpMin = range.first;
-    tr.chrg.cpMax = range.second;
-    tr.lpstrText = buffer.data();
-    ::SendMessage(hwnd, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
+    std::string text = Utils::getTextRange(hwnd, range.first, range.second);
 
     // Store in register if not blackhole
     if (!state.deleteToBlackhole && g_config.dStoreClipboard) {
         char reg = Utils::getCurrentRegister();
         if (reg != '_') {  // Skip blackhole register
-            if (reg == '+' || reg == '*') {
-                // System clipboard
-                Utils::setClipboardText(buffer.data());
-            } else {
-                Utils::setRegisterContent(reg, buffer.data());
-                Utils::setClipboardText(buffer.data());
-            }
+            Utils::storeRegister(reg, text.c_str());
+            Utils::setClipboardText(text.c_str());
         }
     }
 
@@ -1553,7 +1456,8 @@ void NormalMode::deleteLineOnce(HWND hwnd) {
     ::SendMessage(hwnd, SCI_CUT, 0, 0);
 
     int newPos = Utils::lineStart(hwnd, line);
-    ::SendMessage(hwnd, SCI_SETCURRENTPOS, newPos, 0);
+    ::SendMessage(hwnd, SCI_GOTOPOS, newPos, 0);
+    Utils::endUndo(hwnd);
 }
 
 void NormalMode::yankLineOnce(HWND hwnd) {
@@ -1562,21 +1466,11 @@ void NormalMode::yankLineOnce(HWND hwnd) {
     auto range = Utils::lineRange(hwnd, line, true);
 
     // Get the text
-    std::vector<char> buffer(range.second - range.first + 1);
-    Sci_TextRangeFull tr;
-    tr.chrg.cpMin = range.first;
-    tr.chrg.cpMax = range.second;
-    tr.lpstrText = buffer.data();
-    ::SendMessage(hwnd, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
+    std::string text = Utils::getTextRange(hwnd, range.first, range.second);
 
     // Store in register
     char reg = Utils::getCurrentRegister();
-    if (reg == '+' || reg == '*') {
-        // System clipboard
-        Utils::setClipboardText(buffer.data());
-    } else {
-        Utils::setRegisterContent(reg, buffer.data());
-    }
+    Utils::storeRegister(reg, text.c_str());
 
     Utils::select(hwnd, range.first, range.second);
     ::SendMessage(hwnd, SCI_COPY, 0, 0);
@@ -1619,10 +1513,12 @@ void NormalMode::applyOperatorToMotion(HWND hwnd, char op, char motion, int coun
     case '$': Motion::lineEnd(hwnd, count); break;
     case '^': Motion::lineStart(hwnd, count); break;
     case '0': Motion::lineStart(hwnd, 1); break;
-    case 'G':
-        if (count == 1) Motion::documentEnd(hwnd);
+    case 'G': {
+        int gCount = (state.repeatCount > 0) ? state.repeatCount : count;
+        if (gCount == 1) Motion::documentEnd(hwnd);
         else Motion::gotoLine(hwnd, count);
         break;
+    }
     case 'g':  // Handle gg motion
         if (count > 1) Motion::gotoLine(hwnd, count);
         else Motion::documentStart(hwnd);
@@ -1648,13 +1544,8 @@ void NormalMode::applyOperatorToMotion(HWND hwnd, char op, char motion, int coun
         if (isLineMotion && op == 'd') {
             // For line motions, we already captured in deleteLineOnce
         } else {
-            std::vector<char> buffer(selEnd - selStart + 1);
-            Sci_TextRangeFull tr;
-            tr.chrg.cpMin = selStart;
-            tr.chrg.cpMax = selEnd;
-            tr.lpstrText = buffer.data();
-            ::SendMessage(hwnd, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
-            selectedText = buffer.data();
+            std::string text = Utils::getTextRange(hwnd, start, end);
+            selectedText = text;
         }
     }
 
@@ -1692,7 +1583,7 @@ void NormalMode::applyOperatorToMotion(HWND hwnd, char op, char motion, int coun
 
         // For word-end motions, include the character under cursor
         if (motion == 'e' || motion == 'E') {
-            int docLen = ::SendMessage(hwnd, SCI_GETTEXTLENGTH, 0, 0);
+            int docLen = ::SendMessage(hwnd, SCI_GETLENGTH, 0, 0);
             if (end < docLen) end = ::SendMessage(hwnd, SCI_POSITIONAFTER, end, 0);
         }
         state.lastYankLinewise = false;
@@ -1769,7 +1660,7 @@ void NormalMode::handleDeleteCharToRegister(HWND hwnd, char deleteCmd, char reg)
     Utils::beginUndo(hwnd);
 
     int pos = Utils::caretPos(hwnd);
-    int docLen = ::SendMessage(hwnd, SCI_GETTEXTLENGTH, 0, 0);
+    int docLen = ::SendMessage(hwnd, SCI_GETLENGTH, 0, 0);
 
     if (deleteCmd == 'x') {
         // Delete character under cursor
@@ -1779,20 +1670,11 @@ void NormalMode::handleDeleteCharToRegister(HWND hwnd, char deleteCmd, char reg)
         }
 
         int next = ::SendMessage(hwnd, SCI_POSITIONAFTER, pos, 0);
-        std::vector<char> buffer(next - pos + 1);
-        Sci_TextRangeFull tr;
-        tr.chrg.cpMin = pos;
-        tr.chrg.cpMax = next;
-        tr.lpstrText = buffer.data();
-        ::SendMessage(hwnd, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
+        std::string text = Utils::getTextRange(hwnd, pos, next);
 
         // Store in register
         if (reg != '_') {  // Skip blackhole register
-            if (reg == '+' || reg == '*') {
-                Utils::setClipboardText(buffer.data());
-            } else {
-                Utils::setRegisterContent(reg, buffer.data());
-            }
+            Utils::storeRegister(reg, text.c_str());
         }
 
         ::SendMessage(hwnd, SCI_SETSEL, pos, next);
@@ -1806,20 +1688,10 @@ void NormalMode::handleDeleteCharToRegister(HWND hwnd, char deleteCmd, char reg)
         }
 
         int prev = ::SendMessage(hwnd, SCI_POSITIONBEFORE, pos, 0);
-        std::vector<char> buffer(pos - prev + 1);
-        Sci_TextRangeFull tr;
-        tr.chrg.cpMin = prev;
-        tr.chrg.cpMax = pos;
-        tr.lpstrText = buffer.data();
-        ::SendMessage(hwnd, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
-
+        std::string text = Utils::getTextRange(hwnd, prev, pos);
         // Store in register
         if (reg != '_') {  // Skip blackhole register
-            if (reg == '+' || reg == '*') {
-                Utils::setClipboardText(buffer.data());
-            } else {
-                Utils::setRegisterContent(reg, buffer.data());
-            }
+            Utils::storeRegister(reg, text.c_str());
         }
 
         ::SendMessage(hwnd, SCI_SETSEL, prev, pos);

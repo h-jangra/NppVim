@@ -21,10 +21,6 @@ VisualMode::VisualMode(VimState& state) : state(state) {
     setupKeyMaps();
 }
 
-bool VisualMode::iswalnum(char c) {
-    return std::isalnum(static_cast<unsigned char>(c));
-}
-
 std::string VisualMode::getSelectedText(HWND h) {
     int startPos = ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
     int endPos = ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
@@ -132,14 +128,7 @@ void VisualMode::setupKeyMaps() {
             std::string content = getSelectedText(h);
 
             if (!content.empty() && reg != '_') {
-                if (reg == '+' || reg == '*') {
-                    Utils::setClipboardText(content);
-                } else {
-                    Utils::setRegisterContent(reg, content);
-                    if (reg == '"') {
-                        Utils::setClipboardText(content);
-                    }
-                }
+                Utils::storeRegister(reg, content);
             }
             Utils::clearBlockSelection(h);
         }
@@ -149,14 +138,7 @@ void VisualMode::setupKeyMaps() {
 
             std::string content = getSelectedText(h);
             if (!content.empty() && reg != '_') {
-                if (reg == '+' || reg == '*') {
-                    Utils::setClipboardText(content);
-                } else {
-                    Utils::setRegisterContent(reg, content);
-                    if (reg == '"') {
-                        Utils::setClipboardText(content);
-                    }
-                }
+                Utils::storeRegister(reg, content);
             }
             state.lastYankLinewise = true;
         }
@@ -166,14 +148,7 @@ void VisualMode::setupKeyMaps() {
 
             std::string content = getSelectedText(h);
             if (!content.empty() && reg != '_') {
-                if (reg == '+' || reg == '*') {
-                    Utils::setClipboardText(content);
-                } else {
-                    Utils::setRegisterContent(reg, content);
-                    if (reg == '"') {
-                        Utils::setClipboardText(content);
-                    }
-                }
+                Utils::storeRegister(reg, content);
             }
             state.lastYankLinewise = false;
         }
@@ -269,11 +244,9 @@ void VisualMode::setupKeyMaps() {
                 : ::SendMessage(h, SCI_POSITIONFROMLINE, endLine + 1, 0);
 
             if (oldAnchorLine >= caretLine) {
-                ::SendMessage(h, SCI_SETANCHOR, startPos, 0);
-                ::SendMessage(h, SCI_SETCURRENTPOS, endPos, 0);
+                Utils::select(h, startPos, endPos);
             } else {
-                ::SendMessage(h, SCI_SETANCHOR, endPos, 0);
-                ::SendMessage(h, SCI_SETCURRENTPOS, startPos, 0);
+                Utils::select(h, endPos, startPos);
             }
         } else if (!state.isBlockVisual) {
             int pos = Utils::caretPos(h);
@@ -477,11 +450,9 @@ void VisualMode::setupKeyMaps() {
                 : ::SendMessage(h, SCI_POSITIONFROMLINE, endLine + 1, 0);
 
             if (newLine >= anchorLine) {
-                ::SendMessage(h, SCI_SETANCHOR, startPos, 0);
-                ::SendMessage(h, SCI_SETCURRENTPOS, endPos, 0);
+                Utils::select(h, startPos, endPos);
             } else {
-                ::SendMessage(h, SCI_SETANCHOR, endPos, 0);
-                ::SendMessage(h, SCI_SETCURRENTPOS, startPos, 0);
+                Utils::select(h, endPos, startPos);
             }
             ::SendMessage(h, SCI_SCROLLCARET, 0, 0);
         }
@@ -526,11 +497,9 @@ void VisualMode::setupKeyMaps() {
                 : ::SendMessage(h, SCI_POSITIONFROMLINE, endLine + 1, 0);
 
             if (newLine <= anchorLine) {
-                ::SendMessage(h, SCI_SETANCHOR, endPos, 0);
-                ::SendMessage(h, SCI_SETCURRENTPOS, startPos, 0);
+                Utils::select(h, endPos, startPos);
             } else {
-                ::SendMessage(h, SCI_SETANCHOR, startPos, 0);
-                ::SendMessage(h, SCI_SETCURRENTPOS, endPos, 0);
+                Utils::select(h, startPos, endPos);
             }
             ::SendMessage(h, SCI_SCROLLCARET, 0, 0);
         }
@@ -1022,8 +991,9 @@ void VisualMode::enterChar(HWND hwnd) {
     state.mode = VISUAL;
     state.isLineVisual = false;
     state.isBlockVisual = false;
-
+    
     int caret = Utils::caretPos(hwnd);
+    state.visualPreferredColumn = SendMessage(hwnd, SCI_GETCOLUMN, caret, 0);
 
     state.visualAnchor = caret;
     state.visualAnchorLine = ::SendMessage(hwnd, SCI_LINEFROMPOSITION, caret, 0);
@@ -1031,9 +1001,9 @@ void VisualMode::enterChar(HWND hwnd) {
 
     ::SendMessage(hwnd, SCI_SETSELECTIONMODE, SC_SEL_STREAM, 0);
     ::SendMessage(hwnd, SCI_SETANCHOR, caret, 0);
-    int nextPos = (int)::SendMessage(hwnd, SCI_POSITIONAFTER, caret, 0);
-    ::SendMessage(hwnd, SCI_SETCURRENTPOS, nextPos, 0);
-    ::SendMessage(hwnd, SCI_SETSEL, caret, nextPos);
+    // int nextPos = (int)::SendMessage(hwnd, SCI_POSITIONAFTER, caret, 0);
+    ::SendMessage(hwnd, SCI_SETCURRENTPOS, caret, 0);
+    ::SendMessage(hwnd, SCI_SETSEL, caret, caret);
 
     Utils::setStatus(TEXT("-- VISUAL --"));
 }
@@ -1304,11 +1274,9 @@ void VisualMode::extendSelection(HWND h, int newPos) {
         int caretLineStart = ::SendMessage(h, SCI_POSITIONFROMLINE, newLine, 0);
 
         if (newLine >= anchorLine) {
-            ::SendMessage(h, SCI_SETANCHOR, startPos, 0);
-            ::SendMessage(h, SCI_SETCURRENTPOS, endPos, 0);
+            Utils::select(h, startPos, endPos);
         } else {
-            ::SendMessage(h, SCI_SETANCHOR, endPos, 0);
-            ::SendMessage(h, SCI_SETCURRENTPOS, startPos, 0);
+            Utils::select(h, endPos, startPos);
         }
         ::SendMessage(h, SCI_SCROLLCARET, 0, 0);
         return;
@@ -1316,14 +1284,24 @@ void VisualMode::extendSelection(HWND h, int newPos) {
                         
     int anchor = state.visualAnchor;
 
-    int selEnd = newPos;
-
     if (newPos >= anchor) {
-        selEnd = (int)::SendMessage(h, SCI_POSITIONAFTER, newPos, 0);
+        ::SendMessage(h, SCI_SETANCHOR, anchor, 0);
+        ::SendMessage(h, SCI_SETCURRENTPOS,
+            (int)::SendMessage(h, SCI_POSITIONAFTER, newPos, 0), 0);
+    } else {
+        ::SendMessage(h, SCI_SETANCHOR,
+            (int)::SendMessage(h, SCI_POSITIONAFTER, anchor, 0), 0);
+        ::SendMessage(h, SCI_SETCURRENTPOS, newPos, 0);
     }
 
-    ::SendMessage(h, SCI_SETANCHOR, anchor, 0);
-    ::SendMessage(h, SCI_SETCURRENTPOS, selEnd, 0);
+    // int selEnd = newPos;
+
+    // if (newPos >= anchor) {
+    //     selEnd = (int)::SendMessage(h, SCI_POSITIONAFTER, newPos, 0);
+    // }
+
+    // ::SendMessage(h, SCI_SETANCHOR, anchor, 0);
+    // ::SendMessage(h, SCI_SETCURRENTPOS, selEnd, 0);
 }
 
 void VisualMode::handleVisualReplaceInput(HWND hwnd, char replaceChar) {
