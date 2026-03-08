@@ -22,7 +22,8 @@ enum OperationType {
     OP_PASTE_LINE,
     OP_MOTION,
     OP_REPLACE,
-    OP_PASTE
+    OP_PASTE,
+    OP_INDENT
 };
 
 enum TextObjectType {

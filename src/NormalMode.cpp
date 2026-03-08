@@ -103,6 +103,18 @@ void NormalMode::setupKeyMaps() {
          else Motion::gotoLine(h, c);
      })
      .set("gg", "File start",[this](HWND h, int c) {
+        if (state.opPending) {
+            int count = (state.repeatCount > 0) ? state.repeatCount : 1;
+
+            Utils::beginUndo(h);
+            applyOperatorToMotion(h, state.opPending, '{', INT_MAX);
+            Utils::endUndo(h);
+
+            state.opPending = 0;
+            state.repeatCount = 0;
+            return;
+        }
+
          long pos = Utils::caretPos(h);
          int line = Utils::caretLine(h);
          state.recordJump(pos, line);
@@ -728,6 +740,17 @@ void NormalMode::setupKeyMaps() {
          case OP_REPLACE:
              state.replacePending = true;
              break;
+        case OP_INDENT:
+            if (state.lastVisualAnchor >= 0 && state.lastVisualCaret >= 0) {
+                Utils::select(h, state.lastVisualAnchor, state.lastVisualCaret);
+            }
+
+            if (state.lastOp.motion == '>') {
+                Utils::handleIndent(h, rc);
+            } else if (state.lastOp.motion == '<') {
+                Utils::handleUnindent(h, rc);
+            }
+            break;
          }
          Utils::endUndo(h);
          state.repeatCount = 0;
@@ -880,8 +903,14 @@ void NormalMode::setupKeyMaps() {
          }
      });
 
-    k.set(">", "Indent", [](HWND h, int c) { Utils::handleIndent(h, c); })
-     .set("<", "Unindent", [](HWND h, int c) { Utils::handleUnindent(h, c); })
+    k.set(">", "Indent", [this](HWND h, int c) {
+        Utils::handleIndent(h, c);
+        state.recordLastOp(OP_INDENT, c, '>');
+     })
+     .set("<", "Unindent", [this](HWND h, int c) {
+         Utils::handleUnindent(h, c);
+         state.recordLastOp(OP_INDENT, c, '<');
+     })
      .set("=", "Autoindent", [](HWND h, int c) { Utils::handleAutoIndent(h, c); });
 
     k.set("gcc", "Toggle Comment", [this](HWND h, int c) {
@@ -898,38 +927,20 @@ void NormalMode::setupKeyMaps() {
              ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_VIEW_TAB_PREV);
          state.recordLastOp(OP_MOTION, c, 'T');
      })
-    //  TODO: gv to restore last visual selection
     .set("gv", [this](HWND h, int c) {
         if (state.lastVisualAnchor < 0 || state.lastVisualCaret < 0) return;
 
         state.restoringVisual = true;
 
-        int a = state.lastVisualAnchor;
-        int b = state.lastVisualCaret;
-
-        if (state.lastVisualWasBlock) {
+        if (state.lastVisualWasBlock)
             g_visualMode->enterBlock(h);
-            ::SendMessage(h, SCI_SETRECTANGULARSELECTIONANCHOR, a, 0);
-            ::SendMessage(h, SCI_SETRECTANGULARSELECTIONCARET, b, 0);
-            ::SendMessage(h, SCI_SETCURRENTPOS, b, 0);
-        }
-        else if (state.lastVisualWasLine) {
+        else if (state.lastVisualWasLine)
             g_visualMode->enterLine(h);
-
-            int la = ::SendMessage(h, SCI_LINEFROMPOSITION, a, 0);
-            int lb = ::SendMessage(h, SCI_LINEFROMPOSITION, b, 0);
-
-            int start = ::SendMessage(h, SCI_POSITIONFROMLINE, (std::min)(la, lb), 0);
-            int end   = ::SendMessage(h, SCI_POSITIONFROMLINE, (std::max)(la, lb) + 1, 0);
-
-            Utils::select(h, start, end);
-            ::SendMessage(h, SCI_SETCURRENTPOS, b, 0);
-        }
-        else {
+        else
             g_visualMode->enterChar(h);
-            ::SendMessage(h, SCI_SETANCHOR, a, 0);
-            ::SendMessage(h, SCI_SETCURRENTPOS, b, 0);
-        }
+
+        ::SendMessage(h, SCI_SETSEL, state.lastVisualAnchor, state.lastVisualCaret);
+        state.restoringVisual = false;
     })
      .set("gi", "Jumps to last insert position", [this](HWND h, int c) {
         if (state.lastInsertPos == -1) return;
@@ -1111,6 +1122,18 @@ void NormalMode::setupKeyMaps() {
 void NormalMode::enter() {
     HWND hwnd = Utils::getCurrentScintillaHandle();
 
+    if (state.mode == VISUAL && !state.restoringVisual) {
+        if (state.isBlockVisual) {
+            state.lastVisualAnchor = ::SendMessage(hwnd, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
+            state.lastVisualCaret  = ::SendMessage(hwnd, SCI_GETRECTANGULARSELECTIONCARET, 0, 0);
+        } else {
+            state.lastVisualAnchor = ::SendMessage(hwnd, SCI_GETSELECTIONSTART, 0, 0);
+            state.lastVisualCaret  = ::SendMessage(hwnd, SCI_GETSELECTIONEND, 0, 0);
+        }
+        state.lastVisualWasLine  = state.isLineVisual;
+        state.lastVisualWasBlock = state.isBlockVisual;
+    }
+
     state.mode = NORMAL;
     state.isLineVisual = false;
     state.visualAnchor = -1;
@@ -1230,39 +1253,6 @@ void NormalMode::handleKey(HWND hwnd, char c) {
         Utils::setStatus(TEXT("-- NORMAL --"));
         return;
     }
-
-    // if (state.awaitingRegisterOperation) {
-    //     state.awaitingRegisterOperation = false;
-
-    //     // Handle operations that can use registers
-    //     if (c == 'y' || c == 'd' || c == 'c' || c == 'p' || c == 'P' || c == 'x' || c == 'X') {
-    //         char selectedRegister = Utils::getCurrentRegister();
-
-    //         if (c == 'y') {
-    //             state.opPending = 'y';
-    //             state.lastYankLinewise = false;
-    //             Utils::setStatus(TEXT("-- YANK TO REGISTER --"));
-    //         } else if (c == 'd') {
-    //             state.opPending = 'd';
-    //             state.lastYankLinewise = true;
-    //             Utils::setStatus(TEXT("-- DELETE TO REGISTER --"));
-    //         } else if (c == 'c') {
-    //             state.opPending = 'c';
-    //             Utils::setStatus(TEXT("-- CHANGE TO REGISTER --"));
-    //         } else if (c == 'p' || c == 'P') {
-    //             handlePasteFromRegister(hwnd, c, selectedRegister);
-    //             return;
-    //         } else if (c == 'x' || c == 'X') {
-    //             handleDeleteCharToRegister(hwnd, c, selectedRegister);
-    //             return;
-    //         }
-    //     } else {
-    //         Utils::setStatus(TEXT("-- Invalid operation for register --"));
-    //         Utils::setCurrentRegister('"');
-    //         state.deleteToBlackhole = false;
-    //     }
-    //     return;
-    // }
 
     if (state.textObjectPending == 'f' || state.textObjectPending == 't') {
         char searchType = state.opPending;

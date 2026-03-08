@@ -847,8 +847,16 @@ void VisualMode::setupKeyMaps() {
         }
     });
 
-    k.set("<", [](HWND h, int c) { Utils::handleUnindent(h, c); })
-     .set(">", [](HWND h, int c) { Utils::handleIndent(h, c); })
+    k.set("<", [this](HWND h, int c) {
+        Utils::handleUnindent(h, c);
+        state.recordLastOp(OP_INDENT, c, '<');
+        exitToNormal(h);
+    })
+    .set(">", [this](HWND h, int c) {
+        Utils::handleIndent(h, c);
+        state.recordLastOp(OP_INDENT, c, '>');
+        exitToNormal(h);
+    })
      .set("=", [](HWND h, int c) { Utils::handleAutoIndent(h, c); });
 
     k.set("gcc", [this](HWND h, int c) {
@@ -1057,20 +1065,23 @@ void VisualMode::enterBlock(HWND hwnd) {
 }
 
 void VisualMode::exitToNormal(HWND h) {
-    if (state.isBlockVisual) {
-        state.lastVisualAnchor =
-            ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
-        state.lastVisualCaret =
-            ::SendMessage(h, SCI_GETRECTANGULARSELECTIONCARET, 0, 0);
-    } else {
-        state.lastVisualAnchor =
-            ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
-        state.lastVisualCaret =
-            ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
-    }
+    if (!state.restoringVisual) {
 
-    state.lastVisualWasLine  = state.isLineVisual;
-    state.lastVisualWasBlock = state.isBlockVisual;
+        if (state.isBlockVisual) {
+            state.lastVisualAnchor =
+                ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
+            state.lastVisualCaret =
+                ::SendMessage(h, SCI_GETRECTANGULARSELECTIONCARET, 0, 0);
+        } else {
+            state.lastVisualAnchor =
+                ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
+            state.lastVisualCaret =
+                ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
+        }
+
+        state.lastVisualWasLine  = state.isLineVisual;
+        state.lastVisualWasBlock = state.isBlockVisual;
+    }
 
     state.isLineVisual = false;
     state.isBlockVisual = false;
