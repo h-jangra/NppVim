@@ -17,13 +17,18 @@ if "%1"=="" (
 )
 
 
-if "%1"=="release" (
-    goto :BUILD_RELEASE
-)
+if "%1"=="release" goto :BUILD_RELEASE
+if "%1"=="tag" goto :CREATE_TAG
 
-echo Usage: build.bat [release]
+echo Usage: build.bat [release^|tag]
 goto :eof
 
+:CREATE_TAG
+set /p TAG=Enter tag version:
+git tag -a %TAG% -m "Release %TAG%"
+git push origin %TAG%
+echo Tag %TAG% created and pushed.
+goto :eof
 
 :BUILD_RELEASE
 echo Cleaning distribution folders...
