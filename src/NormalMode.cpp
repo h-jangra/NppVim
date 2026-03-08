@@ -269,102 +269,102 @@ void NormalMode::setupKeyMaps() {
 
     k.set("iw", "Inner word", [this](HWND h, int c) {
         if (!state.opPending) return;
-        static TextObject t; t.apply(h, state, state.opPending, 'i', 'w');
+        TextObject t; t.apply(h, state, state.opPending, 'i', 'w');
         state.resetPending();
     })
     .set("aw", "Around word", [this](HWND h, int c) {
         if (!state.opPending) return;
-        static TextObject t; t.apply(h, state, state.opPending, 'a', 'w');
+        TextObject t; t.apply(h, state, state.opPending, 'a', 'w');
         state.resetPending();
     })
     .set("iW", "Inner WORD", [this](HWND h, int c) {
         if (!state.opPending) return;
-        static TextObject t; t.apply(h, state, state.opPending, 'i', 'W');
+        TextObject t; t.apply(h, state, state.opPending, 'i', 'W');
         state.resetPending();
     })
     .set("aW", "Around WORD", [this](HWND h, int c) {
         if (!state.opPending) return;
-        static TextObject t; t.apply(h, state, state.opPending, 'a', 'W');
+        TextObject t; t.apply(h, state, state.opPending, 'a', 'W');
         state.resetPending();
     })
     .set("ip", "Inner paragraph", [this](HWND h, int c) {
         if (!state.opPending) return;
-        static TextObject t; t.apply(h, state, state.opPending, 'i', 'p');
+        TextObject t; t.apply(h, state, state.opPending, 'i', 'p');
         state.resetPending();
     })
     .set("ap", "Around paragraph", [this](HWND h, int c) {
         if (!state.opPending) return;
-        static TextObject t; t.apply(h, state, state.opPending, 'a', 'p');
+        TextObject t; t.apply(h, state, state.opPending, 'a', 'p');
         state.resetPending();
     })
     .set("is", "Inner sentence", [this](HWND h, int c) {
         if (!state.opPending) return;
-        static TextObject t; t.apply(h, state, state.opPending, 'i', 's');
+        TextObject t; t.apply(h, state, state.opPending, 'i', 's');
         state.resetPending();
     })
     .set("as", "Around sentence", [this](HWND h, int c) {
         if (!state.opPending) return;
-        static TextObject t; t.apply(h, state, state.opPending, 'a', 's');
+        TextObject t; t.apply(h, state, state.opPending, 'a', 's');
         state.resetPending();
     })
     .set("i(", "Inner parentheses", [this](HWND h, int c) {
         if (!state.opPending) return;
-        static TextObject t; t.apply(h, state, state.opPending, 'i', '(');
+        TextObject t; t.apply(h, state, state.opPending, 'i', '(');
         state.resetPending();
     })
     .set("a(", "Around parentheses", [this](HWND h, int c) {
         if (!state.opPending) return;
-        static TextObject t; t.apply(h, state, state.opPending, 'a', '(');
+        TextObject t; t.apply(h, state, state.opPending, 'a', '(');
         state.resetPending();
     })
     .set("i[", "Inner brackets", [this](HWND h, int c) {
         if (!state.opPending) return;
-        static TextObject t; t.apply(h, state, state.opPending, 'i', '[');
+        TextObject t; t.apply(h, state, state.opPending, 'i', '[');
         state.resetPending();
     })
     .set("a[", "Around brackets", [this](HWND h, int c) {
         if (!state.opPending) return;
-        static TextObject t; t.apply(h, state, state.opPending, 'a', '[');
+        TextObject t; t.apply(h, state, state.opPending, 'a', '[');
         state.resetPending();
     })
     .set("i{", "Inner braces", [this](HWND h, int c) {
         if (!state.opPending) return;
-        static TextObject t; t.apply(h, state, state.opPending, 'i', '{');
+        TextObject t; t.apply(h, state, state.opPending, 'i', '{');
         state.resetPending();
     })
     .set("a{", "Around braces", [this](HWND h, int c) {
         if (!state.opPending) return;
-        static TextObject t; t.apply(h, state, state.opPending, 'a', '{');
+        TextObject t; t.apply(h, state, state.opPending, 'a', '{');
         state.resetPending();
     })
     .set("i\"", "Inner double quotes", [this](HWND h, int c) {
         if (!state.opPending) return;
-        static TextObject t; t.apply(h, state, state.opPending, 'i', '"');
+        TextObject t; t.apply(h, state, state.opPending, 'i', '"');
         state.resetPending();
     })
     .set("a\"", "Around double quotes", [this](HWND h, int c) {
         if (!state.opPending) return;
-        static TextObject t; t.apply(h, state, state.opPending, 'a', '"');
+        TextObject t; t.apply(h, state, state.opPending, 'a', '"');
         state.resetPending();
     })
     .set("i'", "Inner single quotes", [this](HWND h, int c) {
         if (!state.opPending) return;
-        static TextObject t; t.apply(h, state, state.opPending, 'i', '\'');
+        TextObject t; t.apply(h, state, state.opPending, 'i', '\'');
         state.resetPending();
     })
     .set("a'", "Around single quotes", [this](HWND h, int c) {
         if (!state.opPending) return;
-        static TextObject t; t.apply(h, state, state.opPending, 'a', '\'');
+        TextObject t; t.apply(h, state, state.opPending, 'a', '\'');
         state.resetPending();
     })
     .set("i`", "Inner backticks", [this](HWND h, int c) {
         if (!state.opPending) return;
-        static TextObject t; t.apply(h, state, state.opPending, 'i', '`');
+        TextObject t; t.apply(h, state, state.opPending, 'i', '`');
         state.resetPending();
     })
     .set("a`", "Around backticks", [this](HWND h, int c) {
         if (!state.opPending) return;
-        static TextObject t; t.apply(h, state, state.opPending, 'a', '`');
+        TextObject t; t.apply(h, state, state.opPending, 'a', '`');
         state.resetPending();
     });
 
@@ -558,18 +558,22 @@ void NormalMode::setupKeyMaps() {
         state.awaitingRegister = true;
         Utils::setStatus(TEXT("-- Select register --"));
     })
-    .set("_", [this](HWND h, int c) {
-        Utils::setCurrentRegister('_');
-        state.deleteToBlackhole = true;
-    })
+    // .set("_", [this](HWND h, int c) {
+    //     Utils::setCurrentRegister('_');
+    //     state.deleteToBlackhole = true;
+    // })
     .set("_d", "Delete without saving to clipboard", [this](HWND h, int c) {
         Utils::setCurrentRegister('_');
         state.deleteToBlackhole = true;
         g_normalKeymap->handleKey(h, 'd');
+        Utils::setCurrentRegister('"');
+        state.deleteToBlackhole = false;
     })
     .set("_y", "Yank without saving to clipboard", [this](HWND h, int c) {
         Utils::setCurrentRegister('_');
         g_normalKeymap->handleKey(h, 'y');
+        Utils::setCurrentRegister('"');
+        state.deleteToBlackhole = false;
     });
 
     k.set("/", "Forward search", [](HWND h, int c) { if (g_commandMode) g_commandMode->enter('/'); })
@@ -696,7 +700,7 @@ void NormalMode::setupKeyMaps() {
              break;
          case OP_MOTION:
              if (state.lastOp.textModifier && state.lastOp.textObject) {
-                static TextObject t;
+                TextObject t;
                 t.apply(
                     h,
                     state,
@@ -1004,7 +1008,7 @@ void NormalMode::setupKeyMaps() {
         ::SendMessage(h, SCI_REPLACETARGET, r.size(), (LPARAM)r.c_str());
     })
     .set("\x18", "Ctrl+X Decrement number", [this](HWND h, int c) {
-        g_normalKeymap->handleKey(h, -c);
+        g_normalKeymap->handleKey(h, '\x01');
     });
 
     k.set("\x12", "Ctrl+R - Redo", [this](HWND h, int c) {
@@ -1184,7 +1188,7 @@ void NormalMode::handleKey(HWND hwnd, char c) {
         return;
     }
 
-    if (state.recordingMacro && c != 'q' && !state.awaitingRegister && !state.awaitingRegisterOperation) {
+    if (state.recordingMacro && c != 'q' && !state.awaitingRegister) {
         state.macroBuffer.push_back(c);
     }
 
@@ -1216,61 +1220,49 @@ void NormalMode::handleKey(HWND hwnd, char c) {
 
     if (state.awaitingRegister) {
         state.awaitingRegister = false;
+
         if (Utils::isValidRegister(c)) {
             Utils::setCurrentRegister(c);
-            if (c == '_') {
-                state.deleteToBlackhole = true;
-            } else {
-                state.deleteToBlackhole = false;
-            }
-
-            // Show which register was selected
-            std::string status = "Register \"";
-            status += c;
-            status += "\" selected";
-            Utils::setStatus(std::wstring(status.begin(), status.end()).c_str());
-
-            // Now wait for the operation (y, d, c, p, P)
-            state.awaitingRegisterOperation = true;
-            return;
+            state.deleteToBlackhole = (c == '_');
         } else {
             Utils::setStatus(TEXT("-- Invalid register --"));
         }
+        Utils::setStatus(TEXT("-- NORMAL --"));
         return;
     }
 
-    if (state.awaitingRegisterOperation) {
-        state.awaitingRegisterOperation = false;
+    // if (state.awaitingRegisterOperation) {
+    //     state.awaitingRegisterOperation = false;
 
-        // Handle operations that can use registers
-        if (c == 'y' || c == 'd' || c == 'c' || c == 'p' || c == 'P' || c == 'x' || c == 'X') {
-            char selectedRegister = Utils::getCurrentRegister();
+    //     // Handle operations that can use registers
+    //     if (c == 'y' || c == 'd' || c == 'c' || c == 'p' || c == 'P' || c == 'x' || c == 'X') {
+    //         char selectedRegister = Utils::getCurrentRegister();
 
-            if (c == 'y') {
-                state.opPending = 'y';
-                state.lastYankLinewise = false;
-                Utils::setStatus(TEXT("-- YANK TO REGISTER --"));
-            } else if (c == 'd') {
-                state.opPending = 'd';
-                state.lastYankLinewise = true;
-                Utils::setStatus(TEXT("-- DELETE TO REGISTER --"));
-            } else if (c == 'c') {
-                state.opPending = 'c';
-                Utils::setStatus(TEXT("-- CHANGE TO REGISTER --"));
-            } else if (c == 'p' || c == 'P') {
-                handlePasteFromRegister(hwnd, c, selectedRegister);
-                return;
-            } else if (c == 'x' || c == 'X') {
-                handleDeleteCharToRegister(hwnd, c, selectedRegister);
-                return;
-            }
-        } else {
-            Utils::setStatus(TEXT("-- Invalid operation for register --"));
-            Utils::setCurrentRegister('"');
-            state.deleteToBlackhole = false;
-        }
-        return;
-    }
+    //         if (c == 'y') {
+    //             state.opPending = 'y';
+    //             state.lastYankLinewise = false;
+    //             Utils::setStatus(TEXT("-- YANK TO REGISTER --"));
+    //         } else if (c == 'd') {
+    //             state.opPending = 'd';
+    //             state.lastYankLinewise = true;
+    //             Utils::setStatus(TEXT("-- DELETE TO REGISTER --"));
+    //         } else if (c == 'c') {
+    //             state.opPending = 'c';
+    //             Utils::setStatus(TEXT("-- CHANGE TO REGISTER --"));
+    //         } else if (c == 'p' || c == 'P') {
+    //             handlePasteFromRegister(hwnd, c, selectedRegister);
+    //             return;
+    //         } else if (c == 'x' || c == 'X') {
+    //             handleDeleteCharToRegister(hwnd, c, selectedRegister);
+    //             return;
+    //         }
+    //     } else {
+    //         Utils::setStatus(TEXT("-- Invalid operation for register --"));
+    //         Utils::setCurrentRegister('"');
+    //         state.deleteToBlackhole = false;
+    //     }
+    //     return;
+    // }
 
     if (state.textObjectPending == 'f' || state.textObjectPending == 't') {
         char searchType = state.opPending;
@@ -1303,7 +1295,7 @@ void NormalMode::handleKey(HWND hwnd, char c) {
         if (c == 'w' || c == 'W' || c == 'b' || c == 'B' || c == 'e' || c == 'E' ||
             c == 'h' || c == 'l' || c == 'j' || c == 'k' ||
             c == '$' || c == '^' || c == '0' || c == 'G' || c == '%' ||
-            c == '{' || c == '}' || c == 'g') {
+            c == '{' || c == '}') {
 
             int count = (state.repeatCount > 0) ? state.repeatCount : 1;
             Utils::beginUndo(hwnd);
@@ -1435,7 +1427,6 @@ void NormalMode::handleReplaceInput(HWND hwnd, char replaceChar) {
 }
 
 void NormalMode::deleteLineOnce(HWND hwnd) {
-    Utils::beginUndo(hwnd);
     int pos = Utils::caretPos(hwnd);
     int line = Utils::caretLine(hwnd);
     auto range = Utils::lineRange(hwnd, line, true);
@@ -1457,7 +1448,6 @@ void NormalMode::deleteLineOnce(HWND hwnd) {
 
     int newPos = Utils::lineStart(hwnd, line);
     ::SendMessage(hwnd, SCI_GOTOPOS, newPos, 0);
-    Utils::endUndo(hwnd);
 }
 
 void NormalMode::yankLineOnce(HWND hwnd) {
@@ -1480,8 +1470,8 @@ void NormalMode::yankLineOnce(HWND hwnd) {
 }
 
 void NormalMode::applyOperatorToMotion(HWND hwnd, char op, char motion, int count) {
-    if (motion == '(' || motion == ')' || motion == '[' || motion == ']' ||
-        motion == '{' || motion == '}' || motion == '<' || motion == '>' ||
+
+    if (motion == '(' || motion == ')' || motion == '[' || motion == ']' || motion == '<' || motion == '>' ||
         motion == '\'' || motion == '\"' || motion == '`' ||
         motion == 't' || motion == 's' || motion == 'p') {
 
@@ -1494,8 +1484,7 @@ void NormalMode::applyOperatorToMotion(HWND hwnd, char op, char motion, int coun
     int startLine = Utils::caretLine(hwnd);
     bool isLineMotion = false;
 
-    if (motion == 'j' || motion == 'k' || motion == 'G' || motion == 'g' ||
-        motion == '{' || motion == '}') {
+    if (motion == 'j' || motion == 'k' || motion == 'G' || motion == '{' || motion == '}') {
         isLineMotion = true;
     }
 
@@ -1519,10 +1508,10 @@ void NormalMode::applyOperatorToMotion(HWND hwnd, char op, char motion, int coun
         else Motion::gotoLine(hwnd, count);
         break;
     }
-    case 'g':  // Handle gg motion
-        if (count > 1) Motion::gotoLine(hwnd, count);
-        else Motion::documentStart(hwnd);
-        break;
+    // case 'g':  // Handle gg motion
+    //     if (count > 1) Motion::gotoLine(hwnd, count);
+    //     else Motion::documentStart(hwnd);
+    //     break;
     case '{': Motion::paragraphUp(hwnd, count); break;
     case '}': Motion::paragraphDown(hwnd, count); break;
     case '%': {
@@ -1535,6 +1524,11 @@ void NormalMode::applyOperatorToMotion(HWND hwnd, char op, char motion, int coun
 
     int end = Utils::caretPos(hwnd);
     int endLine = Utils::caretLine(hwnd);
+    if (start == end && op != 'y') {
+        state.opPending = 0;
+        state.repeatCount = 0;
+        return;
+    }
 
     // Get selected text before operation
     std::string selectedText;
@@ -1544,7 +1538,7 @@ void NormalMode::applyOperatorToMotion(HWND hwnd, char op, char motion, int coun
         if (isLineMotion && op == 'd') {
             // For line motions, we already captured in deleteLineOnce
         } else {
-            std::string text = Utils::getTextRange(hwnd, start, end);
+            std::string text = Utils::getTextRange(hwnd, selStart, selEnd);
             selectedText = text;
         }
     }
@@ -1612,6 +1606,9 @@ void NormalMode::applyOperatorToMotion(HWND hwnd, char op, char motion, int coun
         state.recordLastOp(OP_MOTION, count, motion);
         break;
     }
+
+    Utils::setCurrentRegister('"');
+    state.deleteToBlackhole = false;
 }
 
 void NormalMode::handlePasteFromRegister(HWND hwnd, char pasteCmd, char reg) {
