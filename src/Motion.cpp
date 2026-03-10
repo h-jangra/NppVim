@@ -7,7 +7,10 @@
 Motion motion;
 
 static inline void doMotion(HWND h,int normalCmd,int extendCmd,int count){
-    Utils::sci(h, (state.mode==VISUAL) ? extendCmd : normalCmd, count);
+    int cmd = (state.mode==VISUAL) ? extendCmd : normalCmd;
+    for(int i=0;i<count;i++){
+        Utils::sci(h, cmd, 0);
+    }
 }
 
 void Motion::charLeft(HWND hwndEdit, int count) {
@@ -20,7 +23,8 @@ void Motion::charRight(HWND hwndEdit, int count) {
 
 void Motion::lineUp(HWND hwndEdit, int count) {
     if(state.mode!=VISUAL){
-        Utils::sci(hwndEdit, SCI_LINEUP, count);
+        for(int i=0;i<count;i++)
+            Utils::sci(hwndEdit, SCI_LINEUP, 0);
         return;
     }
 
@@ -38,7 +42,8 @@ void Motion::lineUp(HWND hwndEdit, int count) {
 
 void Motion::lineDown(HWND hwndEdit, int count) {
     if(state.mode!=VISUAL){
-        Utils::sci(hwndEdit, SCI_LINEDOWN, count);
+        for(int i=0;i<count;i++)
+            Utils::sci(hwndEdit, SCI_LINEDOWN, 0);
         return;
     }
 

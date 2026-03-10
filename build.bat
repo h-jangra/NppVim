@@ -19,8 +19,9 @@ if "%1"=="" (
 
 if "%1"=="release" goto :BUILD_RELEASE
 if "%1"=="tag" goto :CREATE_TAG
+if "%1"=="rmtag" goto :REMOVE_TAG
 
-echo Usage: build.bat [release^|tag]
+echo Usage: build.bat [release^|tag^|rmtag]
 goto :eof
 
 :CREATE_TAG
@@ -28,6 +29,13 @@ set /p TAG=Enter tag version:
 git tag -a %TAG% -m "Release %TAG%"
 git push origin %TAG%
 echo Tag %TAG% created and pushed.
+goto :eof
+
+:REMOVE_TAG
+set /p TAG=Enter tag to remove:
+git tag -d %TAG%
+git push origin :refs/tags/%TAG%
+echo Tag %TAG% removed locally and from origin.
 goto :eof
 
 :BUILD_RELEASE
