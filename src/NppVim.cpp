@@ -365,6 +365,10 @@ INT_PTR CALLBACK AboutDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         return TRUE;
     }
 
+    case WM_CLOSE:
+        EndDialog(hwnd, IDOK);
+        return TRUE;
+
     case WM_COMMAND:
         switch(LOWORD(wParam)) {
         case IDC_BTN_GITHUB:
@@ -583,6 +587,13 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
     auto it = origProcMap.find(hwnd);
     if (it != origProcMap.end()) orig = it->second;
 
+    if (!orig) {
+        return DefWindowProc(hwnd, msg, wParam, lParam);
+    }
+
+    if (msg == WM_CLOSE || msg == WM_DESTROY || msg == WM_NCDESTROY)
+        return CallWindowProc(orig, hwnd, msg, wParam, lParam);
+
     if (!state.vimEnabled) {
         if (orig) {
             return CallWindowProc(orig, hwnd, msg, wParam, lParam);
@@ -591,11 +602,6 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
             return DefWindowProc(hwnd, msg, wParam, lParam);
         }
     }
-
-    if (!orig) {
-        return DefWindowProc(hwnd, msg, wParam, lParam);
-    }
-
     HWND hwndEdit = hwnd;
 
     // Handle Ctrl key overrides in NORMAL and VISUAL modes
@@ -619,12 +625,6 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
                     state.recordLastOp(OP_MOTION, state.repeatCount > 0 ? state.repeatCount : 1, 21); // 21 represents Ctrl+U
                 }
                 state.repeatCount = 0;
-                return 0;
-            }
-            else if (wParam == 'R' && g_config.overrideCtrlR && state.mode == NORMAL) {
-                // Ctrl+R: Redo in normal mode
-                ::SendMessage(hwndEdit, SCI_REDO, 0, 0);
-                state.recordLastOp(OP_MOTION, 1, 'R');
                 return 0;
             }
             else if (wParam == 'R' && g_config.overrideCtrlR && state.mode == NORMAL) {
@@ -871,7 +871,7 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
 void installScintillaHookFor(HWND hwnd) {
     if (!hwnd || origProcMap.find(hwnd) != origProcMap.end()) return;
 
-    WNDPROC prev = (WNDPROC)SetWindowLongPtr(hwnd, GWLP_WNDPROC, (LONG_PTR)ScintillaHookProc);
+    WNDPROC prev = (WNDPROC)SetWindowLongPtr(hwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(ScintillaHookProc));
     if (prev) {
         origProcMap[hwnd] = prev;
     }
@@ -880,7 +880,7 @@ void installScintillaHookFor(HWND hwnd) {
 void removeAllScintillaHooks() {
     for (auto& p : origProcMap) {
         if (IsWindow(p.first)) {
-            SetWindowLongPtr(p.first, GWLP_WNDPROC, (LONG_PTR)p.second);
+            SetWindowLongPtr(p.first, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(p.second));
         }
     }
     origProcMap.clear();
@@ -975,7 +975,9 @@ BOOL APIENTRY DllMain(HANDLE hModule, DWORD reasonForCall, LPVOID /*lpReserved*/
         g_hInstance = (HINSTANCE)hModule;
     }
     else if (reasonForCall == DLL_PROCESS_DETACH) {
-        removeAllScintillaHooks();
+        if (nppData._scintillaMainHandle || nppData._scintillaSecondHandle)
+            removeAllScintillaHooks();
+    
         CleanupDialogResources();
 
         if (g_normalMode) delete g_normalMode;
