@@ -12,7 +12,17 @@ if "%1"=="" (
     cmake --build .
 
     popd
-    echo Debug build completed in build/debug/
+    
+    echo Installing plugin and restarting Notepad++...
+
+    taskkill /IM notepad++.exe /F >nul 2>nul
+
+    copy /Y build\debug\NppVim.dll "C:\Program Files\Notepad++\plugins\NppVim\" >nul
+
+    start "" "C:\Program Files\Notepad++\notepad++.exe"
+
+    echo Debug build completed.
+    goto :eof
     goto :eof
 )
 

@@ -584,6 +584,15 @@ bool checkEscapeSequence(char c) {
 
 LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     WNDPROC orig = nullptr;
+    if (msg == WM_TIMER) {
+        KillTimer(hwnd, wParam);
+        if (g_normalKeymap) {
+            g_normalKeymap->savedHwnd = hwnd;
+            g_normalKeymap->handleTimer();
+        }
+        return 0;
+    }
+
     auto it = origProcMap.find(hwnd);
     if (it != origProcMap.end()) orig = it->second;
 
@@ -846,22 +855,12 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
 
     if (msg == WM_KEYDOWN) {
         switch (wParam) {
-        case VK_LEFT:
-        case VK_RIGHT:
-        case VK_UP:
-        case VK_DOWN:
-        case VK_HOME:
-        case VK_END:
-        case VK_PRIOR:
-        case VK_NEXT:
-        case VK_INSERT:
-        case VK_DELETE:
+        case VK_LEFT: case VK_RIGHT: case VK_UP: case VK_DOWN:
+        case VK_HOME: case VK_END:  case VK_PRIOR: case VK_NEXT:
+        case VK_INSERT: case VK_DELETE:
             g_firstKey = 0;
+            if (g_normalKeymap) g_normalKeymap->reset();
             break;
-        }
-
-        if (wParam == VK_SHIFT || wParam == VK_CONTROL || wParam == VK_MENU) {
-            g_firstKey = 0;
         }
     }
 

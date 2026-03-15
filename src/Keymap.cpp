@@ -1,13 +1,14 @@
 #include "../include/Keymap.h"
 #include "../include/NppVim.h"
 #include "../include/Utils.h"
+#include "../plugin/resource.h"
 
 std::unique_ptr<Keymap> g_normalKeymap;
 std::unique_ptr<Keymap> g_visualKeymap;
 std::unique_ptr<Keymap> g_commandKeymap;
 
 Keymap::Keymap(VimState& state) 
-    : state(state), root(std::make_shared<KeymapNode>()), currentNode(root) {}
+    : state(state), root(std::make_shared<KeymapNode>()), currentNode(root), savedHwnd(nullptr) {}
 
 Keymap& Keymap::set(const std::string& keys, KeyHandler handler) {
     insertKeySequence(keys, handler);
@@ -53,15 +54,14 @@ void Keymap::insertKeySequence(const std::string& keys, KeyHandler handler, char
 }
 
 bool Keymap::handleKey(HWND hwnd, char key) {
-    if (allowCount && std::isdigit(static_cast<unsigned char>(key))) {
-        int digit = key - '0';
-        if (key == '0' && state.repeatCount == 0 && pendingKeys.empty()) {
-            auto it = currentNode->children.find(key);
-            if (it != currentNode->children.end() && it->second->isLeaf) {
+    if (allowCount && currentNode == root && std::isdigit(static_cast<unsigned char>(key))) {
+        if (key == '0' && state.repeatCount == 0) {
+            auto it = root->children.find(key);
+            if (it != root->children.end() && it->second->isLeaf) {
                 return processKey(hwnd, key, 1);
             }
         }
-        state.repeatCount = state.repeatCount * 10 + digit;
+        state.repeatCount = state.repeatCount * 10 + (key - '0');
         return true;
     }
     
@@ -72,41 +72,62 @@ bool Keymap::handleKey(HWND hwnd, char key) {
 bool Keymap::processKey(HWND hwnd, char key, int count) {
     auto it = currentNode->children.find(key);
 
-    if (it == currentNode->children.end()) {
-        reset();
-
-        it = root->children.find(key);
-        if (it == root->children.end()) {
-            return false;
-        }
-
+    if (it != currentNode->children.end()) {
         currentNode = it->second;
-        pendingKeys = key;
-    } else {
-        currentNode = it->second;
-        pendingKeys += key;
-    }
+        pendingKeys.push_back(key);
 
-    if (currentNode->isLeaf && currentNode->handler) {
-        currentNode->handler(hwnd, count);
+        if (currentNode->isLeaf && currentNode->handler) {
+            if (currentNode->children.empty()) {
+                currentNode->handler(hwnd, count);
+                if (currentNode->motionChar)
+                    state.recordLastOp(OP_MOTION, count, currentNode->motionChar);
+                reset();
+                return true;
+            }
 
-        if (currentNode->motionChar) {
-            state.recordLastOp(OP_MOTION, count, currentNode->motionChar);
+            return true;
         }
-
-        reset();
         return true;
     }
 
-    std::wstring status = L"-- ";
-    for (char c : pendingKeys) status += (wchar_t)c;
-    status += L" --";
-    Utils::setStatus(status.c_str());
+    if (currentNode != root) {
+        auto node = currentNode;
 
-    return true;
+        reset();
+
+        if (node->isLeaf && node->handler) {
+            node->handler(hwnd, count);
+            if (node->motionChar)
+                state.recordLastOp(OP_MOTION, count, node->motionChar);
+            return true;
+        }
+
+        return processKey(hwnd, key, count);
+    }
+    return false;
+}
+
+bool Keymap::isWaitingForMoreKeys() const {
+    return currentNode != root;
+}
+
+void Keymap::handleTimer() {
+    if (currentNode != root && currentNode->isLeaf && currentNode->handler) {
+        auto nodeToFire = currentNode;
+        reset();
+        if (savedHwnd) {
+            nodeToFire->handler(savedHwnd, 1);
+            if (nodeToFire->motionChar)
+                state.recordLastOp(OP_MOTION, 1, nodeToFire->motionChar);
+        }
+    }
 }
 
 void Keymap::reset() {
+    if (savedHwnd)
+        KillTimer(savedHwnd, KEYMAP_TIMER_ID);
+
+    savedHwnd = nullptr;
     currentNode = root;
     pendingKeys.clear();
     state.repeatCount = 0;

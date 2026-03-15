@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <shellapi.h>
 #include <shlwapi.h>
+#include <algorithm>
 #pragma comment(lib, "shlwapi.lib")
 
 #include "../include/NormalMode.h"
@@ -28,6 +29,7 @@ extern VimConfig g_config;
 
 NormalMode::NormalMode(VimState& state) : state(state) {
     g_normalKeymap = std::make_unique<Keymap>(state);
+     g_normalKeymap->setAllowCount(true);
     setupKeyMaps();
 }
 
@@ -125,18 +127,8 @@ void NormalMode::setupKeyMaps() {
          state.recordLastOp(OP_MOTION, c, 'g');
      })
      .set("ge", "Previous word end",  [](HWND h, int c) {
-        for (int i = 0; i < c; i++) {
-            int pos = Utils::caretPos(h);
-            int start = ::SendMessage(h, SCI_WORDSTARTPOSITION, pos, 1);
-            if (start > 0) {
-                int prev = ::SendMessage(h, SCI_POSITIONBEFORE, start, 0);
-                int prevWordStart = ::SendMessage(h, SCI_WORDSTARTPOSITION, prev, 1);
-                int prevWordEnd = ::SendMessage(h, SCI_WORDENDPOSITION, prev, 1);
-                if (prevWordStart < prevWordEnd) {
-                    ::SendMessage(h, SCI_GOTOPOS, prevWordEnd, 0);
-                }
-            }
-        }
+        for(int i=0;i<c;i++)
+            ::SendMessage(h, SCI_WORDLEFTEND,0,0);
     })
     .set("gE", "Previous WORD end", [](HWND h, int c) {
         for (int i = 0; i < c; i++) {
@@ -241,11 +233,52 @@ void NormalMode::setupKeyMaps() {
             }
         }
     })
+    .set("g_", "Go to last non-blank char", [this](HWND h, int c) {
+        if (state.opPending) {
+            Utils::beginUndo(h);
+            applyOperatorToMotion(h, state.opPending, '_', c);
+            Utils::endUndo(h);
+            state.opPending = 0;
+            state.repeatCount = 0;
+            return;
+        }
+        int line = Utils::caretLine(h);
+        int end = Utils::lineEnd(h, line);
+        int start = Utils::lineStart(h, line);
+        
+        for (int i = 0; i < c; i++) {
+            int pos = end - 1;
+            while (pos > start) {
+                char ch = (char)::SendMessage(h, SCI_GETCHARAT, pos, 0);
+                if (ch != ' ' && ch != '\t') break;
+                pos--;
+            }
+            ::SendMessage(h, SCI_GOTOPOS, pos, 0);
+            
+            if (i < c - 1) {
+                int nextLine = Utils::caretLine(h) + 1;
+                if (nextLine >= Utils::lineCount(h)) break;
+                line = nextLine;
+                end = Utils::lineEnd(h, line);
+                start = Utils::lineStart(h, line);
+            }
+        }
+        state.recordLastOp(OP_MOTION, c, '_');
+    })
+    .set("g0", "Go to first non-blank (display)", [](HWND h, int c) {
+        ::SendMessage(h, SCI_HOMEWRAP, 0, 0);
+    })
+    .set("g^", "Go to line start (display)", [](HWND h, int c) {
+        ::SendMessage(h, SCI_VCHOMEWRAP, 0, 0);
+    })
+    .set("gk", "Move up display line", [](HWND h, int c) {
+        Motion::lineUp(h, c);
+    })
     .motion("_", '_', "First non-blank char", [](HWND h, int c) {
         Motion::lineStart(h, c);
     });
 
-    k.set("d", "Delete line", [this](HWND h, int c) {
+    k.set("dd", "Delete line", [this](HWND h, int c) {
          state.resetPending();
          state.lastYankLinewise = true;
          Utils::beginUndo(h);
@@ -256,7 +289,7 @@ void NormalMode::setupKeyMaps() {
          Utils::endUndo(h);
          state.recordLastOp(OP_DELETE_LINE, c);
      })
-     .set("y", "Yank line", [this](HWND h, int c) {
+     .set("yy", "Yank line", [this](HWND h, int c) {
          state.resetPending();
          state.lastYankLinewise = true;
          Utils::beginUndo(h);
@@ -270,7 +303,7 @@ void NormalMode::setupKeyMaps() {
          Utils::endUndo(h);
          state.recordLastOp(OP_YANK_LINE, c);
      })
-     .set("c", "Change line", [this](HWND h, int c) {
+     .set("cc", "Change line", [this](HWND h, int c) {
          state.resetPending();
          Utils::beginUndo(h);
          for (int i = 0; i < c; ++i) deleteLineOnce(h);
@@ -569,24 +602,24 @@ void NormalMode::setupKeyMaps() {
     k.set("\"", "Select register", [this](HWND h, int c) {
         state.awaitingRegister = true;
         Utils::setStatus(TEXT("-- Select register --"));
-    })
+    });
     // .set("_", [this](HWND h, int c) {
     //     Utils::setCurrentRegister('_');
     //     state.deleteToBlackhole = true;
     // })
-    .set("_d", "Delete without saving to clipboard", [this](HWND h, int c) {
-        Utils::setCurrentRegister('_');
-        state.deleteToBlackhole = true;
-        g_normalKeymap->handleKey(h, 'd');
-        Utils::setCurrentRegister('"');
-        state.deleteToBlackhole = false;
-    })
-    .set("_y", "Yank without saving to clipboard", [this](HWND h, int c) {
-        Utils::setCurrentRegister('_');
-        g_normalKeymap->handleKey(h, 'y');
-        Utils::setCurrentRegister('"');
-        state.deleteToBlackhole = false;
-    });
+    // .set("_d", "Delete without saving to clipboard", [this](HWND h, int c) {
+    //     Utils::setCurrentRegister('_');
+    //     state.deleteToBlackhole = true;
+    //     g_normalKeymap->handleKey(h, 'd');
+    //     Utils::setCurrentRegister('"');
+    //     state.deleteToBlackhole = false;
+    // })
+    // .set("_y", "Yank without saving to clipboard", [this](HWND h, int c) {
+    //     Utils::setCurrentRegister('_');
+    //     g_normalKeymap->handleKey(h, 'y');
+    //     Utils::setCurrentRegister('"');
+    //     state.deleteToBlackhole = false;
+    // });
 
     k.set("/", "Forward search", [](HWND h, int c) { if (g_commandMode) g_commandMode->enter('/'); })
      .set("?", "Regex search", [](HWND h, int c) { if (g_commandMode) g_commandMode->enter('?'); })
@@ -1032,17 +1065,34 @@ void NormalMode::setupKeyMaps() {
     k.set("gd", "Search from beginning for first occurrence", [this](HWND h, int c) {
         int pos = Utils::caretPos(h);
         auto bounds = Utils::findWordBounds(h, pos);
-        if (bounds.first != bounds.second) {
-            int len = bounds.second - bounds.first;
-            std::string text = Utils::getTextRange(h, bounds.first, bounds.second);
+        if (bounds.first == bounds.second) return;
 
-            ::SendMessage(h, SCI_SETTARGETRANGE, 0, pos);
+        std::string text = Utils::getTextRange(h, bounds.first, bounds.second);
+        int len = text.size();
+
+        long oldPos = Utils::caretPos(h);
+        int oldLine = Utils::caretLine(h);
+        state.recordJump(oldPos, oldLine);
+
+        int found = -1;
+        int line = Utils::caretLine(h);
+
+        for (int l = line; l >= 0; l--) {
+            int start = Utils::lineStart(h, l);
+            int end = Utils::lineEnd(h, l);
+
+            ::SendMessage(h, SCI_SETTARGETRANGE, start, end);
             ::SendMessage(h, SCI_SETSEARCHFLAGS, SCFIND_WHOLEWORD, 0);
-            int found = ::SendMessage(h, SCI_SEARCHINTARGET, len, (LPARAM)text.c_str());
-            if (found != -1) {
-                ::SendMessage(h, SCI_GOTOPOS, found, 0);
+
+            int r = ::SendMessage(h, SCI_SEARCHINTARGET, len, (LPARAM)text.c_str());
+            if (r != -1 && r != bounds.first) {
+                found = r;
+                break;
             }
         }
+
+        if (found != -1)
+            ::SendMessage(h, SCI_GOTOPOS, found, 0);
     });
 
     k.set("\x05", "Ctrl+E - scroll down", [](HWND h, int c) {
@@ -1074,10 +1124,208 @@ void NormalMode::setupKeyMaps() {
         }
     });
 
+    k.set("g#", "Search word backward (no word boundary)", [this](HWND h, int c) {
+        int pos = Utils::caretPos(h);
+        auto bounds = Utils::findWordBounds(h, pos);
+        if (bounds.first != bounds.second && g_commandMode) {
+            std::string text = Utils::getTextRange(h, bounds.first, bounds.second);
+            g_commandMode->performSearch(h, text.c_str(), false);
+            for (int i = 0; i < c; i++) g_commandMode->searchPrevious(h);
+            state.recordLastOp(OP_MOTION, c, '#');
+        }
+    })
+    .set("g*", "Search word forward (no word boundary)", [this](HWND h, int c) {
+        int pos = Utils::caretPos(h);
+        auto bounds = Utils::findWordBounds(h, pos);
+        if (bounds.first != bounds.second && g_commandMode) {
+            std::string text = Utils::getTextRange(h, bounds.first, bounds.second);
+            g_commandMode->performSearch(h, text.c_str(), false);
+            for (int i = 0; i < c; i++) g_commandMode->searchNext(h);
+            state.recordLastOp(OP_MOTION, c, '*');
+        }
+    })
+    .set("g$", "Go to end of screen line", [this](HWND h, int c) {
+        for (int i = 0; i < c - 1; i++)
+            ::SendMessage(h, SCI_LINEDOWNRECTEXTEND, 0, 0); // advance display lines
+        ::SendMessage(h, SCI_LINEENDWRAP, 0, 0);
+        state.recordLastOp(OP_MOTION, c, '$');
+    })
+    .set("gm", "Go to middle of screen line", [](HWND h, int c) {
+        int line = Utils::caretLine(h);
+        int start = Utils::lineStart(h, line);
+        int end   = Utils::lineEnd(h, line);
+        int mid   = start + (end - start) / 2;
+        ::SendMessage(h, SCI_GOTOPOS, mid, 0);
+    })
+    .set("go", "Go to byte offset (1-based, default = 1)", [this](HWND h, int c) {
+        int target = (state.repeatCount > 0) ? state.repeatCount - 1 : 0;
+        int docLen = (int)::SendMessage(h, SCI_GETLENGTH, 0, 0);
+        if (target > docLen) target = docLen;
+        long pos = Utils::caretPos(h);
+        int  line = Utils::caretLine(h);
+        state.recordJump(pos, line);
+        ::SendMessage(h, SCI_GOTOPOS, target, 0);
+    })
+    .set("ga", "Print ASCII/Unicode value of char under cursor in status bar", [](HWND h, int c) {
+        int pos = Utils::caretPos(h);
+        int ch  = (int)::SendMessage(h, SCI_GETCHARAT, pos, 0);
+        if (ch <= 0) return;
+        wchar_t buf[64];
+        if (ch >= 32 && ch < 127)
+            swprintf_s(buf, L"<%c>  %d,  Hex %02X,  Octal %03o", ch, ch, ch, ch);
+        else
+            swprintf_s(buf, L"<0x%02X>  %d,  Hex %02X,  Octal %03o", ch, ch, ch, ch);
+        Utils::setStatus(buf);
+    })
+    .set("g8", "Show UTF-8 hex bytes under cursor", [](HWND h, int c) {
+        int pos    = Utils::caretPos(h);
+        int docLen = (int)::SendMessage(h, SCI_GETLENGTH, 0, 0);
+        if (pos >= docLen) return;
+
+        int next = (int)::SendMessage(h, SCI_POSITIONAFTER, pos, 0);
+        int byteCount = next - pos;
+
+        std::wstring out;
+        for (int i = 0; i < byteCount; i++) {
+            unsigned char byte = (unsigned char)::SendMessage(h, SCI_GETCHARAT, pos + i, 0);
+            wchar_t hex[8];
+            swprintf_s(hex, L"%02x", byte);
+            if (i > 0) out += L" ";
+            out += hex;
+        }
+        Utils::setStatus(out.c_str());
+    })
+    .set("g~", "Swap case operator", [this](HWND h, int c) {
+        state.opPending = '~';
+        Utils::setStatus(TEXT("-- SWAP CASE (motion) --"));
+    })
+    .set("g~~", "Swap case whole line", [this](HWND h, int c) {
+        Utils::beginUndo(h);
+        int line  = Utils::caretLine(h);
+        int start = Utils::lineStart(h, line);
+        int end   = Utils::lineEnd(h, line);
+        motion.toggleCase(h, end - start);
+        Utils::endUndo(h);
+        state.recordLastOp(OP_MOTION, c, '~');
+    })
+    .set("gD", "Go to global definition", [this](HWND h, int c) {
+        int pos = Utils::caretPos(h);
+        auto bounds = Utils::findWordBounds(h, pos);
+        if (bounds.first == bounds.second) return;
+        std::string text = Utils::getTextRange(h, bounds.first, bounds.second);
+        int len = text.size();
+
+        long oldPos = Utils::caretPos(h);
+        int oldLine = Utils::caretLine(h);
+        state.recordJump(oldPos, oldLine);
+
+        ::SendMessage(h, SCI_SETTARGETRANGE, 0, bounds.first);
+        ::SendMessage(h, SCI_SETSEARCHFLAGS, SCFIND_WHOLEWORD, 0);
+
+        int found = ::SendMessage(h, SCI_SEARCHINTARGET, len, (LPARAM)text.c_str());
+        if (found != -1)
+            ::SendMessage(h, SCI_GOTOPOS, found, 0);
+    })
+    // gF — like gf but also jump to line number following filename (e.g. "foo.cpp:42")
+    .set("gF", "Go to file and line", [](HWND h, int c) {
+        int pos       = Utils::caretPos(h);
+        int line      = Utils::caretLine(h);
+        int lineStart = Utils::lineStart(h, line);
+        int lineEnd   = Utils::lineEnd(h, line);
+
+        int left = pos;
+        while (left > lineStart) {
+            char ch = (char)::SendMessage(h, SCI_GETCHARAT, left - 1, 0);
+            if (ch == ' ' || ch == '\t' || ch == '"' || ch == '\'' || ch == '<' || ch == '(') break;
+            left--;
+        }
+        int right = pos;
+        while (right < lineEnd) {
+            char ch = (char)::SendMessage(h, SCI_GETCHARAT, right, 0);
+            if (ch == ' ' || ch == '\t' || ch == '"' || ch == '\'' || ch == '>' || ch == ')' || ch == ';') break;
+            right++;
+        }
+        if (right <= left) return;
+
+        std::string token = Utils::getTextRange(h, left, right);
+
+        // Split on ':' to extract optional line number
+        std::string filepath  = token;
+        int         targetLine = -1;
+        auto colon = token.rfind(':');
+        if (colon != std::string::npos) {
+            std::string maybeNum = token.substr(colon + 1);
+            bool allDigits = !maybeNum.empty() &&
+                std::all_of(maybeNum.begin(), maybeNum.end(), ::isdigit);
+            if (allDigits) {
+                targetLine = std::stoi(maybeNum) - 1; // 0-based
+                filepath   = token.substr(0, colon);
+            }
+        }
+
+        int wideLen = MultiByteToWideChar(CP_UTF8, 0, filepath.c_str(), -1, NULL, 0);
+        if (wideLen <= 0) return;
+        std::vector<wchar_t> pathWide(wideLen);
+        MultiByteToWideChar(CP_UTF8, 0, filepath.c_str(), -1, pathWide.data(), wideLen);
+
+        wchar_t currentFile[MAX_PATH] = {0};
+        ::SendMessageW(nppData._nppHandle, NPPM_GETFULLCURRENTPATH, MAX_PATH, (LPARAM)currentFile);
+        wchar_t currentDir[MAX_PATH] = {0};
+        wcscpy_s(currentDir, currentFile);
+        PathRemoveFileSpecW(currentDir);
+
+        wchar_t fullPath[MAX_PATH] = {0};
+        if (PathIsRelativeW(pathWide.data()))
+            PathCombineW(fullPath, currentDir, pathWide.data());
+        else
+            wcscpy_s(fullPath, pathWide.data());
+
+        bool opened = false;
+        if (PathFileExistsW(fullPath))
+            opened = (bool)::SendMessageW(nppData._nppHandle, NPPM_DOOPEN, 0, (LPARAM)fullPath);
+        if (!opened)
+            opened = (bool)::SendMessageW(nppData._nppHandle, NPPM_DOOPEN, 0, (LPARAM)pathWide.data());
+
+        if (opened && targetLine >= 0) {
+            HWND sci = Utils::getCurrentScintillaHandle();
+            ::SendMessage(sci, SCI_GOTOLINE, targetLine, 0);
+        }
+    })
+    .set("gj", "Move down display line", [](HWND h, int c) {
+        Motion::lineDown(h, c);
+    })
+    .set("gq", "Format lines", [](HWND h, int){
+        ::SendMessage(h, SCI_LINESJOIN,0,0);
+    })
+    .set("gw", "Format without moving cursor", [](HWND h, int){
+        long pos = ::SendMessage(h, SCI_GETCURRENTPOS,0,0);
+        ::SendMessage(h, SCI_LINESJOIN,0,0);
+        ::SendMessage(h, SCI_GOTOPOS,pos,0);
+    });
+
+    k.set("g??", "Rot13 whole line", [this](HWND h, int c) {
+        Utils::beginUndo(h);
+        int line = Utils::caretLine(h);
+        int start = Utils::lineStart(h, line);
+        int end = Utils::lineEnd(h, line);
+        std::string text = Utils::getTextRange(h, start, end);
+        for (char& ch : text) {
+            if (ch >= 'a' && ch <= 'z') 
+                ch = 'a' + (ch - 'a' + 13) % 26;
+            else if (ch >= 'A' && ch <= 'Z') 
+                ch = 'A' + (ch - 'A' + 13) % 26;
+        }
+        ::SendMessage(h, SCI_SETTARGETRANGE, start, end);
+        ::SendMessage(h, SCI_REPLACETARGET, text.size(), (LPARAM)text.c_str());
+        Utils::endUndo(h);
+        state.recordLastOp(OP_MOTION, c, '?');
+    });
+
     k.set("gJ", "Join lines without space", [this](HWND h, int c) {
         Utils::beginUndo(h);
         Utils::joinLines(h, Utils::caretLine(h), c, false);
         Utils::endUndo(h);
+        Utils::setStatus(TEXT("-- Joined lines without space --"));
     });
 
     k.set("S", "Change inner/around line", [this](HWND h, int c) {
@@ -1215,17 +1463,6 @@ void NormalMode::handleKey(HWND hwnd, char c) {
         state.macroBuffer.push_back(c);
     }
 
-    if (!state.opPending && (c == 'd' || c == 'c' || c == 'y')) {
-        state.lastYankLinewise = false;
-        state.opPending = c;
-        Utils::setStatus(
-            c == 'd' ? TEXT("-- DELETE --") :
-            c == 'c' ? TEXT("-- CHANGE --") :
-                    TEXT("-- YANK --")
-        );
-        return;
-    }
-
     if (state.replacePending) {
         handleReplaceInput(hwnd, c);
         return;
@@ -1281,11 +1518,32 @@ void NormalMode::handleKey(HWND hwnd, char c) {
         return;
     }
 
-     if (state.opPending && !state.textObjectPending) {
+    if (g_normalKeymap) {
+        bool handled = g_normalKeymap->handleKey(hwnd, c);
+
+        if (handled)
+            return;
+
+        if (g_normalKeymap->isWaitingForMoreKeys())
+            return;
+    }
+    
+    if (!state.opPending && (c == 'd' || c == 'c' || c == 'y')) {
+        state.lastYankLinewise = false;
+        state.opPending = c;
+        Utils::setStatus(
+            c == 'd' ? TEXT("-- DELETE --") :
+            c == 'c' ? TEXT("-- CHANGE --") :
+                       TEXT("-- YANK --")
+        );
+        return;
+    }
+
+     if (state.opPending && !state.textObjectPending && !(g_normalKeymap && g_normalKeymap->isWaitingForMoreKeys())) {
         if (c == 'w' || c == 'W' || c == 'b' || c == 'B' || c == 'e' || c == 'E' ||
             c == 'h' || c == 'l' || c == 'j' || c == 'k' ||
             c == '$' || c == '^' || c == '0' || c == 'G' || c == '%' ||
-            c == '{' || c == '}') {
+            c == '{' || c == '}' || c == '_') {
 
             int count = (state.repeatCount > 0) ? state.repeatCount : 1;
             Utils::beginUndo(hwnd);
@@ -1330,10 +1588,6 @@ void NormalMode::handleKey(HWND hwnd, char c) {
 
             return;
         }
-    }
-
-    if (g_normalKeymap) {
-        g_normalKeymap->handleKey(hwnd, c);
     }
 }
 
@@ -1507,6 +1761,20 @@ void NormalMode::applyOperatorToMotion(HWND hwnd, char op, char motion, int coun
     case '%': {
         int match = ::SendMessage(hwnd, SCI_BRACEMATCH, start, 0);
         if (match != -1) ::SendMessage(hwnd, SCI_GOTOPOS, match, 0);
+        break;
+    }
+    case '_': {
+        int ln = Utils::caretLine(hwnd);
+        int lend = Utils::lineEnd(hwnd, ln);
+        int lstart = Utils::lineStart(hwnd, ln);
+        int pos2 = lend - 1;
+        while (pos2 > lstart) {
+            char ch = (char)::SendMessage(hwnd, SCI_GETCHARAT, pos2, 0);
+            if (ch != ' ' && ch != '\t') break;
+            pos2--;
+        }
+        pos2 = ::SendMessage(hwnd, SCI_POSITIONAFTER, pos2, 0);
+        ::SendMessage(hwnd, SCI_GOTOPOS, pos2, 0);
         break;
     }
     default: break;

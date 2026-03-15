@@ -32,6 +32,7 @@ struct KeyBinding {
 class Keymap {
 public:
     Keymap(VimState& state);
+    HWND savedHwnd = nullptr;
     
     Keymap& set(const std::string& keys, KeyHandler handler);
     Keymap& set(const std::string& keys, const std::string& desc, KeyHandler handler);
@@ -41,10 +42,13 @@ public:
 
     void setAllowCount(bool v);
     const std::vector<KeyBinding>& getBindings() const;
+    const std::string& getPendingKeys() const { return pendingKeys; }
 
     bool handleKey(HWND hwnd, char key);
+    bool isWaitingForMoreKeys() const;
+    void handleTimer();
     void reset();
-    
+
     std::string getPendingSequence() const { return pendingKeys; }
     bool hasPending() const { return !pendingKeys.empty(); }
 
