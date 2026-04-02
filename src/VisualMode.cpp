@@ -811,6 +811,29 @@ void VisualMode::setupKeyMaps() {
         for (int i = 0; i < c; i++) ::SendMessage(h, SCI_REDO, 0, 0);
     });
 
+    k.set("p", "Paste over selection", [this](HWND h, int c) {
+        char reg = Utils::getCurrentRegister();
+        std::string content = Utils::getRegisterContent(reg);
+
+        if (content.empty()) return;
+
+        Utils::beginUndo(h);
+
+        int start = ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
+        int end   = ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
+
+        std::string replaced = getSelectedText(h);
+        if (!replaced.empty() && reg != '_') {
+            Utils::storeRegister('"', replaced);
+        }
+
+        ::SendMessage(h, SCI_REPLACESEL, 0, (LPARAM)content.c_str());
+
+        Utils::endUndo(h);
+
+        exitToNormal(h);
+    });
+
     k.set("/", [this](HWND h, int c) {
          if (g_commandMode) {
              state.visualSearchAnchor = state.visualAnchor;
@@ -1118,6 +1141,11 @@ void VisualMode::handleKey(HWND hwnd, char c) {
         return;
     }
 
+    if (g_visualKeymap && g_visualKeymap->handleKey(hwnd, c)) {
+        state.textObjectPending = 0;
+        return;
+    }
+
     if (state.textObjectPending && !state.isBlockVisual &&
         (c == 'w' || c == 'W' || c == 'p' || c == 's' ||
          c == '"' || c == '\'' || c == '`' ||
@@ -1129,9 +1157,6 @@ void VisualMode::handleKey(HWND hwnd, char c) {
         return;
     }
 
-    if (g_visualKeymap && g_visualKeymap->handleKey(hwnd, c)) {
-        return;
-    }
 
     state.textObjectPending = 0;
 }
