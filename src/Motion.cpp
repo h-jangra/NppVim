@@ -64,76 +64,68 @@ void Motion::wordRight(HWND hwndEdit, int count) {
     doMotion(hwndEdit, SCI_WORDRIGHT, SCI_WORDRIGHTEXTEND, count);
 }
 
-void Motion::wordRightBig(HWND h,int count){
-    doMotion(h,SCI_WORDPARTRIGHT,SCI_WORDPARTRIGHTEXTEND,count);
+void Motion::wordRightBig(HWND hwndEdit, int count) {
+    int docLen = (int)::SendMessage(hwndEdit, SCI_GETLENGTH, 0, 0);
+    int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+    for (int i = 0; i < count; i++) {
+        while (pos < docLen) {
+            char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, pos, 0);
+            if (ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n') {
+                break;
+            }
+            pos++;
+        }
+        while (pos < docLen) {
+            char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, pos, 0);
+            if (!(ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n')) {
+                break;
+            }
+            pos++;
+        }
+    }
+    if (state.mode == VISUAL) {
+        int anchor = state.visualAnchor;
+        ::SendMessage(hwndEdit, SCI_SETSEL, anchor, pos);
+    }
+    else {
+        ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, pos, 0);
+        ::SendMessage(hwndEdit, SCI_SETSEL, pos, pos);
+    }
 }
-
-// void Motion::wordRightBig(HWND hwndEdit, int count) {
-//     int docLen = (int)::SendMessage(hwndEdit, SCI_GETLENGTH, 0, 0);
-//     int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
-//     for (int i = 0; i < count; i++) {
-//         while (pos < docLen) {
-//             char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, pos, 0);
-//             if (ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n') {
-//                 break;
-//             }
-//             pos++;
-//         }
-//         while (pos < docLen) {
-//             char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, pos, 0);
-//             if (!(ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n')) {
-//                 break;
-//             }
-//             pos++;
-//         }
-//     }
-//     if (state.mode == VISUAL) {
-//         int anchor = state.visualAnchor;
-//         ::SendMessage(hwndEdit, SCI_SETSEL, anchor, pos);
-//     }
-//     else {
-//         ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, pos, 0);
-//         ::SendMessage(hwndEdit, SCI_SETSEL, pos, pos);
-//     }
-// }
 
 void Motion::wordLeft(HWND hwndEdit, int count) {
     doMotion(hwndEdit, SCI_WORDLEFT, SCI_WORDLEFTEXTEND, count);
 }
 
-void Motion::wordLeftBig(HWND h,int count){
-    doMotion(h,SCI_WORDPARTLEFT,SCI_WORDPARTLEFTEXTEND,count);
+void Motion::wordLeftBig(HWND hwndEdit, int count) {
+    int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+    for (int i = 0; i < count; i++) {
+        if (pos <= 0) break;
+        pos--;
+        while (pos > 0) {
+            char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, pos, 0);
+            if (!(ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n')) {
+                break;
+            }
+            pos--;
+        }
+        while (pos > 0) {
+            char prevCh = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, pos - 1, 0);
+            if (prevCh == ' ' || prevCh == '\t' || prevCh == '\r' || prevCh == '\n') {
+                break;
+            }
+            pos--;
+        }
+    }
+    if (state.mode == VISUAL) {
+        int anchor = state.visualAnchor;
+        ::SendMessage(hwndEdit, SCI_SETSEL, anchor, pos);
+    }
+    else {
+        ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, pos, 0);
+        ::SendMessage(hwndEdit, SCI_SETSEL, pos, pos);
+    }
 }
-
-// void Motion::wordLeftBig(HWND hwndEdit, int count) {
-//     int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
-//     for (int i = 0; i < count; i++) {
-//         if (pos <= 0) break;
-//         pos--;
-//         while (pos > 0) {
-//             char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, pos, 0);
-//             if (!(ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n')) {
-//                 break;
-//             }
-//             pos--;
-//         }
-//         while (pos > 0) {
-//             char prevCh = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, pos - 1, 0);
-//             if (prevCh == ' ' || prevCh == '\t' || prevCh == '\r' || prevCh == '\n') {
-//                 break;
-//             }
-//             pos--;
-//         }
-//     }
-//     if (state.mode == VISUAL) {
-//         int anchor = state.visualAnchor;
-//         ::SendMessage(hwndEdit, SCI_SETSEL, anchor, pos);
-//     }
-//     else {
-//         ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, pos, 0);
-//         ::SendMessage(hwndEdit, SCI_SETSEL, pos, pos);
-//     }
-// }
 
 void Motion::wordEnd(HWND hwndEdit, int count) {
     doMotion(hwndEdit, SCI_WORDRIGHTEND, SCI_WORDRIGHTENDEXTEND, count);

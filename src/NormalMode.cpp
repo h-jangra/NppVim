@@ -515,6 +515,34 @@ void NormalMode::setupKeyMaps() {
      });
 
     k.set("p", "Paste after", [this](HWND h, int c) {
+        if (state.mode == VISUAL) {
+            char reg = Utils::getCurrentRegister();
+            std::string content = Utils::getRegisterContent(reg);
+            if (content.empty() && (reg == '"' || reg == '+' || reg == '*')) {
+                if (OpenClipboard(h)) {
+                    HANDLE hData = GetClipboardData(CF_TEXT);
+                    if (hData) {
+                        char* pszText = (char*)GlobalLock(hData);
+                        if (pszText) { content = pszText; GlobalUnlock(hData); }
+                    }
+                    CloseClipboard();
+                }
+            }
+            if (!content.empty()) {
+                Utils::beginUndo(h);
+                // Save the selection into the unnamed register before overwriting
+                int selStart = (int)::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
+                int selEnd   = (int)::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
+                std::string selText = Utils::getTextRange(h, selStart, selEnd);
+                Utils::storeRegister('"', selText.c_str());
+
+                ::SendMessage(h, SCI_REPLACESEL, 0, (LPARAM)content.c_str());
+                Utils::endUndo(h);
+            }
+            if (g_normalMode) g_normalMode->enter();
+            return;
+        }
+        
         char reg = Utils::getCurrentRegister();
         std::string content;
 
@@ -1134,6 +1162,16 @@ void NormalMode::enter() {
         state.lastVisualWasBlock = state.isBlockVisual;
     }
 
+    // Save current layout and switch to English for Normal mode
+    HWND focusWnd = ::GetFocus();
+    HKL currentLayout = ::GetKeyboardLayout(::GetWindowThreadProcessId(focusWnd, nullptr));
+    HKL englishLayout = ::LoadKeyboardLayout(TEXT("00000409"), KLF_ACTIVATE);
+    if (currentLayout != englishLayout) {
+        state.savedInsertLayout = currentLayout;
+        ::PostMessage(focusWnd, WM_INPUTLANGCHANGEREQUEST, 0, (LPARAM)englishLayout);
+        ::ActivateKeyboardLayout(englishLayout, 0);
+    }
+
     state.mode = NORMAL;
     state.isLineVisual = false;
     state.visualAnchor = -1;
@@ -1161,6 +1199,13 @@ void NormalMode::enterInsertMode() {
     HWND hwnd = Utils::getCurrentScintillaHandle();
     state.mode = INSERT;
     state.reset();
+
+    HWND focusWnd = ::GetFocus();
+
+    if (state.savedInsertLayout) {
+        ::PostMessage(focusWnd, WM_INPUTLANGCHANGEREQUEST, 0, (LPARAM)state.savedInsertLayout);
+        ::ActivateKeyboardLayout(state.savedInsertLayout, 0);
+    }
 
     if (state.recordingMacro) {
         state.recordingInsertMacro = true;

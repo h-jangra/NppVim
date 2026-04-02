@@ -83,6 +83,8 @@ struct VimState {
     bool lastYankLinewise = false;
     int visualPreferredColumn = -1;
 
+    HKL savedInsertLayout = nullptr;
+
     int lastVisualStart = -1;
     int lastVisualEnd = -1;
     int lastVisualAnchor = -1;

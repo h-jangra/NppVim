@@ -1,72 +1,13 @@
 @echo off
-setlocal enabledelayedexpansion
+set NPP="C:\Program Files\Notepad++\notepad++.exe"
+set DIR="C:\Program Files\Notepad++\plugins\NppVim"
 
-if "%1"=="" (
-    echo Building Debug...
-    call "C:\dev\msvc\setup_x64.bat"
-
-    if not exist build\debug mkdir build\debug
-    pushd build\debug
-
-    cmake -G Ninja -DCMAKE_BUILD_TYPE=Release ..\..
-    cmake --build .
-
-    popd
-    echo Debug build completed in build/debug/
-    goto :eof
-)
-
-
-if "%1"=="release" goto :BUILD_RELEASE
-if "%1"=="tag" goto :CREATE_TAG
-if "%1"=="rmtag" goto :REMOVE_TAG
-
-echo Usage: build.bat [release^|tag^|rmtag]
-goto :eof
-
-:CREATE_TAG
-set /p TAG=Enter tag version:
-git tag -a %TAG% -m "Release %TAG%"
-git push origin %TAG%
-echo Tag %TAG% created and pushed.
-goto :eof
-
-:REMOVE_TAG
-set /p TAG=Enter tag to remove:
-git tag -d %TAG%
-git push origin :refs/tags/%TAG%
-echo Tag %TAG% removed locally and from origin.
-goto :eof
-
-:BUILD_RELEASE
-echo Cleaning distribution folders...
-for %%A in (NppVim NppVim.x64 NppVim.arm64) do (
-    if exist "%%A" rmdir /s /q "%%A"
-)
-
-echo Building x64 Release...
 call "C:\dev\msvc\setup_x64.bat"
-if not exist build\x64 mkdir build\x64
-pushd build\x64
-cmake -G Ninja -DCMAKE_BUILD_TYPE=Release ..\..
-cmake --build .
-popd
+cmake -S . -B build\x64 -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build\x64
 
-echo Building win32 Release...
-call "C:\dev\msvc\setup_x86.bat"
-if not exist build\win32 mkdir build\win32
-pushd build\win32
-cmake -G Ninja -DCMAKE_BUILD_TYPE=Release ..\..
-cmake --build .
-popd
+taskkill /IM notepad++.exe /F >nul 2>&1
+if not exist %DIR% mkdir %DIR%
+copy /Y build\x64\NppVim.dll %DIR%
 
-echo Building arm64 Release...
-call "C:\dev\msvc\setup_arm64.bat"
-if not exist build\arm64 mkdir build\arm64
-pushd build\arm64
-cmake -G Ninja -DCMAKE_BUILD_TYPE=Release ..\..
-cmake --build .
-popd
-
-echo Release build complete.
-goto :eof
+start "" %NPP%
