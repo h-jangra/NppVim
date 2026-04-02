@@ -606,3 +606,20 @@ std::string Utils::getTextRange(HWND h, int start, int end){
     ::SendMessage(h, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
     return std::string(buffer.data());
 }
+
+void Utils::rot13(HWND hwnd, int start, int end) {
+    if (start >= end) return;
+
+    std::string text = getTextRange(hwnd, start, end);
+
+    for (char &c : text) {
+        if (c >= 'a' && c <= 'z')
+            c = 'a' + (c - 'a' + 13) % 26;
+        else if (c >= 'A' && c <= 'Z')
+            c = 'A' + (c - 'A' + 13) % 26;
+    }
+
+    ::SendMessage(hwnd, SCI_SETTARGETSTART, start, 0);
+    ::SendMessage(hwnd, SCI_SETTARGETEND, end, 0);
+    ::SendMessage(hwnd, SCI_REPLACETARGET, text.size(), (LPARAM)text.c_str());
+}

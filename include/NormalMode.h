@@ -30,6 +30,7 @@ private:
     void handleMarkSetInput(HWND hwnd, char mark);
     void handleMarkJumpInput(HWND hwnd, char mark, bool exactPosition);
     void handleReplaceInput(HWND hwnd, char replaceChar);
+    void gotoDefinition(HWND h, VimState& state, bool applyOp);
 };
 
 extern NormalMode* g_normalMode;

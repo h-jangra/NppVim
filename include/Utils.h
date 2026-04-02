@@ -87,6 +87,7 @@ public:
     static void storeRegister(char reg, const std::string& text);
 
     static std::string getTextRange(HWND h, int start, int end);
+    static void rot13(HWND hwnd, int start, int end);
     static int sci(HWND h, int msg, WPARAM w = 0, LPARAM l = 0);
 
   private:

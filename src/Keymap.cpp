@@ -73,21 +73,23 @@ bool Keymap::processKey(HWND hwnd, char key, int count) {
     auto it = currentNode->children.find(key);
 
     if (it == currentNode->children.end()) {
-        reset();
-
-        it = root->children.find(key);
-        if (it == root->children.end()) {
-            return false;
+        if (currentNode != root) {
+            reset();
+            return processKey(hwnd, key, count); // retry from root
         }
 
-        currentNode = it->second;
-        pendingKeys = key;
+        return false;
     } else {
         currentNode = it->second;
         pendingKeys += key;
     }
 
     if (currentNode->isLeaf && currentNode->handler) {
+        if (!currentNode->children.empty()) {
+            // wait for possible longer match (like guu)
+            return true;
+        }
+        
         currentNode->handler(hwnd, count);
 
         if (currentNode->motionChar) {

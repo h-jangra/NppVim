@@ -283,6 +283,22 @@ void VisualMode::setupKeyMaps() {
          else enterBlock(h);
      });
 
+    k.set("g?", "Rot13 selection", [this](HWND h, int c) {
+        int s = ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
+        int e = ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
+        Utils::rot13(h, s, e);
+        exitToNormal(h);
+    });
+
+    k.set("gp", [this](HWND h, int c) {
+        g_visualKeymap->handleKey(h, 'p');
+        Motion::charRight(h, 1);
+    });
+
+    k.set("gP", [this](HWND h, int c) {
+        g_visualKeymap->handleKey(h, 'p');
+    });
+
     k.set("I", "Insert before", [this](HWND h, int c) {
         if (state.isBlockVisual) {
             int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
