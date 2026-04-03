@@ -85,11 +85,6 @@ bool Keymap::processKey(HWND hwnd, char key, int count) {
     }
 
     if (currentNode->isLeaf && currentNode->handler) {
-        if (!currentNode->children.empty()) {
-            // wait for possible longer match (like guu)
-            return true;
-        }
-        
         currentNode->handler(hwnd, count);
 
         if (currentNode->motionChar) {

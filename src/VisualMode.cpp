@@ -299,6 +299,96 @@ void VisualMode::setupKeyMaps() {
         g_visualKeymap->handleKey(h, 'p');
     });
 
+    k.motion("g_", '_', [this](HWND h, int c) {
+        int line = Utils::caretLine(h);
+        int end = Utils::lineEnd(h, line);
+
+        int pos = end;
+
+        if (pos > 0)
+            pos = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
+
+        while (pos > 0) {
+            char ch = ::SendMessage(h, SCI_GETCHARAT, pos, 0);
+
+            if (ch != ' ' && ch != '\t' && ch != '\r') break;
+
+            pos = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
+        }
+
+        extendSelection(h, pos);
+    })
+    .motion("ge", 'e', [this](HWND h, int c) {
+        for (int i = 0; i < c; i++) {
+            int pos = Utils::caretPos(h);
+
+            if (pos > 0)
+                pos = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
+
+            while (pos > 0) {
+                char ch = ::SendMessage(h, SCI_GETCHARAT, pos, 0);
+                if (!isspace(ch)) break;
+                pos = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
+            }
+
+            while (pos > 0) {
+                char ch = ::SendMessage(h, SCI_GETCHARAT, pos - 1, 0);
+                if (isspace(ch)) break;
+                pos = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
+            }
+
+            while (true) {
+                char ch = ::SendMessage(h, SCI_GETCHARAT, pos, 0);
+                if (isspace(ch)) break;
+
+                int next = ::SendMessage(h, SCI_POSITIONAFTER, pos, 0);
+                if (next == pos) break;
+                pos = next;
+            }
+
+            pos = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
+
+            extendSelection(h, pos);
+        }
+    }).motion("gE", 'E', [this](HWND h, int c) {
+        for (int i = 0; i < c; i++) {
+            int pos = Utils::caretPos(h);
+
+            if (pos > 0)
+                pos = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
+
+            while (pos > 0) {
+                char ch = ::SendMessage(h, SCI_GETCHARAT, pos, 0);
+                if (ch != ' ' && ch != '\t' && ch != '\n') break;
+                pos = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
+            }
+
+            while (pos > 0) {
+                char ch = ::SendMessage(h, SCI_GETCHARAT, pos - 1, 0);
+                if (ch == ' ' || ch == '\t' || ch == '\n') break;
+                pos = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
+            }
+
+            while (true) {
+                char ch = ::SendMessage(h, SCI_GETCHARAT, pos, 0);
+                if (ch == ' ' || ch == '\t' || ch == '\n') break;
+
+                int next = ::SendMessage(h, SCI_POSITIONAFTER, pos, 0);
+                if (next == pos) break;
+                pos = next;
+            }
+
+            pos = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
+
+            extendSelection(h, pos);
+        }
+    }).motion("gm", 'm', [this](HWND h, int c) {
+        int first = ::SendMessage(h, SCI_GETFIRSTVISIBLELINE, 0, 0);
+        int lines = ::SendMessage(h, SCI_LINESONSCREEN, 0, 0);
+        int mid = first + lines / 2;
+        extendSelection(h, ::SendMessage(h, SCI_POSITIONFROMLINE, mid, 0));
+    });
+
     k.set("I", "Insert before", [this](HWND h, int c) {
         if (state.isBlockVisual) {
             int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
@@ -520,8 +610,20 @@ void VisualMode::setupKeyMaps() {
             ::SendMessage(h, SCI_SCROLLCARET, 0, 0);
         }
         else {
-            Motion::lineUp(h, c);
-            extendSelection(h, Utils::caretPos(h));
+            int line = Utils::caretLine(h);
+            int col  = ::SendMessage(h, SCI_GETCOLUMN, Utils::caretPos(h), 0);
+
+            int newLine = line - c;
+            if (newLine < 0) newLine = 0;
+
+            int newPos = ::SendMessage(h, SCI_POSITIONFROMLINE, newLine, 0);
+            int lineEnd = Utils::lineEnd(h, newLine);
+
+            int target = newPos + col;
+            if (target > lineEnd) target = lineEnd;
+
+            ::SendMessage(h, SCI_GOTOPOS, target, 0);
+            extendSelection(h, target);
         }
     })
     .motion("w", 'w', [this](HWND h, int c) {
@@ -1097,8 +1199,8 @@ void VisualMode::enterBlock(HWND hwnd) {
     int nextPos = ::SendMessage(hwnd, SCI_POSITIONAFTER, caret, 0);
 
     ::SendMessage(hwnd, SCI_SETRECTANGULARSELECTIONANCHOR, caret, 0);
-    ::SendMessage(hwnd, SCI_SETRECTANGULARSELECTIONCARET, nextPos, 0);
-    ::SendMessage(hwnd, SCI_SETCURRENTPOS, nextPos, 0);
+    ::SendMessage(hwnd, SCI_SETRECTANGULARSELECTIONCARET, caret, 0);
+    ::SendMessage(hwnd, SCI_SETCURRENTPOS, caret, 0);
 
     Utils::setStatus(TEXT("-- VISUAL BLOCK --"));
 }
@@ -1158,6 +1260,11 @@ void VisualMode::handleKey(HWND hwnd, char c) {
     }
 
     if (g_visualKeymap && g_visualKeymap->handleKey(hwnd, c)) {
+        state.textObjectPending = 0;
+        return;
+    }
+ 
+    if (g_normalKeymap && g_normalKeymap->handleKey(hwnd, c)) {
         state.textObjectPending = 0;
         return;
     }
@@ -1341,19 +1448,9 @@ void VisualMode::extendSelection(HWND h, int newPos) {
         ::SendMessage(h, SCI_SETCURRENTPOS,
             (int)::SendMessage(h, SCI_POSITIONAFTER, newPos, 0), 0);
     } else {
-        ::SendMessage(h, SCI_SETANCHOR,
-            (int)::SendMessage(h, SCI_POSITIONAFTER, anchor, 0), 0);
+        ::SendMessage(h, SCI_SETANCHOR, anchor, 0);
         ::SendMessage(h, SCI_SETCURRENTPOS, newPos, 0);
     }
-
-    // int selEnd = newPos;
-
-    // if (newPos >= anchor) {
-    //     selEnd = (int)::SendMessage(h, SCI_POSITIONAFTER, newPos, 0);
-    // }
-
-    // ::SendMessage(h, SCI_SETANCHOR, anchor, 0);
-    // ::SendMessage(h, SCI_SETCURRENTPOS, selEnd, 0);
 }
 
 void VisualMode::handleVisualReplaceInput(HWND hwnd, char replaceChar) {

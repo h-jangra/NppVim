@@ -12,6 +12,7 @@ public:
     void enterChar(HWND hwnd);
     void enterLine(HWND hwnd);
     void enterBlock(HWND hwnd);
+    void exitToNormal(HWND hwnd);
     void handleKey(HWND hwnd, char c);
     void visualMoveCursor(HWND hwndEdit, int newPos);
     
@@ -20,7 +21,6 @@ private:
     Motion motion;
     
     void setupKeyMaps();
-    void exitToNormal(HWND hwnd);
     
     void handleCharSearchInput(HWND hwnd, char searchChar, char searchType, int count);
     

@@ -127,37 +127,67 @@ void NormalMode::setupKeyMaps() {
      .set("ge", "Previous word end",  [](HWND h, int c) {
         for (int i = 0; i < c; i++) {
             int pos = Utils::caretPos(h);
-            int start = ::SendMessage(h, SCI_WORDSTARTPOSITION, pos, 1);
-            if (start > 0) {
-                int prev = ::SendMessage(h, SCI_POSITIONBEFORE, start, 0);
-                int prevWordStart = ::SendMessage(h, SCI_WORDSTARTPOSITION, prev, 1);
-                int prevWordEnd = ::SendMessage(h, SCI_WORDENDPOSITION, prev, 1);
-                if (prevWordStart < prevWordEnd) {
-                    ::SendMessage(h, SCI_GOTOPOS, prevWordEnd, 0);
-                }
+
+            if (pos > 0)
+                pos = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
+
+            while (pos > 0) {
+                char ch = ::SendMessage(h, SCI_GETCHARAT, pos, 0);
+                if (!isspace(ch)) break;
+                pos = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
             }
+
+            while (pos > 0) {
+                char ch = ::SendMessage(h, SCI_GETCHARAT, pos - 1, 0);
+                if (isspace(ch)) break;
+                pos = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
+            }
+
+            while (true) {
+                char ch = ::SendMessage(h, SCI_GETCHARAT, pos, 0);
+                if (isspace(ch)) break;
+
+                int next = ::SendMessage(h, SCI_POSITIONAFTER, pos, 0);
+                if (next == pos) break;
+                pos = next;
+            }
+
+            pos = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
+
+            ::SendMessage(h, SCI_GOTOPOS, pos, 0);
         }
     })
-    .set("gE", "Previous WORD end", [](HWND h, int c) {
+    .motion("gE", 'E', "Previous WORD end", [](HWND h, int c) {
         for (int i = 0; i < c; i++) {
             int pos = Utils::caretPos(h);
-            if (pos > 0) {
-                int prev = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
-                while (prev > 0) {
-                    char ch = ::SendMessage(h, SCI_GETCHARAT, prev, 0);
-                    if (std::isalnum(ch) || ch == '_') break;
-                    prev = ::SendMessage(h, SCI_POSITIONBEFORE, prev, 0);
-                }
-                if (prev > 0) {
-                    int start = prev;
-                    while (start > 0) {
-                        char ch = ::SendMessage(h, SCI_GETCHARAT, start - 1, 0);
-                        if (!std::isalnum(ch) && ch != '_') break;
-                        start--;
-                    }
-                    ::SendMessage(h, SCI_GOTOPOS, prev, 0);
-                }
+
+            if (pos > 0)
+                pos = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
+
+            while (pos > 0) {
+                char ch = ::SendMessage(h, SCI_GETCHARAT, pos, 0);
+                if (ch != ' ' && ch != '\t' && ch != '\n') break;
+                pos = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
             }
+
+            while (pos > 0) {
+                char ch = ::SendMessage(h, SCI_GETCHARAT, pos - 1, 0);
+                if (ch == ' ' || ch == '\t' || ch == '\n') break;
+                pos = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
+            }
+
+            while (true) {
+                char ch = ::SendMessage(h, SCI_GETCHARAT, pos, 0);
+                if (ch == ' ' || ch == '\t' || ch == '\n') break;
+
+                int next = ::SendMessage(h, SCI_POSITIONAFTER, pos, 0);
+                if (next == pos) break;
+                pos = next;
+            }
+
+            pos = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
+
+            ::SendMessage(h, SCI_GOTOPOS, pos, 0);
         }
     })
     .set("gf", "Goto file", [](HWND h, int c) {
@@ -248,21 +278,28 @@ void NormalMode::setupKeyMaps() {
     k.set("g0", "Screen line start", [](HWND h, int c) {
         ::SendMessage(h, SCI_VCHOME, 0, 0);
     })
-    .set("g^", "First non-blank (screen line)", [](HWND h, int c) {
+    .motion("g^", '^', "First non-blank (screen line)", [](HWND h, int c) {
         ::SendMessage(h, SCI_VCHOME, 0, 0);
     })
-    .set("g$", "Screen line end", [](HWND h, int c) {
+    .motion("g$", '$', "Screen line end", [](HWND h, int c) {
         ::SendMessage(h, SCI_LINEEND, 0, 0);
     })
-    .set("g_", "Last non-blank char", [](HWND h, int c) {
+    .motion("g_", '_', "Last non-blank char", [](HWND h, int c) {
         int line = Utils::caretLine(h);
+        int start = Utils::lineStart(h, line);
         int end = Utils::lineEnd(h, line);
-        while (end > 0) {
-            char ch = ::SendMessage(h, SCI_GETCHARAT, end - 1, 0);
-            if (!std::isspace(ch)) break;
-            end--;
+
+        int pos = end;
+        if (pos > 0)
+            pos = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
+
+        while (pos > 0) {
+            char ch = ::SendMessage(h, SCI_GETCHARAT, pos, 0);
+            if (ch != ' ' && ch != '\t') break;
+            pos = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
         }
-        ::SendMessage(h, SCI_GOTOPOS, end, 0);
+
+        ::SendMessage(h, SCI_GOTOPOS, pos, 0);
     })
     .motion("gj", 'j', "Down (visual line)", [](HWND h, int c) {
         for (int i = 0; i < c; i++)
@@ -272,7 +309,7 @@ void NormalMode::setupKeyMaps() {
         for (int i = 0; i < c; i++)
             ::SendMessage(h, SCI_LINEUP, 0, 0);
     })
-    .set("gm", "Middle of screen line", [](HWND h, int c) {
+    .motion("gm", 'm', "Middle of screen line", [](HWND h, int c) {
         int first = ::SendMessage(h, SCI_GETFIRSTVISIBLELINE, 0, 0);
         int lines = ::SendMessage(h, SCI_LINESONSCREEN, 0, 0);
         int mid = first + lines / 2;
@@ -1420,8 +1457,9 @@ void NormalMode::handleKey(HWND hwnd, char c) {
 
         int count = (state.repeatCount > 0) ? state.repeatCount : 1;
 
-        if (c == 'd') {
-            NormalMode::gotoDefinition(hwnd, state, true);
+        if (g_normalKeymap) {
+            g_normalKeymap->handleKey(hwnd, 'g');
+            g_normalKeymap->handleKey(hwnd, c);
         }
 
         state.opPending = 0;

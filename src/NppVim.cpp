@@ -609,6 +609,15 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
         bool ctrlPressed = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
 
         if (ctrlPressed && (state.mode == NORMAL || state.mode == VISUAL)) {
+            if (wParam == 'Q') {
+                if (state.mode == VISUAL && state.isBlockVisual) {
+                    g_normalMode->enter();
+                } else {
+                    g_visualMode->enterBlock(hwndEdit);
+                }
+                return 0;
+            }
+     
             if (wParam == 'D' && g_config.overrideCtrlD) {
                 // Ctrl+D: Page down
                 Motion::pageDown(hwndEdit);
@@ -647,21 +656,6 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
                     state.recordLastOp(OP_MOTION, state.repeatCount > 0 ? state.repeatCount : 1, 2);
                 }
                 state.repeatCount = 0;
-                return 0;
-            }
-            // Ctrl+Q: Enter visual block mode
-            else if (wParam == 'Q') {
-                if (state.mode == VISUAL) {
-                    if (state.isBlockVisual) {
-                        g_normalMode->enter();
-                    }
-                    else {
-                        g_visualMode->enterBlock(hwndEdit);
-                    }
-                }
-                else {
-                    g_visualMode->enterBlock(hwndEdit);
-                }
                 return 0;
             }
         }
