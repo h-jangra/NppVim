@@ -421,6 +421,18 @@ void TextObject::executeTextObjectOperation(HWND h, VimState& state, char op, in
 
     Utils::select(h, start, end);
 
+    std::string text = Utils::getTextRange(h, start, end);
+
+    char reg = Utils::getCurrentRegister();
+    
+    if (op == 'y' || op == 'd' || op == 'c') {
+        if (!(state.deleteToBlackhole && op != 'y')) {
+            if (reg != '_') {
+                Utils::storeRegister(reg, text.c_str());
+            }
+        }
+    }
+    
     switch (op) {
     case 'd':
         ::SendMessage(h, SCI_CLEAR, 0, 0);
@@ -435,7 +447,7 @@ void TextObject::executeTextObjectOperation(HWND h, VimState& state, char op, in
         break;
 
     case 'y':
-        ::SendMessage(h, SCI_COPY, 0, 0);
+        // ::SendMessage(h, SCI_COPY, 0, 0);
         ::SendMessage(h, SCI_SETSEL, start, start);
         state.recordLastOp(OP_MOTION, count, 'y');
         break;
