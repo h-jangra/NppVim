@@ -40,6 +40,7 @@ enum TextObjectType {
 struct VimConfig {
     std::string escapeKey = "esc";
     std::string customEscape = "";
+    bool enableKeyboardLayoutSwitching;
     int escapeTimeout = 300;
     bool overrideCtrlD = false;
     bool overrideCtrlU = false;
@@ -70,6 +71,9 @@ struct JumpPosition {
     long position = -1;
     int lineNumber = -1;
 };
+
+extern HKL g_userLayout;
+extern HKL g_englishLayout;
 
 extern int g_macroDepth;
 const int MAX_MACRO_DEPTH = 10;

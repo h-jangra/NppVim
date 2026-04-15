@@ -49,6 +49,8 @@ static HFONT g_hFontButton = NULL;
 static std::map<HWND, WNDPROC> origProcMap;
 
 VimConfig g_config;
+HKL g_userLayout = NULL;
+HKL g_englishLayout = NULL;
 
 // Forward declarations
 LRESULT CALLBACK ScintillaHookProc(HWND, UINT, WPARAM, LPARAM);
@@ -95,11 +97,17 @@ void loadConfig() {
     CreateDirectoryA(configDir.c_str(), NULL);
 
     // Set defaults
+    g_config.enableKeyboardLayoutSwitching = false;
+
     g_config.escapeKey = "esc";
     g_config.escapeTimeout = 300;
     g_config.overrideCtrlD = false;
     g_config.overrideCtrlU = false;
     g_config.overrideCtrlR = false;
+
+    g_config.xStoreClipboard = true;
+    g_config.dStoreClipboard = true;
+    g_config.cStoreClipboard = true;
 
     std::ifstream file(configPath);
     if (!file.is_open()) {
@@ -181,6 +189,9 @@ void loadConfig() {
             else if (key == "vim_enabled") {
                 g_config.vimEnabled = (value == "1" || value == "true");
             }
+            else if (key == "keyboard_layout_switching") {
+                g_config.enableKeyboardLayoutSwitching = (value == "1" || value == "true");
+            }
         }
     }
     file.close();
@@ -217,6 +228,7 @@ void saveConfig() {
         file << "c_store_clipboard=" << (g_config.cStoreClipboard ? "1" : "0") << "\n";
         file << "\n";
         file << "vim_enabled=" << (g_config.vimEnabled ? "1" : "0") << "\n";
+        file << "keyboard_layout_switching=" << (g_config.enableKeyboardLayoutSwitching ? "1" : "0") << "\n";
         file.close();
     }
 }
@@ -417,6 +429,7 @@ INT_PTR CALLBACK ConfigDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM
         CheckDlgButton(hwnd, IDC_CHECK_D_CLIPBOARD, g_config.dStoreClipboard ? BST_CHECKED : BST_UNCHECKED);
         CheckDlgButton(hwnd, IDC_CHECK_C_CLIPBOARD, g_config.cStoreClipboard ? BST_CHECKED : BST_UNCHECKED);
         CheckDlgButton(hwnd, IDC_CHECK_X_CLIPBOARD, g_config.xStoreClipboard ? BST_CHECKED : BST_UNCHECKED);
+        CheckDlgButton(hwnd, IDC_CHECK_KB_LAYOUT, g_config.enableKeyboardLayoutSwitching ? BST_CHECKED : BST_UNCHECKED);
         SetDlgItemTextA(hwnd, IDC_CUSTOM_ESCAPE, g_config.customEscape.c_str());
         EnableWindow(GetDlgItem(hwnd, IDC_CUSTOM_ESCAPE), selIndex == 4);
 
@@ -467,6 +480,7 @@ INT_PTR CALLBACK ConfigDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM
             CheckDlgButton(hwnd, IDC_CHECK_D_CLIPBOARD, BST_CHECKED);
             CheckDlgButton(hwnd, IDC_CHECK_C_CLIPBOARD, BST_CHECKED);
             CheckDlgButton(hwnd, IDC_CHECK_X_CLIPBOARD, BST_CHECKED);
+            CheckDlgButton(hwnd, IDC_CHECK_KB_LAYOUT, BST_UNCHECKED);
             MessageBox(hwnd, TEXT("Settings reset to defaults."), TEXT("Reset"), MB_OK | MB_ICONINFORMATION);
             break;
 
@@ -512,6 +526,7 @@ INT_PTR CALLBACK ConfigDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM
             g_config.dStoreClipboard = (IsDlgButtonChecked(hwnd, IDC_CHECK_D_CLIPBOARD) == BST_CHECKED);
             g_config.cStoreClipboard = (IsDlgButtonChecked(hwnd, IDC_CHECK_C_CLIPBOARD) == BST_CHECKED);
             g_config.xStoreClipboard = (IsDlgButtonChecked(hwnd, IDC_CHECK_X_CLIPBOARD) == BST_CHECKED);
+            g_config.enableKeyboardLayoutSwitching = (IsDlgButtonChecked(hwnd, IDC_CHECK_KB_LAYOUT) == BST_CHECKED);
 
             saveConfig();
             EndDialog(hwnd, IDOK);
@@ -602,6 +617,11 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
             return DefWindowProc(hwnd, msg, wParam, lParam);
         }
     }
+
+    if (msg == WM_INPUTLANGCHANGE && g_config.enableKeyboardLayoutSwitching) {
+        g_userLayout = GetKeyboardLayout(0);
+    }
+
     HWND hwndEdit = hwnd;
 
     // Handle Ctrl key overrides in NORMAL and VISUAL modes
@@ -990,6 +1010,9 @@ extern "C" __declspec(dllexport) void setInfo(NppData notpadPlusData) {
     g_normalMode = new NormalMode(state);
     g_visualMode = new VisualMode(state);
     g_commandMode = new CommandMode(state);
+
+    g_englishLayout = LoadKeyboardLayout(TEXT("00000409"), KLF_ACTIVATE);
+    g_userLayout = GetKeyboardLayout(0);
 
     state.vimEnabled = g_config.vimEnabled;
     ensureScintillaHooks();

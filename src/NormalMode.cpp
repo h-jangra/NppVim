@@ -1274,6 +1274,11 @@ void NormalMode::setupKeyMaps() {
 }
 
 void NormalMode::enter() {
+    
+    if (!g_config.enableKeyboardLayoutSwitching) {
+        ActivateKeyboardLayout(g_englishLayout, 0);
+    }
+
     HWND hwnd = Utils::getCurrentScintillaHandle();
 
     if (state.mode == VISUAL && !state.restoringVisual) {
@@ -1321,6 +1326,10 @@ void NormalMode::enter() {
 
 void NormalMode::enterInsertMode() {
     state.lastInsertPos = Utils::caretPos(Utils::getCurrentScintillaHandle());
+
+    if (g_config.enableKeyboardLayoutSwitching && g_userLayout) {
+        ActivateKeyboardLayout(g_userLayout, 0);
+    }
 
     HWND hwnd = Utils::getCurrentScintillaHandle();
     state.mode = INSERT;
