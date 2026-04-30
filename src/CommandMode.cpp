@@ -16,6 +16,20 @@ extern NppData nppData;
 
 static void appendNonKeymapHelp(std::string& help);
 
+auto toggleSplit = [](HWND, int) {
+    HWND npp = nppData._nppHandle;
+
+    int before = ::SendMessage(npp, NPPM_GETCURRENTVIEW, 0, 0);
+
+    ::SendMessage(npp, WM_COMMAND, IDM_VIEW_SWITCHTO_OTHER_VIEW, 0);
+
+    int after = ::SendMessage(npp, NPPM_GETCURRENTVIEW, 0, 0);
+
+    if (before == after) {
+        ::SendMessage(npp, WM_COMMAND, IDM_VIEW_CLONE_TO_ANOTHER_VIEW, 0);
+    }
+};
+
 void CommandMode::enter(char prompt) {
   state.commandMode = true;
   state.commandBuffer.clear();
@@ -288,7 +302,6 @@ void CommandMode::handleColonCommand(HWND hwndEdit, const std::string &cmd) {
         break;
     }
   }
-  g_commandKeymap->reset();
   return;
 
 }
@@ -375,14 +388,10 @@ CommandMode::CommandMode(VimState &state) : state(state)
     .set("bd", "Close current tab", [](HWND, int) {
         ::SendMessage(nppData._nppHandle, WM_COMMAND, IDM_FILE_CLOSE, 0);
     })
-    .set("sp", "Split window", [](HWND, int) {
-        ::SendMessage(nppData._nppHandle, IDM_VIEW_CLONE_TO_ANOTHER_VIEW, 0, 0);
-        Utils::setStatus(TEXT("Split window"));
-    })
-    .set("vs", "Vertical split", [](HWND, int) {
-        ::SendMessage(nppData._nppHandle, IDM_VIEW_CLONE_TO_ANOTHER_VIEW, 0, 0);
-        Utils::setStatus(TEXT("Vertical split"));
-    })
+    .set("vsplit", "Toggle split", toggleSplit)
+    .set("vs", "Toggle split", toggleSplit)
+    .set("split", "Toggle split", toggleSplit)
+    .set("sp", "Toggle split", toggleSplit)
     .set("gh", "Open GitHub", [](HWND, int) {
         ShellExecuteW(NULL, L"open", L"https://github.com/h-jangra/nppvim", NULL, NULL, SW_SHOWNORMAL);
     })
