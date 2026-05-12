@@ -588,13 +588,17 @@ void Utils::setCurrentRegister(char reg) {
     }
 }
 
-void Utils::storeRegister(char reg, const std::string& text){
-    if (reg == '+' || reg == '*')
+void Utils::storeRegister(char reg, const std::string& text, bool syncClipboard){
+    if (reg == '+' || reg == '*') {
         Utils::setClipboardText(text);
-    else
-        Utils::setRegisterContent(reg, text);
-        if(reg=='"')
-            Utils::setClipboardText(text);
+        return;
+    }
+
+    Utils::setRegisterContent(reg, text);
+
+    if (syncClipboard && reg == '"') {
+        Utils::setClipboardText(text);
+    }
 }
 
 std::string Utils::getTextRange(HWND h, int start, int end){

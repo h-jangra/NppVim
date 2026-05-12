@@ -61,7 +61,7 @@ void VisualMode::setupKeyMaps() {
                 std::string content = getSelectedText(h);
 
                 if (!content.empty()) {
-                    Utils::setRegisterContent(reg, content);
+                    Utils::storeRegister(reg, content, g_config.dStoreClipboard);
                 }
             }
 
@@ -81,7 +81,7 @@ void VisualMode::setupKeyMaps() {
             if (!toBlackhole && g_config.dStoreClipboard) {
                 std::string content = getSelectedText(h);
                 if (!content.empty()) {
-                    Utils::setRegisterContent(reg, content);
+                    Utils::storeRegister(reg, content, g_config.dStoreClipboard);
                 }
                 state.lastYankLinewise = true;
             }
@@ -98,7 +98,7 @@ void VisualMode::setupKeyMaps() {
             if (!toBlackhole && g_config.dStoreClipboard) {
                 std::string content = getSelectedText(h);
                 if (!content.empty()) {
-                    Utils::setRegisterContent(reg, content);
+                    Utils::storeRegister(reg, content, g_config.dStoreClipboard);
                 }
                 state.lastYankLinewise = false;
             }
@@ -109,7 +109,35 @@ void VisualMode::setupKeyMaps() {
          state.recordLastOp(OP_MOTION, c, 'd');
          exitToNormal(h);
      })
-    .set("x", "Clear selection", [this](HWND h, int c) { g_visualKeymap->handleKey(h, 'd'); })
+    .set("x", "Clear selection", [this](HWND h, int c) {
+        char reg = Utils::getCurrentRegister();
+        bool toBlackhole = (reg == '_' || state.deleteToBlackhole);
+
+        Utils::beginUndo(h);
+
+        int startPos = ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
+        int endPos = ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
+
+        if (!toBlackhole && g_config.xStoreClipboard) {
+            std::string content = getSelectedText(h);
+
+            if (!content.empty()) {
+                Utils::storeRegister(reg, content, g_config.xStoreClipboard);
+            }
+
+            state.lastYankLinewise = state.isLineVisual;
+        }
+
+        Utils::clear(h, startPos, endPos);
+
+        Utils::endUndo(h);
+
+        Utils::setCurrentRegister('"');
+        state.deleteToBlackhole = false;
+        state.recordLastOp(OP_MOTION, c, 'x');
+
+        exitToNormal(h);
+    })
     .set("y", "Yank selection", [this](HWND h, int c) {
         char reg = Utils::getCurrentRegister();
 
@@ -128,7 +156,7 @@ void VisualMode::setupKeyMaps() {
             std::string content = getSelectedText(h);
 
             if (!content.empty() && reg != '_') {
-                Utils::storeRegister(reg, content);
+                Utils::storeRegister(reg, content, true);
             }
             Utils::clearBlockSelection(h);
         }
@@ -138,7 +166,7 @@ void VisualMode::setupKeyMaps() {
 
             std::string content = getSelectedText(h);
             if (!content.empty() && reg != '_') {
-                Utils::storeRegister(reg, content);
+                Utils::storeRegister(reg, content, true);
             }
             state.lastYankLinewise = true;
         }
@@ -148,7 +176,7 @@ void VisualMode::setupKeyMaps() {
 
             std::string content = getSelectedText(h);
             if (!content.empty() && reg != '_') {
-                Utils::storeRegister(reg, content);
+                Utils::storeRegister(reg, content, true);
             }
             state.lastYankLinewise = false;
         }
@@ -172,7 +200,7 @@ void VisualMode::setupKeyMaps() {
                 std::string content = getSelectedText(h);
 
                 if (!content.empty()) {
-                    Utils::setRegisterContent(reg, content);
+                    Utils::storeRegister(reg, content, g_config.cStoreClipboard);
                 }
             }
 
@@ -205,7 +233,7 @@ void VisualMode::setupKeyMaps() {
             if (!toBlackhole && g_config.cStoreClipboard) {
                 std::string content = getSelectedText(h);
                 if (!content.empty()) {
-                    Utils::setRegisterContent(reg, content);
+                    Utils::storeRegister(reg, content, g_config.cStoreClipboard);
                 }
             }
 
@@ -930,22 +958,149 @@ void VisualMode::setupKeyMaps() {
     });
 
     k.set("p", "Paste over selection", [this](HWND h, int c) {
-        char reg = Utils::getCurrentRegister();
-        std::string content = Utils::getRegisterContent(reg);
 
-        if (content.empty()) return;
+        char reg = Utils::getCurrentRegister();
+
+        std::string content;
+        std::string originalContent;
+
+        if (reg == '+' || reg == '*') {
+
+            if (OpenClipboard(h)) {
+
+                HANDLE hData = GetClipboardData(CF_TEXT);
+
+                if (hData) {
+
+                    char* pszText =
+                        (char*)GlobalLock(hData);
+
+                    if (pszText) {
+                        content = pszText;
+                        GlobalUnlock(hData);
+                    }
+                }
+
+                CloseClipboard();
+            }
+
+        } else {
+            content = Utils::getRegisterContent(reg);
+        }
+
+        originalContent = content;
+
+        if (content.empty())
+            return;
+
+        int start =
+            ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
+
+        int end =
+            ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
+
+        std::string replaced =
+            getSelectedText(h);
 
         Utils::beginUndo(h);
 
-        int start = ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
-        int end   = ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
-
-        std::string replaced = getSelectedText(h);
-        if (!replaced.empty() && reg != '_') {
-            Utils::storeRegister('"', replaced);
+        if (!replaced.empty() && reg != '"') {
+            Utils::storeRegister('"', replaced, false);
         }
 
-        ::SendMessage(h, SCI_REPLACESEL, 0, (LPARAM)content.c_str());
+        Utils::clear(h, start, end);
+
+        for (int i = 0; i < c; i++) {
+
+            ::SendMessage(
+                h,
+                SCI_INSERTTEXT,
+                start,
+                (LPARAM)content.c_str()
+            );
+        }
+
+        if (reg == '"') {
+            Utils::storeRegister('"', originalContent, false);
+        }
+
+        int newEnd =
+            start + ((int)content.size() * c);
+
+        Utils::select(h, start, newEnd);
+
+        Utils::endUndo(h);
+
+        exitToNormal(h);
+    })
+    .set("P", "Paste before selection", [this](HWND h, int c) {
+
+        char reg = Utils::getCurrentRegister();
+
+        std::string content;
+        std::string originalContent;
+
+        if (reg == '+' || reg == '*') {
+
+            if (OpenClipboard(h)) {
+
+                HANDLE hData = GetClipboardData(CF_TEXT);
+
+                if (hData) {
+
+                    char* pszText =
+                        (char*)GlobalLock(hData);
+
+                    if (pszText) {
+                        content = pszText;
+                        GlobalUnlock(hData);
+                    }
+                }
+
+                CloseClipboard();
+            }
+
+        } else {
+            content = Utils::getRegisterContent(reg);
+        }
+
+        originalContent = content;
+
+        if (content.empty())
+            return;
+
+        int start =
+            ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
+
+        int end =
+            ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
+
+        std::string replaced =
+            getSelectedText(h);
+
+        Utils::beginUndo(h);
+
+        if (!replaced.empty() && reg != '"') {
+            Utils::storeRegister('"', replaced, false);
+        }
+
+        Utils::clear(h, start, end);
+
+        for (int i = 0; i < c; i++) {
+
+            ::SendMessage(
+                h,
+                SCI_INSERTTEXT,
+                start,
+                (LPARAM)content.c_str()
+            );
+        }
+
+        if (reg == '"') {
+            Utils::storeRegister('"', originalContent, false);
+        }
+
+        Utils::select(h, start, start);
 
         Utils::endUndo(h);
 
@@ -1125,7 +1280,7 @@ void VisualMode::setupKeyMaps() {
         if (!toBlackhole && g_config.cStoreClipboard) {
             std::string content = getSelectedText(h);
             if (!content.empty()) {
-                Utils::setRegisterContent(reg, content);
+                Utils::storeRegister(reg, content, g_config.cStoreClipboard);
             }
         }
 

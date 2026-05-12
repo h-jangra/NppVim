@@ -84,7 +84,7 @@ public:
     static bool isValidRegister(char c);
     static char getCurrentRegister();
     static void setCurrentRegister(char reg);
-    static void storeRegister(char reg, const std::string& text);
+    static void storeRegister(char reg, const std::string& text, bool syncClipboard = true);
 
     static std::string getTextRange(HWND h, int start, int end);
     static void rot13(HWND hwnd, int start, int end);
