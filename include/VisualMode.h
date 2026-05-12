@@ -32,6 +32,7 @@ private:
 
     void extendSelection(HWND hwndEdit, int newPos);
     void handleVisualReplaceInput(HWND hwnd, char replaceChar);
+    void saveVisualSelection(HWND h);
 };
 
 extern VisualMode* g_visualMode;

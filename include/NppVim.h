@@ -89,8 +89,6 @@ struct VimState {
 
     HKL savedInsertLayout = nullptr;
 
-    int lastVisualStart = -1;
-    int lastVisualEnd = -1;
     int lastVisualAnchor = -1;
     int lastVisualCaret = -1;
     int lastInsertPos = -1;

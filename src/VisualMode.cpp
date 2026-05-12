@@ -107,6 +107,8 @@ void VisualMode::setupKeyMaps() {
         }
          Utils::endUndo(h);
          state.recordLastOp(OP_MOTION, c, 'd');
+         
+         saveVisualSelection(h);
          exitToNormal(h);
      })
     .set("x", "Clear selection", [this](HWND h, int c) {
@@ -136,6 +138,7 @@ void VisualMode::setupKeyMaps() {
         state.deleteToBlackhole = false;
         state.recordLastOp(OP_MOTION, c, 'x');
 
+        saveVisualSelection(h);
         exitToNormal(h);
     })
     .set("y", "Yank selection", [this](HWND h, int c) {
@@ -184,6 +187,8 @@ void VisualMode::setupKeyMaps() {
         Utils::setCurrentRegister('"');
         state.deleteToBlackhole = false;
         state.recordLastOp(OP_MOTION, c, 'y');
+
+        saveVisualSelection(h);
         exitToNormal(h);
     })
      .set("c", "Change selection", [this](HWND h, int c) {
@@ -300,7 +305,10 @@ void VisualMode::setupKeyMaps() {
 
     k.set("v", "Character visual", [this](HWND h, int c) {
         if (state.isLineVisual || state.isBlockVisual) enterChar(h);
-        else exitToNormal(h);
+        else {
+            saveVisualSelection(h);
+            exitToNormal(h);
+        }
      })
      .set("V", "Line visual", [this](HWND h, int c) {
          if (state.isLineVisual) exitToNormal(h);
@@ -315,6 +323,8 @@ void VisualMode::setupKeyMaps() {
         int s = ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
         int e = ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
         Utils::rot13(h, s, e);
+
+        saveVisualSelection(h);
         exitToNormal(h);
     });
 
@@ -1711,4 +1721,12 @@ void VisualMode::handleVisualReplaceInput(HWND hwnd, char replaceChar) {
     state.visualReplacePending = false;
     state.recordLastOp(OP_REPLACE, 1, 'r', replaceChar);
     exitToNormal(hwnd);
+}
+
+void VisualMode::saveVisualSelection(HWND h) {
+    state.lastVisualAnchor = ::SendMessage(h, SCI_GETANCHOR, 0, 0);
+    state.lastVisualCaret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+
+    state.lastVisualWasLine = state.isLineVisual;
+    state.lastVisualWasBlock = state.isBlockVisual;
 }

@@ -1194,20 +1194,22 @@ void NormalMode::setupKeyMaps() {
              ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_VIEW_TAB_PREV);
          state.recordLastOp(OP_MOTION, c, 'T');
      })
-    .set("gv", [this](HWND h, int c) {
-        if (state.lastVisualAnchor < 0 || state.lastVisualCaret < 0) return;
+    .set("gv", "Restore previous visual selection", [this](HWND h, int c) {
+        if (state.lastVisualAnchor == -1 || state.lastVisualCaret == -1) return;
 
-        state.restoringVisual = true;
+        state.mode = VISUAL;
+        state.isLineVisual = state.lastVisualWasLine;
+        state.isBlockVisual = state.lastVisualWasBlock;
 
-        if (state.lastVisualWasBlock)
-            g_visualMode->enterBlock(h);
-        else if (state.lastVisualWasLine)
-            g_visualMode->enterLine(h);
-        else
-            g_visualMode->enterChar(h);
+        if (state.isBlockVisual) {
+            ::SendMessage( h, SCI_SETSELECTIONMODE, SC_SEL_RECTANGLE, 0);
+            ::SendMessage( h, SCI_SETRECTANGULARSELECTIONANCHOR, state.lastVisualAnchor, 0);
+            ::SendMessage( h, SCI_SETRECTANGULARSELECTIONCARET, state.lastVisualCaret, 0);
+        } else {
+            Utils::select( h, state.lastVisualAnchor, state.lastVisualCaret);
+        }
 
-        ::SendMessage(h, SCI_SETSEL, state.lastVisualAnchor, state.lastVisualCaret);
-        state.restoringVisual = false;
+        ::SendMessage(h, SCI_SCROLLCARET, 0, 0);
     })
      .set("gi", "Jumps to last insert position", [this](HWND h, int c) {
         if (state.lastInsertPos == -1) return;
