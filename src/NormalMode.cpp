@@ -347,8 +347,11 @@ void NormalMode::setupKeyMaps() {
         auto bounds = Utils::findWordBounds(h, pos);
         if (bounds.first != bounds.second && g_commandMode) {
             std::string text = Utils::getTextRange(h, bounds.first, bounds.second);
-            g_commandMode->performSearch(h, text.c_str(), true);
-            g_commandMode->searchNext(h);
+            state.lastSearchForward = true;
+            ::SendMessage(h, SCI_GOTOPOS, bounds.first, 0);
+            g_commandMode->performSearch(h, text.c_str(), 0);
+            for (int i = 0; i < (c > 0 ? c : 1); i++) g_commandMode->searchNext(h);
+            state.recordLastOp(OP_MOTION, c, '*');
         }
     })
     .set("g#", "Search backward (no boundary)", [this](HWND h, int c) {
@@ -356,8 +359,11 @@ void NormalMode::setupKeyMaps() {
         auto bounds = Utils::findWordBounds(h, pos);
         if (bounds.first != bounds.second && g_commandMode) {
             std::string text = Utils::getTextRange(h, bounds.first, bounds.second);
-            g_commandMode->performSearch(h, text.c_str(), true);
-            g_commandMode->searchPrevious(h);
+            state.lastSearchForward = false;
+            ::SendMessage(h, SCI_GOTOPOS, bounds.first, 0);
+            g_commandMode->performSearch(h, text.c_str(), 0);
+            for (int i = 0; i < (c > 0 ? c : 1); i++) g_commandMode->searchPrevious(h);
+            state.recordLastOp(OP_MOTION, c, '#');
         }
     })
     .set("gd", "Goto local definition", [this](HWND h, int c) {
@@ -855,47 +861,63 @@ void NormalMode::setupKeyMaps() {
         state.deleteToBlackhole = false;
     });
 
-    k.set("/", "Forward search", [](HWND h, int c) { if (g_commandMode) g_commandMode->enter('/'); })
-     .set("?", "Regex search", [](HWND h, int c) { if (g_commandMode) g_commandMode->enter('?'); })
+    k.set("/", "Forward search", [this](HWND h, int c) {
+         if (g_commandMode) g_commandMode->enter('/');
+         state.lastSearchForward = true;
+    })
+     .set("?", "Regex search", [this](HWND h, int c) { 
+         state.lastSearchForward = false;
+         if (g_commandMode) g_commandMode->enter('?'); 
+     })
      .set("n", "Next match", [this](HWND h, int c) {
-         if (g_commandMode) {
-             long pos = Utils::caretPos(h);
-             int line = Utils::caretLine(h);
-             state.recordJump(pos, line);
-             for (int i = 0; i < c; i++) g_commandMode->searchNext(h);
-             state.recordLastOp(OP_MOTION, c, 'n');
-         }
+        if (!g_commandMode) return;
+
+        for (int i = 0; i < c; i++) {
+            if (state.lastSearchForward)
+                g_commandMode->searchNext(h);
+            else
+                g_commandMode->searchPrevious(h);
+        }
      })
      .set("N", "Previous match", [this](HWND h, int c) {
-         if (g_commandMode) {
-             long pos = Utils::caretPos(h);
-             int line = Utils::caretLine(h);
-             state.recordJump(pos, line);
-             for (int i = 0; i < c; i++) g_commandMode->searchPrevious(h);
-             state.recordLastOp(OP_MOTION, c, 'N');
-         }
+        if (!g_commandMode) return;
+
+        for (int i = 0; i < c; i++) {
+            if (state.lastSearchForward)
+                g_commandMode->searchPrevious(h);
+            else
+                g_commandMode->searchNext(h);
+        }
      })
      .set("*", "Search word forward", [this](HWND h, int c) {
-         int pos = Utils::caretPos(h);
-         auto bounds = Utils::findWordBounds(h, pos);
-         if (bounds.first != bounds.second && g_commandMode) {
-             int len = bounds.second - bounds.first;
-             std::string text = Utils::getTextRange(h, bounds.first, bounds.second);
-             g_commandMode->performSearch(h, text.c_str(), false);
-             g_commandMode->searchNext(h);
-             state.recordLastOp(OP_MOTION, c, '*');
-         }
+        int pos = Utils::caretPos(h);
+        auto bounds = Utils::findWordBounds(h, pos);
+        if (bounds.first != bounds.second && g_commandMode) {
+            std::string text = Utils::getTextRange(h, bounds.first, bounds.second);
+            state.lastSearchForward = true;
+            // Force search to start at beginning of word to ensure it finds THIS word first
+            ::SendMessage(h, SCI_GOTOPOS, bounds.first, 0); 
+            g_commandMode->performSearch(h, text.c_str(), SCFIND_WHOLEWORD);
+            // performSearch already found and selected the current word.
+            // Now searchNext will jump to the next one.
+            for (int i = 0; i < (c > 0 ? c : 1); i++) g_commandMode->searchNext(h);
+            state.recordLastOp(OP_MOTION, c, '*');
+        }
      })
      .set("#", "Search word backward", [this](HWND h, int c) {
-         int pos = Utils::caretPos(h);
-         auto bounds = Utils::findWordBounds(h, pos);
-         if (bounds.first != bounds.second && g_commandMode) {
-             int len = bounds.second - bounds.first;
-             std::string text = Utils::getTextRange(h, bounds.first, bounds.second);
-             g_commandMode->performSearch(h, text.c_str(), false);
-             g_commandMode->searchPrevious(h);
-             state.recordLastOp(OP_MOTION, c, '#');
-         }
+        int pos = Utils::caretPos(h);
+        auto bounds = Utils::findWordBounds(h, pos);
+        if (bounds.first != bounds.second && g_commandMode) {
+            std::string text = Utils::getTextRange(h, bounds.first, bounds.second);
+            state.lastSearchForward = false;
+            // Force search to start at beginning of word
+            ::SendMessage(h, SCI_GOTOPOS, bounds.first, 0);
+            g_commandMode->performSearch(h, text.c_str(), SCFIND_WHOLEWORD);
+            // performSearch found the current word.
+            // Now searchPrevious will jump to the previous one.
+            for (int i = 0; i < (c > 0 ? c : 1); i++) g_commandMode->searchPrevious(h);
+            state.recordLastOp(OP_MOTION, c, '#');
+        }
      });
 
     k.set("f", "Find character", [this](HWND h, int c) {

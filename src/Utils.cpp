@@ -47,10 +47,14 @@ std::pair<int, int> Utils::findWordBoundsEx(HWND hwndEdit, int pos, bool bigWord
     int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
     if (pos >= docLen) return {pos, pos};
     
-    int style = bigWord ? 1 : 0;
+    // Scintilla SCI_WORDSTARTPOSITION/ENDPOSITION:
+    // style (bool onlyWordCharacters):
+    // true: use only word characters (small word)
+    // false: use any non-whitespace characters (big word)
+    bool onlyWordChars = !bigWord;
     
-    int wordStart = (int)::SendMessage(hwndEdit, SCI_WORDSTARTPOSITION, pos, style);
-    int wordEnd = (int)::SendMessage(hwndEdit, SCI_WORDENDPOSITION, pos, style);
+    int wordStart = (int)::SendMessage(hwndEdit, SCI_WORDSTARTPOSITION, pos, onlyWordChars);
+    int wordEnd = (int)::SendMessage(hwndEdit, SCI_WORDENDPOSITION, pos, onlyWordChars);
     
     return {wordStart, wordEnd};
 }
@@ -104,7 +108,7 @@ std::pair<int, int> Utils::findQuoteBounds(HWND hwndEdit, int pos, char quoteCha
     return { startPos, endPos };
 }
 
-void Utils::updateSearchHighlight(HWND hwndEdit, const std::string &searchTerm, bool useRegex)
+void Utils::updateSearchHighlight(HWND hwndEdit, const std::string &searchTerm, int searchFlags)
 {
   if (searchTerm.empty())
   {
@@ -122,8 +126,7 @@ void Utils::updateSearchHighlight(HWND hwndEdit, const std::string &searchTerm, 
   ::SendMessage(hwndEdit, SCI_INDICSETALPHA, 0, 100);
   ::SendMessage(hwndEdit, SCI_INDICSETOUTLINEALPHA, 0, 255);
 
-  int flags = (useRegex ? SCFIND_REGEXP : 0);
-  ::SendMessage(hwndEdit, SCI_SETSEARCHFLAGS, flags, 0);
+  ::SendMessage(hwndEdit, SCI_SETSEARCHFLAGS, searchFlags, 0);
 
   int pos = 0;
   while (pos < docLen)
@@ -149,7 +152,7 @@ void Utils::updateSearchHighlight(HWND hwndEdit, const std::string &searchTerm, 
   }
 }
 
-void Utils::showCurrentMatchPosition(HWND hwndEdit, const std::string &searchTerm, bool useRegex)
+void Utils::showCurrentMatchPosition(HWND hwndEdit, const std::string &searchTerm, int searchFlags)
 {
   if (searchTerm.empty())
     return;
@@ -157,8 +160,7 @@ void Utils::showCurrentMatchPosition(HWND hwndEdit, const std::string &searchTer
   int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
   int currentPos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
 
-  int flags = (useRegex ? SCFIND_REGEXP : 0);
-  ::SendMessage(hwndEdit, SCI_SETSEARCHFLAGS, flags, 0);
+  ::SendMessage(hwndEdit, SCI_SETSEARCHFLAGS, searchFlags, 0);
 
   int totalMatches = 0;
   int currentMatchIndex = 0;
@@ -198,13 +200,12 @@ void Utils::showCurrentMatchPosition(HWND hwndEdit, const std::string &searchTer
   }
 }
 
-int Utils::countSearchMatches(HWND hwndEdit, const std::string &searchTerm, bool useRegex)
+int Utils::countSearchMatches(HWND hwndEdit, const std::string &searchTerm, int searchFlags)
 {
   if (!hwndEdit || searchTerm.empty())
     return 0;
 
-  int flags = (useRegex ? SCFIND_REGEXP : 0);
-  ::SendMessage(hwndEdit, SCI_SETSEARCHFLAGS, flags, 0);
+  ::SendMessage(hwndEdit, SCI_SETSEARCHFLAGS, searchFlags, 0);
 
   int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
   int count = 0;
@@ -608,7 +609,7 @@ std::string Utils::getTextRange(HWND h, int start, int end){
     tr.chrg.cpMax = end;
     tr.lpstrText = buffer.data();
     ::SendMessage(h, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
-    return std::string(buffer.data());
+    return std::string(buffer.data(), end - start);
 }
 
 void Utils::rot13(HWND hwnd, int start, int end) {

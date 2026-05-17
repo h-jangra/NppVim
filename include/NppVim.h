@@ -126,7 +126,7 @@ struct VimState {
 
     std::string commandBuffer;
     std::string lastSearchTerm;
-    bool useRegex = false;
+    int searchFlags = 0;
     int lastSearchMatchCount = -1;
     int visualSearchAnchor = -1;
 
@@ -153,7 +153,7 @@ struct VimState {
         isBacktickJump = false;
         commandBuffer.clear();
         lastSearchTerm.clear();
-        useRegex = false;
+        searchFlags = 0;
         lastSearchMatchCount = -1;
     }
 

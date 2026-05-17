@@ -18,7 +18,7 @@ public:
     void updateStatus();
 
     // Search functions
-    void performSearch(HWND hwndEdit, const std::string& searchTerm, bool useRegex = false);
+    void performSearch(HWND hwndEdit, const std::string& searchTerm, int searchFlags = 0);
     void searchNext(HWND hwndEdit);
     void searchPrevious(HWND hwndEdit);
     void handleMarksCommand(HWND hwndEdit, const std::string& commandLine);
@@ -29,7 +29,7 @@ private:
 
     void handleCommand(HWND hwndEdit);
     void handleColonCommand(HWND hwndEdit, const std::string& cmd);
-    void handleSearchCommand(HWND hwndEdit, const std::string& searchTerm, bool useRegex = false);
+    void handleSearchCommand(HWND hwndEdit, const std::string& searchTerm, int searchFlags = 0);
     void handleSubstitutionCommand(HWND hwndEdit, const std::string& cmd);
     void performSubstitution(HWND hwndEdit, const std::string& pattern, const std::string& replacement,
          bool useRegex, bool caseInsensitive, bool replaceAll, bool confirmEach, bool globalReplace, int startPos, int endPos);

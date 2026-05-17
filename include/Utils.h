@@ -26,10 +26,10 @@ public:
     static int findMatchingBracket(HWND hwndEdit, int pos, char openChar, char closeChar);
     static std::pair<int, int> findQuoteBounds(HWND hwndEdit, int pos, char quoteChar);
 
-    static void updateSearchHighlight(HWND hwndEdit, const std::string& searchTerm, bool useRegex);
-    static void showCurrentMatchPosition(HWND hwndEdit, const std::string& searchTerm, bool useRegex);
+    static void updateSearchHighlight(HWND hwndEdit, const std::string& searchTerm, int searchFlags);
+    static void showCurrentMatchPosition(HWND hwndEdit, const std::string& searchTerm, int searchFlags);
 
-    static int countSearchMatches(HWND hwndEdit, const std::string& searchTerm, bool useRegex);
+    static int countSearchMatches(HWND hwndEdit, const std::string& searchTerm, int searchFlags);
 
     static void handleIndent(HWND hwndEdit, int count);
     static void handleUnindent(HWND hwndEdit, int count);

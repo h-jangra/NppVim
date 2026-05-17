@@ -170,13 +170,13 @@ void CommandMode::handleCommand(HWND hwndEdit) {
   try {
     if (firstChar == '/') {
       if (buf.size() > 1) {
-        handleSearchCommand(hwndEdit, buf.substr(1));
+        handleSearchCommand(hwndEdit, buf.substr(1), 0);
       } else {
         Utils::setStatus(TEXT("No search pattern"));
       }
     } else if (firstChar == '?') {
       if (buf.size() > 1) {
-        handleSearchCommand(hwndEdit, buf.substr(1), true);
+        handleSearchCommand(hwndEdit, buf.substr(1), SCFIND_REGEXP);
       } else {
         Utils::setStatus(TEXT("No regex pattern"));
       }
@@ -202,8 +202,8 @@ void CommandMode::handleCommand(HWND hwndEdit) {
   }
 }
 
-void CommandMode::handleSearchCommand(HWND hwndEdit, const std::string &searchTerm, bool useRegex) {
-  performSearch(hwndEdit, searchTerm, useRegex);
+void CommandMode::handleSearchCommand(HWND hwndEdit, const std::string &searchTerm, int searchFlags) {
+  performSearch(hwndEdit, searchTerm, searchFlags);
 }
 
 void CommandMode::handleColonCommand(HWND hwndEdit, const std::string &cmd) {
@@ -863,7 +863,7 @@ void CommandMode::performSubstitution(HWND hwndEdit, const std::string &pattern,
   }
 }
 
-void CommandMode::performSearch(HWND hwndEdit, const std::string &searchTerm, bool useRegex)
+void CommandMode::performSearch(HWND hwndEdit, const std::string &searchTerm, int searchFlags)
 {
   if (searchTerm.empty())
   {
@@ -872,13 +872,12 @@ void CommandMode::performSearch(HWND hwndEdit, const std::string &searchTerm, bo
   }
 
   state.lastSearchTerm = searchTerm;
-  state.useRegex = useRegex;
-  state.lastSearchMatchCount = Utils::countSearchMatches(hwndEdit, searchTerm, useRegex);
-  Utils::updateSearchHighlight(hwndEdit, searchTerm, useRegex);
+  state.searchFlags = searchFlags;
+  state.lastSearchMatchCount = Utils::countSearchMatches(hwndEdit, searchTerm, searchFlags);
+  Utils::updateSearchHighlight(hwndEdit, searchTerm, searchFlags);
 
   int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
-  int flags = (useRegex ? SCFIND_REGEXP : 0);
-  ::SendMessage(hwndEdit, SCI_SETSEARCHFLAGS, flags, 0);
+  ::SendMessage(hwndEdit, SCI_SETSEARCHFLAGS, searchFlags, 0);
 
   int startPos;
   if (state.mode == VISUAL && state.visualSearchAnchor != -1)
@@ -931,7 +930,7 @@ void CommandMode::performSearch(HWND hwndEdit, const std::string &searchTerm, bo
     }
 
     ::SendMessage(hwndEdit, SCI_SCROLLCARET, 0, 0);
-    Utils::showCurrentMatchPosition(hwndEdit, searchTerm, useRegex);
+    Utils::showCurrentMatchPosition(hwndEdit, searchTerm, searchFlags);
   }
   else
   {
@@ -941,122 +940,98 @@ void CommandMode::performSearch(HWND hwndEdit, const std::string &searchTerm, bo
 
 void CommandMode::searchNext(HWND hwndEdit)
 {
-  if (state.lastSearchTerm.empty())
-  {
-    Utils::setStatus(TEXT("No previous search"));
-    return;
-  }
+    if (state.lastSearchTerm.empty())
+    {
+        Utils::setStatus(TEXT("No previous search"));
+        return;
+    }
 
-  int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
-  int startPos = (int)::SendMessage(hwndEdit, SCI_GETSELECTIONEND, 0, 0);
+    int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
+    int startPos = (int)::SendMessage(hwndEdit, SCI_GETSELECTIONEND, 0, 0);
 
-  int flags = (state.useRegex ? SCFIND_REGEXP : 0);
-  ::SendMessage(hwndEdit, SCI_SETSEARCHFLAGS, flags, 0);
+    ::SendMessage(hwndEdit, SCI_SETSEARCHFLAGS, state.searchFlags, 0);
 
-  ::SendMessage(hwndEdit, SCI_SETTARGETSTART, startPos, 0);
-  ::SendMessage(hwndEdit, SCI_SETTARGETEND, docLen, 0);
-
-  int found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
-                                 (WPARAM)state.lastSearchTerm.length(), (LPARAM)state.lastSearchTerm.c_str());
-
-  if (found == -1)
-  {
-    ::SendMessage(hwndEdit, SCI_SETTARGETSTART, 0, 0);
+    // Search from current selection end to end of document
+    ::SendMessage(hwndEdit, SCI_SETTARGETSTART, startPos, 0);
     ::SendMessage(hwndEdit, SCI_SETTARGETEND, docLen, 0);
-    found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
-                               (WPARAM)state.lastSearchTerm.length(), (LPARAM)state.lastSearchTerm.c_str());
+
+    int found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
+        (WPARAM)state.lastSearchTerm.length(), (LPARAM)state.lastSearchTerm.c_str());
+
+    if (found == -1)
+    {
+        // Wrap to top: search from 0 to end of document
+        ::SendMessage(hwndEdit, SCI_SETTARGETSTART, 0, 0);
+        ::SendMessage(hwndEdit, SCI_SETTARGETEND, docLen, 0);
+        found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
+            (WPARAM)state.lastSearchTerm.length(), (LPARAM)state.lastSearchTerm.c_str());
+
+        if (found != -1)
+        {
+            Utils::setStatus(TEXT("Search wrapped to top"));
+        }
+    }
 
     if (found != -1)
     {
-      Utils::setStatus(TEXT("Search wrapped to top"));
+        int start = (int)::SendMessage(hwndEdit, SCI_GETTARGETSTART, 0, 0);
+        int end = (int)::SendMessage(hwndEdit, SCI_GETTARGETEND, 0, 0);
+        ::SendMessage(hwndEdit, SCI_SETSEL, start, end);
+        ::SendMessage(hwndEdit, SCI_SCROLLCARET, 0, 0);
+        Utils::showCurrentMatchPosition(hwndEdit, state.lastSearchTerm, state.searchFlags);
     }
-  }
-
-  if (found != -1)
-  {
-    int start = (int)::SendMessage(hwndEdit, SCI_GETTARGETSTART, 0, 0);
-    int end = (int)::SendMessage(hwndEdit, SCI_GETTARGETEND, 0, 0);
-    ::SendMessage(hwndEdit, SCI_SETSEL, start, end);
-    ::SendMessage(hwndEdit, SCI_SCROLLCARET, 0, 0);
-    Utils::showCurrentMatchPosition(hwndEdit, state.lastSearchTerm, state.useRegex);
-  }
-  else
-  {
-    Utils::setStatus(TEXT("Pattern not found"));
-  }
+    else
+    {
+        Utils::setStatus(TEXT("Pattern not found"));
+    }
 }
 
 void CommandMode::searchPrevious(HWND hwndEdit)
 {
-  if (state.lastSearchTerm.empty())
-  {
-    Utils::setStatus(TEXT("No previous search"));
-    return;
-  }
-
-  int startPos = (int)::SendMessage(hwndEdit, SCI_GETSELECTIONSTART, 0, 0);
-  if (startPos > 0) startPos--;
-
-  int flags = (state.useRegex ? SCFIND_REGEXP : 0);
-  ::SendMessage(hwndEdit, SCI_SETSEARCHFLAGS, flags, 0);
-
-  ::SendMessage(hwndEdit, SCI_SETTARGETSTART, 0, 0);
-  ::SendMessage(hwndEdit, SCI_SETTARGETEND, startPos, 0);
-
-  int found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
-                                 (WPARAM)state.lastSearchTerm.length(), (LPARAM)state.lastSearchTerm.c_str());
-
-  int lastFound = -1;
-  int lastStart = -1, lastEnd = -1;
-
-  while (found != -1)
-  {
-    lastFound = found;
-    lastStart = (int)::SendMessage(hwndEdit, SCI_GETTARGETSTART, 0, 0);
-    lastEnd = (int)::SendMessage(hwndEdit, SCI_GETTARGETEND, 0, 0);
-    ::SendMessage(hwndEdit, SCI_SETTARGETSTART, lastEnd, 0);
-    found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
-                               (WPARAM)state.lastSearchTerm.length(), (LPARAM)state.lastSearchTerm.c_str());
-  }
-
-  if (lastFound != -1)
-  {
-    ::SendMessage(hwndEdit, SCI_SETSEL, lastStart, lastEnd);
-    ::SendMessage(hwndEdit, SCI_SCROLLCARET, 0, 0);
-    Utils::showCurrentMatchPosition(hwndEdit, state.lastSearchTerm, state.useRegex);
-  }
-  else
-  {
-    int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
-    ::SendMessage(hwndEdit, SCI_SETTARGETSTART, startPos, 0);
-    ::SendMessage(hwndEdit, SCI_SETTARGETEND, docLen, 0);
-
-    found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
-                               (WPARAM)state.lastSearchTerm.length(), (LPARAM)state.lastSearchTerm.c_str());
-
-    lastFound = -1;
-    while (found != -1)
+    if (state.lastSearchTerm.empty())
     {
-      lastFound = found;
-      lastStart = (int)::SendMessage(hwndEdit, SCI_GETTARGETSTART, 0, 0);
-      lastEnd = (int)::SendMessage(hwndEdit, SCI_GETTARGETEND, 0, 0);
-      ::SendMessage(hwndEdit, SCI_SETTARGETSTART, lastEnd, 0);
-      found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
-                                 (WPARAM)state.lastSearchTerm.length(), (LPARAM)state.lastSearchTerm.c_str());
+        Utils::setStatus(TEXT("No previous search"));
+        return;
     }
 
-    if (lastFound != -1)
+    int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
+    int startPos = (int)::SendMessage(hwndEdit, SCI_GETSELECTIONSTART, 0, 0);
+
+    ::SendMessage(hwndEdit, SCI_SETSEARCHFLAGS, state.searchFlags, 0);
+
+    // Search backwards from selection start to beginning of document
+    ::SendMessage(hwndEdit, SCI_SETTARGETSTART, startPos, 0);
+    ::SendMessage(hwndEdit, SCI_SETTARGETEND, 0, 0);
+
+    int found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
+        (WPARAM)state.lastSearchTerm.length(), (LPARAM)state.lastSearchTerm.c_str());
+
+    if (found == -1)
     {
-      ::SendMessage(hwndEdit, SCI_SETSEL, lastStart, lastEnd);
-      ::SendMessage(hwndEdit, SCI_SCROLLCARET, 0, 0);
-      Utils::setStatus(TEXT("Search wrapped to bottom"));
-      Utils::showCurrentMatchPosition(hwndEdit, state.lastSearchTerm, state.useRegex);
+        // Wrap to bottom: search backwards from end of document to beginning
+        ::SendMessage(hwndEdit, SCI_SETTARGETSTART, docLen, 0);
+        ::SendMessage(hwndEdit, SCI_SETTARGETEND, 0, 0);
+        found = (int)::SendMessage(hwndEdit, SCI_SEARCHINTARGET,
+            (WPARAM)state.lastSearchTerm.length(), (LPARAM)state.lastSearchTerm.c_str());
+
+        if (found != -1)
+        {
+            Utils::setStatus(TEXT("Search wrapped to bottom"));
+        }
+    }
+
+    if (found != -1)
+    {
+        int start = (int)::SendMessage(hwndEdit, SCI_GETTARGETSTART, 0, 0);
+        int end = (int)::SendMessage(hwndEdit, SCI_GETTARGETEND, 0, 0);
+        ::SendMessage(hwndEdit, SCI_SETSEL, start, end);
+        ::SendMessage(hwndEdit, SCI_SCROLLCARET, 0, 0);
+        Utils::showCurrentMatchPosition(hwndEdit, state.lastSearchTerm, state.searchFlags);
     }
     else
     {
-      Utils::setStatus(TEXT("Pattern not found"));
+        Utils::setStatus(TEXT("Pattern not found"));
     }
-  }
 }
 
 void CommandMode::handleMarksCommand(HWND hwndEdit, const std::string &commandLine)
