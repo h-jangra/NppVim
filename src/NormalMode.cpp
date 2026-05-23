@@ -427,7 +427,12 @@ void NormalMode::setupKeyMaps() {
      .set("c", "Change line", [this](HWND h, int c) {
          state.resetPending();
          Utils::beginUndo(h);
-         for (int i = 0; i < c; ++i) deleteLineOnce(h);
+         for (int i = 0; i < c; ++i) {
+            deleteLineOnce(h);
+            ::SendMessage(h, SCI_HOME, 0, 0);
+            ::SendMessage(h, SCI_NEWLINE, 0, 0);
+            Motion::lineUp(h, 1);
+         }
          Utils::endUndo(h);
          enterInsertMode();
          state.recordLastOp(OP_MOTION, c, 'c');
@@ -1907,6 +1912,9 @@ void NormalMode::applyOperatorToMotion(HWND hwnd, char op, char motion, int coun
         break;
     case 'c':
         ::SendMessage(hwnd, SCI_CUT, 0, 0);
+        ::SendMessage(hwnd, SCI_HOME, 0, 0);
+        ::SendMessage(hwnd, SCI_NEWLINE, 0, 0);
+        Motion::lineUp(hwnd, 1);
         enterInsertMode();
         state.recordLastOp(OP_MOTION, count, motion);
         break;
