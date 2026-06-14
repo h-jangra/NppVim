@@ -20,25 +20,44 @@ This is your primary startup script, similar to a `.vimrc` file. It is used for 
 
 #### Supported Options in .rc
 
-- `set nu` / `set number` - Show absolute line numbers
-- `set rnu` / `set relativenumber` - Show relative line numbers
-- `set nu rnu` - Enable **Hybrid Mode** (Absolute current line, relative others)
-- `set nonu` / `set nornu` - Disable line numbering
-- `set tabstop=4` - Set tab width
-- `set expandtab` - Use spaces instead of tabs
-- `set wrap` - Enable word wrap
-- `set cursorline` - Highlight the current line
-- `set list` - Show whitespace characters
-- `set scrolloff=5` - Keep lines above/below cursor
-- `set hlsearch` / `set nohlsearch` - Search highlighting
-- `set ignorecase` / `set smartcase`
-- `set clipboard=unnamed`
-- `set langmap=...` - Character translation for non-English layouts
+You can configure Vim-specific options in `nppvim.rc` using the `:set <option>` command (or `:set <option>=<value>` for parameters). Boolean options can be disabled by prefixing them with `no` (e.g., `set nonumber` or `set nornu`).
+
+| Short Name | Long Name | Type | Default | Description |
+|---|---|---|---|---|
+| `nu` | `number` | Boolean | `false` | Enable absolute line numbering. Disable with `nonumber` / `nonu`. |
+| `rnu` | `relativenumber` | Boolean | `false` | Enable relative line numbering. Disable with `norelativenu` / `nornu`. |
+| - | `hlsearch` | Boolean | `true` | Highlight all search matches. Disable with `nohlsearch`. |
+| - | `ignorecase` | Boolean | `false` | Ignore case in search patterns. Disable with `noignorecase`. |
+| - | `smartcase` | Boolean | `false` | Override `ignorecase` if search pattern contains uppercase characters. Disable with `nosmartcase`. |
+| - | `clipboard` | String | `unnamed` | Clipboard mode. Set to `unnamed` to share registers with Windows clipboard. |
+| - | `expandtab` | Boolean | `false` | Expand tabs to spaces. Disable with `noexpandtab`. |
+| - | `tabstop` | Number | `4` | Number of spaces that a `<Tab>` character in the file counts for. |
+| - | `shiftwidth` | Number | `4` | Number of spaces to use for each step of (auto)indent. |
+| - | `wrap` | Boolean | `false` | Visually wrap long lines. Disable with `nowrap`. |
+| - | `cursorline` | Boolean | `false` | Highlight the line containing the cursor. Disable with `nocursorline`. |
+| - | `list` | Boolean | `false` | Show whitespace characters (tabs and trailing spaces). Disable with `nolist`. |
+| - | `scrolloff` | Number | `0` | Minimal number of screen lines to keep above and below the cursor. |
+| - | `keylayout` | Boolean | `false` | Enable automatic keyboard layout switching. Disable with `nokeylayout`. |
+| - | `normallayout` | String | `en-US` | Keyboard layout target for Normal mode. |
+| - | `insertlayout` | String | `system` | Keyboard layout target for Insert mode. |
+| - | `langmap` | String | `""` | Translate characters in Normal/Visual modes (e.g., for non-US keyboard layouts). |
+| `tw` | `textwidth` | Number | `0` | Maximum width of text being inserted (draws a visual vertical boundary edge line in Scintilla at the column, e.g. `set tw=80`). Set to `0` to disable. |
+
+##### Hybrid Line Numbering
+To enable **Hybrid Line Numbering** (which shows the absolute line number on the current line and relative line numbers on all other lines), set both options:
+```vim
+set number
+set relativenumber
+```
 
 #### Mappings in .rc
 
+Define custom key mappings and aliases using the following syntax:
+
 ```vim
 " Syntax: [n|v|i][nore]map <keys> <action>
+" Syntax: command <Alias> <command>
+
 nmap ; :
 nnoremap <C-s> :w<CR>
 command W w
@@ -50,58 +69,63 @@ This file stores settings managed via the **Configuration Dialog** (`Plugins -> 
 
 **Note:** Changes made in the Dialog box are saved to `config.ini` only. They are not added to your `.rc` file.
 
-#### Settings in .ini / Dialog
+#### Supported Keys in `config.ini`
 
-- **Escape Key**: Choose between `Esc`, `jj`, `jk`, `kj`, or a custom sequence.
-- **Keyboard Layouts**: Set English (Normal) and System/Other (Insert) layouts.
-- **Clipboard Integration**: Toggle whether `d`, `c`, or `x` keys should update the Windows clipboard.
-- **Shortcut Overrides**: Resolve conflicts with native Notepad++ shortcuts. When enabled, NppVim takes control of these keys in Normal/Visual mode:
-    - **Ctrl+D**: Half-page down (Native: Duplicate Line)
-    - **Ctrl+U**: Half-page up (Native: Convert to Lowercase)
-    - **Ctrl+R**: Redo (Native: Redo)
-    - **Ctrl+F**: Page forward (Native: Find)
-    - **Ctrl+V**: Visual Block mode (Native: Paste)
-    - **Ctrl+A**: Increment number (Native: Select All)
-    - **Ctrl+X**: Decrement number (Native: Cut)
-    - **Ctrl+O**: Jump backward (Native: Open File)
-    - **Ctrl+I**: Jump forward
+Below is the list of keys recognized under the `[General]` section in `config.ini`:
 
-### Mappings
+##### General Settings
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `enabled` or `vim_enabled` | Boolean (`1`/`0` or `true`/`false`) | `1` | Enable or disable the NppVim emulator. |
+| `show_status_bar` | Boolean (`1`/`0` or `true`/`false`) | `1` | Toggles visibility of the Notepad++ status bar. |
+| `debug_logging` | Boolean (`1`/`0` or `true`/`false`) | `0` | Enables debug logging to a text file for troubleshooting. |
+| `rc_file` | String (Path) | *(empty)* | Custom path to the startup script file. If empty, NppVim looks for `%USERPROFILE%\.nppvimrc` first, then falls back to `%APPDATA%\Notepad++\plugins\Config\NppVim\nppvim.rc`. |
+| `escape_key` | String | `esc` | Main escape key/sequence. Allowed values: `esc`, `jj`, `jk`, `kj`, or `custom`. |
+| `escape_timeout` | Number (ms) | `100` | Timeout in milliseconds (between 100 and 1000) for matching multi-key escape sequences (like `jj`). |
+| `custom_escape` | String | *(empty)* | Custom escape key sequence if `escape_key` is set to `custom`. |
 
-You can define custom mappings in your `nppvim.rc` file.
+##### Clipboard Integration Settings
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `x_store_clipboard` | Boolean (`1`/`0` or `true`/`false`) | `0` | If enabled, deleting a character with `x`/`X` updates the system clipboard. |
+| `d_store_clipboard` | Boolean (`1`/`0` or `true`/`false`) | `0` | If enabled, deleting text with `d`/`D` (or related motions) updates the system clipboard. |
+| `c_store_clipboard` | Boolean (`1`/`0` or `true`/`false`) | `0` | If enabled, changing text with `c`/`C` (or related motions) updates the system clipboard. |
 
-#### Syntax
+##### Shortcut Override Settings
+These keys resolve conflicts with native Notepad++ shortcuts. When set to `1` or `true`, NppVim overrides the native Notepad++ shortcut in Normal and Visual modes to use the Vim functionality instead:
 
-```vim
-nmap <keys> <action>
-vmap <keys> <action>
-imap <keys> <action>
-nnoremap <keys> <action>
-vnoremap <keys> <action>
-```
+| Key | Vim Function | Native Notepad++ Function | Default |
+|---|---|---|---|
+| `override_ctrl_d` | Half-page down | Duplicate Line | `0` |
+| `override_ctrl_u` | Half-page up | Convert to Lowercase | `0` |
+| `override_ctrl_r` | Redo | Redo | `0` |
+| `override_ctrl_f` | Page forward | Find Dialog | `0` |
+| `override_ctrl_b` | Page backward | Select/Match Bracket | `0` |
+| `override_ctrl_o` | Jump backward in jump list | Open File Dialog | `0` |
+| `override_ctrl_i` | Jump forward in jump list | *(custom)* | `0` |
+| `override_ctrl_v` | Enter Visual Block mode | Paste | `0` |
+| `override_ctrl_a` | Increment number under cursor | Select All | `0` |
+| `override_ctrl_x` | Decrement number under cursor | Cut | `0` |
 
-#### Examples
+##### Keyboard Layout Settings
+Used to configure automatic keyboard layout switching:
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `keyboard_layout_switching` or `keylayout` | Boolean (`1`/`0` or `true`/`false`) | `0` | Enables automatic layout switching when moving between modes. |
+| `normallayout` | String | `en-US` | Keyboard layout target for Normal mode (e.g. `en-US`). |
+| `insertlayout` | String | `system` | Keyboard layout target for Insert mode (`system` uses the last active layout). |
 
-```vim
-" Change colon to semicolon for easier commands
-nmap ; :
-
-" Map Ctrl+S to save in Normal mode
-nnoremap <C-s> :w<CR>
-
-" Create a custom command alias
-command W w
-```
+---
 
 ## Relative Line Numbers
 
-NppVim provides a high-performance, themed relative numbering system.
+NppVim provides a high-performance, themed relative numbering system. It automatically integrates with Scintilla's line number margin, calculating relative offsets dynamically.
 
 ## Keyboard Layout Switching
 
 NppVim can automatically switch your Windows keyboard layout when entering and exiting Insert mode.
 
-### Configuration Example
+### Configuration Example in `.rc`
 
 ```vim
 set keylayout " Enable switching
@@ -116,7 +140,3 @@ Common Layout Codes:
 - `hi-IN` (Hindi)
 - `ko-KR` (Korean)
 - `ja-JP` (Japanese)
-
----
-
-## Registered Mappings and Commands
