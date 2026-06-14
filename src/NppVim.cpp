@@ -20,6 +20,10 @@
 #include "../include/Utils.h"
 #include "../plugin/resource.h"
 #include "../include/Motion.h"
+#include "../include/ConfigManager.h"
+#include "../include/OptionRegistry.h"
+#include "../include/MappingManager.h"
+#include "../include/RcParser.h"
 #include <algorithm>
 
 HINSTANCE g_hInstance = nullptr;
@@ -31,7 +35,7 @@ VisualMode* g_visualMode = nullptr;
 CommandMode* g_commandMode = nullptr;
 
 const TCHAR PLUGIN_NAME[] = TEXT("NppVim");
-const int nbFunc = 4;
+const int nbFunc = 8;
 FuncItem funcItem[nbFunc];
 
 #define COLOR_BG RGB(250, 250, 250)
@@ -47,6 +51,7 @@ static HFONT g_hFontTitle = NULL;
 static HFONT g_hFontNormal = NULL;
 static HFONT g_hFontButton = NULL;
 static std::map<HWND, WNDPROC> origProcMap;
+static WNDPROC g_origNppProc = nullptr;
 
 VimConfig g_config;
 HKL g_userLayout = NULL;
@@ -54,7 +59,9 @@ HKL g_englishLayout = NULL;
 
 // Forward declarations
 LRESULT CALLBACK ScintillaHookProc(HWND, UINT, WPARAM, LPARAM);
+LRESULT CALLBACK NppHostHookProc(HWND, UINT, WPARAM, LPARAM);
 void installScintillaHookFor(HWND hwnd);
+void installNppHook();
 void removeAllScintillaHooks();
 void ensureScintillaHooks();
 void toggleVimMode();
@@ -62,6 +69,73 @@ void showConfigDialog();
 void about();
 void loadConfig();
 void saveConfig();
+void initializeOptions();
+void updateRelativeLineNumbers(HWND hwnd, bool force = false);
+
+void installNppHook() {
+    if (nppData._nppHandle && !g_origNppProc) {
+        g_origNppProc = (WNDPROC)SetWindowLongPtr(nppData._nppHandle, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(NppHostHookProc));
+    }
+}
+
+void removeNppHook() {
+    if (nppData._nppHandle && g_origNppProc) {
+        SetWindowLongPtr(nppData._nppHandle, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(g_origNppProc));
+        g_origNppProc = nullptr;
+    }
+}
+
+LRESULT CALLBACK NppHostHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    if (msg == WM_COMMAND) {
+        int cmd = LOWORD(wParam);
+        if (state.vimEnabled && (state.mode == NORMAL || state.mode == VISUAL)) {
+            HWND hwndEdit = Utils::getCurrentScintillaHandle();
+            if (cmd == IDM_EDIT_DUP_LINE && g_config.overrideCtrlD) {
+                Motion::pageDown(hwndEdit);
+                return 0;
+            }
+            if ((cmd == IDM_EDIT_UPPERCASE || cmd == IDM_EDIT_LOWERCASE) && g_config.overrideCtrlU) {
+                Motion::pageUp(hwndEdit);
+                return 0;
+            }
+            if (cmd == IDM_EDIT_REDO && g_config.overrideCtrlR) {
+                ::SendMessage(hwndEdit, SCI_REDO, 0, 0);
+                return 0;
+            }
+            if (cmd == IDM_SEARCH_FIND && g_config.overrideCtrlF) {
+                Motion::pageDown(hwndEdit); 
+                return 0;
+            }
+            if (cmd == IDM_EDIT_BEGINENDSELECT_COLUMNMODE && g_config.overrideCtrlB) {
+                Motion::pageUp(hwndEdit);
+                return 0;
+            }
+            if (cmd == IDM_FILE_OPEN && g_config.overrideCtrlO) {
+                if (g_normalMode) g_normalMode->jumpBackward(hwndEdit);
+                return 0;
+            }
+            if (cmd == IDM_SEARCH_FINDINCREMENT && g_config.overrideCtrlI) {
+                if (g_normalMode) g_normalMode->jumpForward(hwndEdit);
+                return 0;
+            }
+            if (cmd == IDM_EDIT_PASTE && g_config.overrideCtrlV) {
+                // Visual Block mode (Vim Ctrl+V)
+                if (state.mode == VISUAL && state.isBlockVisual) g_normalMode->enter(); 
+                else g_visualMode->enterBlock(hwndEdit);
+                return 0;
+            }
+            if (cmd == IDM_EDIT_SELECTALL && g_config.overrideCtrlA) {
+                if (g_normalMode) g_normalMode->incrementNumber(hwndEdit, 1);
+                return 0;
+            }
+            if (cmd == IDM_EDIT_CUT && g_config.overrideCtrlX) {
+                if (g_normalMode) g_normalMode->decrementNumber(hwndEdit, 1);
+                return 0;
+            }
+        }
+    }
+    return CallWindowProc(g_origNppProc, hwnd, msg, wParam, lParam);
+}
 
 // State for sequence detection
 static char g_firstKey = 0;
@@ -71,166 +145,228 @@ void setNppData(NppData data) {
     Utils::nppData = data;
 }
 
-// Get plugin config directory
-std::string getConfigPath() {
-    TCHAR configDir[MAX_PATH];
-    ::SendMessage(nppData._nppHandle, NPPM_GETPLUGINSCONFIGDIR, MAX_PATH, (LPARAM)configDir);
-
-    std::string path;
-#ifdef UNICODE
-    int len = WideCharToMultiByte(CP_UTF8, 0, configDir, -1, NULL, 0, NULL, NULL);
-    if (len > 0) {
-        path.resize(len);
-        WideCharToMultiByte(CP_UTF8, 0, configDir, -1, &path[0], len, NULL, NULL);
-        path.pop_back();
-    }
-#else
-    path = configDir;
-#endif
-
-    return path + "\\NppVim\\config.ini";
+bool isNativeLineNumberEnabled() {
+    HMENU hMenu = (HMENU)::SendMessage(nppData._nppHandle, NPPM_GETMENUHANDLE, NPPMAINMENU, 0);
+    if (!hMenu) return false;
+    UINT state = GetMenuState(hMenu, IDM_VIEW_LINENUMBER, MF_BYCOMMAND);
+    return (state != (UINT)-1) && (state & MF_CHECKED);
 }
 
-void loadConfig() {
-    std::string configPath = getConfigPath();
-    std::string configDir = configPath.substr(0, configPath.find_last_of('\\'));
-    CreateDirectoryA(configDir.c_str(), NULL);
+void updateRelativeLineNumbers(HWND hwnd, bool force) {
+    if (!hwnd || !state.vimEnabled) return;
+    
+    auto& reg = OptionRegistry::getInstance();
+    bool relNum = std::get<bool>(reg.getOption("relativenumber"));
+    bool absNum = std::get<bool>(reg.getOption("number"));
+    
+    struct MarginState {
+        int currentLine = -1;
+        int firstVisibleLine = -1;
+        COLORREF lastBg = 0xFFFFFFFF;
+        int lastWidth = -1;
+        bool lastRelNum = false;
+        bool lastAbsNum = false;
+    };
+    static std::map<HWND, MarginState> states;
+    auto& s = states[hwnd];
 
-    // Set defaults
-    g_config.enableKeyboardLayoutSwitching = false;
-
-    g_config.escapeKey = "esc";
-    g_config.escapeTimeout = 300;
-    g_config.overrideCtrlD = false;
-    g_config.overrideCtrlU = false;
-    g_config.overrideCtrlR = false;
-
-    g_config.xStoreClipboard = true;
-    g_config.dStoreClipboard = true;
-    g_config.cStoreClipboard = true;
-
-    std::ifstream file(configPath);
-    if (!file.is_open()) {
+    // Case 1: Everything Disabled (set nonu nornu)
+    if (!relNum && !absNum) {
+        if (s.lastRelNum || s.lastAbsNum || force) {
+            // Restore native numbering margin type and clear our text
+            ::SendMessage(hwnd, SCI_MARGINTEXTCLEARALL, 0, 0);
+            ::SendMessage(hwnd, SCI_SETMARGINTYPEN, 0, SC_MARGIN_NUMBER);
+            ::SendMessage(nppData._nppHandle, NPPM_SETLINENUMBERWIDTHMODE, 0, LINENUMWIDTH_CONSTANT);
+            
+            // Sync with NPP native toggle if it's still 'on'
+            if (isNativeLineNumberEnabled()) {
+                ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_VIEW_LINENUMBER);
+            }
+            
+            s.lastRelNum = false;
+            s.lastAbsNum = false;
+            s.lastWidth = 0;
+            s.currentLine = -1;
+        }
         return;
     }
 
-    std::string line;
-    while (std::getline(file, line)) {
-        size_t start = line.find_first_not_of(" \t\r\n");
-        size_t end = line.find_last_not_of(" \t\r\n");
-        if (start == std::string::npos) continue;
-        line = line.substr(start, end - start + 1);
+    // Case 2: Standard Absolute Numbers Only (set nu nornu)
+    if (!relNum && absNum) {
+        if (s.lastRelNum || !s.lastAbsNum || force) {
+            ::SendMessage(hwnd, SCI_MARGINTEXTCLEARALL, 0, 0);
+            ::SendMessage(hwnd, SCI_SETMARGINTYPEN, 0, SC_MARGIN_NUMBER);
+            ::SendMessage(nppData._nppHandle, NPPM_SETLINENUMBERWIDTHMODE, 0, LINENUMWIDTH_DYNAMIC);
 
-        if (line.empty() || line[0] == '#' || line[0] == ';') continue;
-
-        size_t pos = line.find('=');
-        if (pos != std::string::npos) {
-            std::string key = line.substr(0, pos);
-            std::string value = line.substr(pos + 1);
-
-            start = key.find_first_not_of(" \t");
-            end = key.find_last_not_of(" \t");
-            if (start != std::string::npos) {
-                key = key.substr(start, end - start + 1);
-            }
-
-            start = value.find_first_not_of(" \t");
-            end = value.find_last_not_of(" \t");
-            if (start != std::string::npos) {
-                value = value.substr(start, end - start + 1);
-            }
-
-            if (key == "escape_key") {
-                g_config.escapeKey = value;
+            // Sync with NPP native toggle if it's 'off'
+            if (!isNativeLineNumberEnabled()) {
+                ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_VIEW_LINENUMBER);
             }
             
-            else if (key == "escape_timeout") {
-                try {
-                    int timeout = std::stoi(value);
-                    if (timeout >= 100 && timeout <= 1000) {
-                        g_config.escapeTimeout = timeout;
-                    }
-                }
-                catch (...) {}
-            }
-            else if (key == "custom_escape") {
-                g_config.customEscape = value;
-            }
-            else if (key == "override_ctrl_d") {
-                g_config.overrideCtrlD = (value == "1" || value == "true");
-            }
-            else if (key == "override_ctrl_u") {
-                g_config.overrideCtrlU = (value == "1" || value == "true");
-            }
-            else if (key == "override_ctrl_r") {
-                g_config.overrideCtrlR = (value == "1" || value == "true");
-            }
-            else if (key == "override_ctrl_f") {
-                g_config.overrideCtrlF = (value == "1" || value == "true");
-            }
-            else if (key == "override_ctrl_b") {
-                g_config.overrideCtrlB = (value == "1" || value == "true");
-            }
-            else if (key == "override_ctrl_o") {
-                g_config.overrideCtrlO = (value == "1" || value == "true");
-            }
-            else if (key == "override_ctrl_i") {
-                g_config.overrideCtrlI = (value == "1" || value == "true");
-            }
-            else if (key == "x_store_clipboard") {
-                g_config.xStoreClipboard = (value == "1" || value == "true");
-            }
-            else if (key == "d_store_clipboard") {
-                g_config.dStoreClipboard = (value == "1" || value == "true");
-            }
-            else if (key == "c_store_clipboard") {
-                g_config.cStoreClipboard = (value == "1" || value == "true");
-            }
-            else if (key == "vim_enabled") {
-                g_config.vimEnabled = (value == "1" || value == "true");
-            }
-            else if (key == "keyboard_layout_switching") {
-                g_config.enableKeyboardLayoutSwitching = (value == "1" || value == "true");
-            }
+            s.lastRelNum = false;
+            s.lastAbsNum = true;
+            s.lastWidth = 50;
+            s.currentLine = -1;
         }
+        return;
     }
-    file.close();
+
+    // Case 3: Relative numbering active (pure or hybrid)
+    int currentLine = (int)::SendMessage(hwnd, SCI_LINEFROMPOSITION, ::SendMessage(hwnd, SCI_GETCURRENTPOS, 0, 0), 0);
+    int firstVisibleLine = (int)::SendMessage(hwnd, SCI_GETFIRSTVISIBLELINE, 0, 0);
+    
+    // Sync theme colors to our margin
+    COLORREF bg = (COLORREF)::SendMessage(hwnd, SCI_STYLEGETBACK, STYLE_LINENUMBER, 0);
+    
+    // Check if we even need to update margin configuration type/offset
+    if (::SendMessage(hwnd, SCI_GETMARGINTYPEN, 0, 0) != SC_MARGIN_RTEXT || force) {
+        ::SendMessage(hwnd, SCI_SETMARGINTYPEN, 0, SC_MARGIN_RTEXT);
+        ::SendMessage(hwnd, SCI_SETMARGINBACKN, 0, bg);
+        ::SendMessage(hwnd, SCI_MARGINSETSTYLEOFFSET, STYLE_LINENUMBER, 0);
+        
+        // As suggested: Use constant width mode to prevent N++ fighting us
+        ::SendMessage(nppData._nppHandle, NPPM_SETLINENUMBERWIDTHMODE, 0, LINENUMWIDTH_CONSTANT);
+        
+        s.lastBg = bg;
+        s.currentLine = -1; // Force text update
+    }
+
+    // Only update background if it changed
+    if (s.lastBg != bg) {
+        ::SendMessage(hwnd, SCI_SETMARGINBACKN, 0, bg);
+        s.lastBg = bg;
+    }
+
+    // Dynamic width calculation - only update if it changed
+    int lineCount = (int)::SendMessage(hwnd, SCI_GETLINECOUNT, 0, 0);
+    int charWidth = (int)::SendMessage(hwnd, SCI_TEXTWIDTH, STYLE_LINENUMBER, (LPARAM)"9");
+    int digits = (int)log10(max(1, lineCount)) + 1;
+    int targetWidth = (digits + 1) * charWidth;
+    if (s.lastWidth != targetWidth) {
+        ::SendMessage(hwnd, SCI_SETMARGINWIDTHN, 0, targetWidth);
+        s.lastWidth = targetWidth;
+    }
+
+    // Only update text if cursor moved or scrolled, unless forced
+    if (!force && s.currentLine == currentLine && s.firstVisibleLine == firstVisibleLine && s.lastRelNum == relNum && s.lastAbsNum == absNum) return;
+    s.currentLine = currentLine;
+    s.firstVisibleLine = firstVisibleLine;
+    s.lastRelNum = relNum;
+    s.lastAbsNum = absNum;
+
+    int displayLines = (int)::SendMessage(hwnd, SCI_LINESONSCREEN, 0, 0);
+    for (int i = 0; i <= displayLines; i++) {
+        int displayLine = firstVisibleLine + i;
+        int docLine = (int)::SendMessage(hwnd, SCI_DOCLINEFROMVISIBLE, displayLine, 0);
+        if (docLine < 0 || docLine >= lineCount) continue;
+
+        int rel = abs(docLine - currentLine);
+        char buf[32];
+        
+        if (rel == 0) {
+            // Proper Vim behavior: Hybrid only if 'number' is also on
+            if (absNum) sprintf(buf, "%d", docLine + 1);
+            else sprintf(buf, "0");
+        } else {
+            sprintf(buf, "%d", rel);
+        }
+        
+        ::SendMessage(hwnd, SCI_MARGINSETTEXT, docLine, (LPARAM)buf);
+        ::SendMessage(hwnd, SCI_MARGINSETSTYLE, docLine, 0); // Offset 33 makes this STYLE_LINENUMBER
+    }
+}
+
+void initializeOptions() {
+    auto& reg = OptionRegistry::getInstance();
+    
+    reg.registerOption("number", OptionType::Bool, false, [](const OptionValue& v) {
+        HWND hwnd = Utils::getCurrentScintillaHandle();
+        if (hwnd) {
+            updateRelativeLineNumbers(hwnd, true);
+        }
+    }, "Show line numbers");
+
+    reg.registerOption("relativenumber", OptionType::Bool, false, [](const OptionValue& v) {
+        HWND hwnd = Utils::getCurrentScintillaHandle();
+        if (hwnd) updateRelativeLineNumbers(hwnd, true);
+    }, "Show relative line numbers");
+
+    reg.registerOption("hlsearch", OptionType::Bool, true, nullptr, "Highlight search matches");
+    reg.registerOption("ignorecase", OptionType::Bool, false, nullptr, "Ignore case in search");
+    reg.registerOption("smartcase", OptionType::Bool, false, nullptr, "Override ignorecase if pattern contains uppercase");
+    reg.registerOption("clipboard", OptionType::String, std::string("unnamed"), nullptr, "Clipboard settings");
+
+    // Vim-specific Options
+    reg.registerOption("expandtab", OptionType::Bool, false, [](const OptionValue& v) {
+        HWND hwnd = Utils::getCurrentScintillaHandle();
+        if (hwnd) ::SendMessage(hwnd, SCI_SETUSETABS, std::get<bool>(v) ? 0 : 1, 0);
+    }, "Use spaces instead of tabs");
+
+    reg.registerOption("tabstop", OptionType::Number, 4, [](const OptionValue& v) {
+        HWND hwnd = Utils::getCurrentScintillaHandle();
+        if (hwnd) ::SendMessage(hwnd, SCI_SETTABWIDTH, std::get<int>(v), 0);
+    }, "Number of spaces that a <Tab> in the file counts for");
+
+    reg.registerOption("shiftwidth", OptionType::Number, 4, [](const OptionValue& v) {
+        HWND hwnd = Utils::getCurrentScintillaHandle();
+        if (hwnd) ::SendMessage(hwnd, SCI_SETINDENT, std::get<int>(v), 0);
+    }, "Number of spaces to use for each step of (auto)indent");
+
+    reg.registerOption("wrap", OptionType::Bool, false, [](const OptionValue& v) {
+        HWND hwnd = Utils::getCurrentScintillaHandle();
+        if (hwnd) ::SendMessage(hwnd, SCI_SETWRAPMODE, std::get<bool>(v) ? SC_WRAP_WORD : SC_WRAP_NONE, 0);
+    }, "Wrap long lines");
+
+    reg.registerOption("cursorline", OptionType::Bool, false, [](const OptionValue& v) {
+        HWND hwnd = Utils::getCurrentScintillaHandle();
+        if (hwnd) ::SendMessage(hwnd, SCI_SETCARETSTICKY, std::get<bool>(v) ? 1 : 0, 0);
+        // Note: CaretLine is typically configured in N++ settings directly, but we can try to toggle Scintilla's background caret line.
+        if (hwnd) ::SendMessage(hwnd, SCI_SETCARETLINEVISIBLE, std::get<bool>(v) ? 1 : 0, 0);
+    }, "Highlight the text line of the cursor");
+
+    reg.registerOption("list", OptionType::Bool, false, [](const OptionValue& v) {
+        HWND hwnd = Utils::getCurrentScintillaHandle();
+        if (hwnd) ::SendMessage(hwnd, SCI_SETVIEWWS, std::get<bool>(v) ? SCWS_VISIBLEALWAYS : SCWS_INVISIBLE, 0);
+    }, "Show whitespace characters");
+
+    reg.registerOption("scrolloff", OptionType::Number, 0, [](const OptionValue& v) {
+        HWND hwnd = Utils::getCurrentScintillaHandle();
+        if (hwnd) {
+            int lines = std::get<int>(v);
+            ::SendMessage(hwnd, SCI_SETYCARETPOLICY, CARET_SLOP | CARET_EVEN, lines);
+        }
+    }, "Minimal number of screen lines to keep above and below the cursor");
+
+    reg.registerOption("keylayout", OptionType::Bool, false, [](const OptionValue& v) {
+        g_config.enableKeyboardLayoutSwitching = std::get<bool>(v);
+    }, "Automatically switch keyboard layout between English (Normal) and last used (Insert)");
+
+    reg.registerOption("normallayout", OptionType::String, std::string("en-US"), [](const OptionValue& v) {
+        g_config.normallayout = std::get<std::string>(v);
+    }, "Keyboard layout for Normal mode");
+
+    reg.registerOption("insertlayout", OptionType::String, std::string("system"), [](const OptionValue& v) {
+        g_config.insertlayout = std::get<std::string>(v);
+    }, "Keyboard layout for Insert mode");
+
+    reg.registerOption("langmap", OptionType::String, std::string(""), [](const OptionValue& v) {
+        Utils::parseLangmap(std::get<std::string>(v));
+    }, "Translate characters in Normal/Visual modes");
+}
+
+void loadConfig() {
+    ConfigManager::getInstance().loadConfig();
+    ConfigManager::getInstance().ensureDefaultFiles();
+    
+    g_config.vimEnabled = ConfigManager::getInstance().isEnabled();
+    
+    // Load RC file
+    RcParser::getInstance().parseFile(ConfigManager::getInstance().getRcPath());
 }
 
 void saveConfig() {
-    std::string configPath = getConfigPath();
-    std::string configDir = configPath.substr(0, configPath.find_last_of('\\'));
-    CreateDirectoryA(configDir.c_str(), NULL);
-
-    std::ofstream file(configPath);
-    if (file.is_open()) {
-        file << "# NppVim Configuration File\n";
-        file << "# Escape key options: esc, jj, jk, kj\n";
-        file << "escape_key=" << g_config.escapeKey << "\n";
-        file << "\n";
-        file << "# Timeout for two-key escape sequences (100-1000ms)\n";
-        file << "escape_timeout=" << g_config.escapeTimeout << "\n";
-        file << "\n";
-        file << "# Ctrl key overrides (0 or 1)\n";
-        file << "\n";
-        file << "# Custom escape sequence (e.g., ctrl+[, ctrl+c)\n";
-        file << "custom_escape=" << g_config.customEscape << "\n";
-        file << "override_ctrl_d=" << (g_config.overrideCtrlD ? "1" : "0") << "\n";
-        file << "override_ctrl_u=" << (g_config.overrideCtrlU ? "1" : "0") << "\n";
-        file << "override_ctrl_r=" << (g_config.overrideCtrlR ? "1" : "0") << "\n";
-        file << "override_ctrl_f=" << (g_config.overrideCtrlF ? "1" : "0") << "\n";
-        file << "override_ctrl_b=" << (g_config.overrideCtrlB ? "1" : "0") << "\n";
-        file << "override_ctrl_o=" << (g_config.overrideCtrlO ? "1" : "0") << "\n";
-        file << "override_ctrl_i=" << (g_config.overrideCtrlI ? "1" : "0") << "\n";
-        file << "# Store deleted/changed text in clipboard\n";
-        file << "x_store_clipboard=" << (g_config.xStoreClipboard ? "1" : "0") << "\n";
-        file << "d_store_clipboard=" << (g_config.dStoreClipboard ? "1" : "0") << "\n";
-        file << "c_store_clipboard=" << (g_config.cStoreClipboard ? "1" : "0") << "\n";
-        file << "\n";
-        file << "vim_enabled=" << (g_config.vimEnabled ? "1" : "0") << "\n";
-        file << "keyboard_layout_switching=" << (g_config.enableKeyboardLayoutSwitching ? "1" : "0") << "\n";
-        file.close();
-    }
+    ConfigManager::getInstance().setEnabled(g_config.vimEnabled);
+    ConfigManager::getInstance().saveConfig();
 }
 
 void InitDialogResources() {
@@ -268,12 +404,10 @@ void DrawModernButton(LPDRAWITEMSTRUCT pDIS, COLORREF bgColor, COLORREF textColo
     HDC hdc = pDIS->hDC;
     RECT rc = pDIS->rcItem;
 
-    // Fill background with rounded effect
     HBRUSH hBrush = CreateSolidBrush(bgColor);
     FillRect(hdc, &rc, hBrush);
     DeleteObject(hBrush);
 
-    // Draw subtle border
     HPEN hPen = CreatePen(PS_SOLID, 1, RGB(220, 220, 220));
     HPEN hOldPen = (HPEN)SelectObject(hdc, hPen);
     MoveToEx(hdc, rc.left, rc.top, NULL);
@@ -284,7 +418,6 @@ void DrawModernButton(LPDRAWITEMSTRUCT pDIS, COLORREF bgColor, COLORREF textColo
     SelectObject(hdc, hOldPen);
     DeleteObject(hPen);
 
-    // Draw text
     TCHAR text[128];
     GetWindowText(pDIS->hwndItem, text, 128);
     SetBkMode(hdc, TRANSPARENT);
@@ -297,101 +430,52 @@ INT_PTR CALLBACK AboutDlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     switch(msg) {
     case WM_INITDIALOG: {
         InitDialogResources();
-
-        // Set fonts for static text
         SendDlgItemMessage(hwnd, IDC_TITLE, WM_SETFONT, (WPARAM)g_hFontTitle, TRUE);
         SendDlgItemMessage(hwnd, IDC_DESC1, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
         SendDlgItemMessage(hwnd, IDC_DESC2, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
 
         WCHAR path[MAX_PATH];
         GetModuleFileNameW((HMODULE)g_hInstance, path, MAX_PATH);
-
         DWORD handle = 0;
         DWORD size = GetFileVersionInfoSizeW(path, &handle);
-
-        if (size)
-        {
+        if (size) {
             std::vector<BYTE> data(size);
-            if (GetFileVersionInfoW(path, 0, size, data.data()))
-            {
+            if (GetFileVersionInfoW(path, 0, size, data.data())) {
                 VS_FIXEDFILEINFO* info = nullptr;
                 UINT len = 0;
-
-                if (VerQueryValueW(data.data(), L"\\", (LPVOID*)&info, &len))
-                {
+                if (VerQueryValueW(data.data(), L"\\", (LPVOID*)&info, &len)) {
                     WCHAR version[64];
-                    wsprintfW(
-                        version,
-                        L"Version: %d.%d.%d.%d",
-                        HIWORD(info->dwFileVersionMS),
-                        LOWORD(info->dwFileVersionMS),
-                        HIWORD(info->dwFileVersionLS),
-                        LOWORD(info->dwFileVersionLS)
-                    );
-
+                    wsprintfW(version, L"Version: %d.%d.%d.%d",
+                        HIWORD(info->dwFileVersionMS), LOWORD(info->dwFileVersionMS),
+                        HIWORD(info->dwFileVersionLS), LOWORD(info->dwFileVersionLS));
                     SetDlgItemTextW(hwnd, IDC_VERSION, version);
                 }
             }
         }
-
-        // Center dialog
-        RECT rc, rcOwner;
-        GetWindowRect(GetParent(hwnd), &rcOwner);
-        GetWindowRect(hwnd, &rc);
-        SetWindowPos(hwnd, NULL,
-            rcOwner.left + (rcOwner.right - rcOwner.left - (rc.right - rc.left)) / 2,
-            rcOwner.top + (rcOwner.bottom - rcOwner.top - (rc.bottom - rc.top)) / 2,
-            0, 0, SWP_NOSIZE | SWP_NOZORDER);
-
         return TRUE;
     }
-
-    case WM_CTLCOLORDLG:
-        return (INT_PTR)g_hBrushBg;
-
+    case WM_CTLCOLORDLG: return (INT_PTR)g_hBrushBg;
     case WM_CTLCOLORSTATIC: {
         HDC hdc = (HDC)wParam;
         HWND hCtrl = (HWND)lParam;
-
-        if (hCtrl == GetDlgItem(hwnd, IDC_TITLE)) {
-            SetTextColor(hdc, COLOR_ACCENT);
-        } else {
-            SetTextColor(hdc, COLOR_TEXT_LIGHT);
-        }
+        if (hCtrl == GetDlgItem(hwnd, IDC_TITLE)) SetTextColor(hdc, COLOR_ACCENT);
+        else SetTextColor(hdc, COLOR_TEXT_LIGHT);
         SetBkColor(hdc, COLOR_BG);
         return (INT_PTR)g_hBrushBg;
     }
-
     case WM_DRAWITEM: {
         LPDRAWITEMSTRUCT pDIS = (LPDRAWITEMSTRUCT)lParam;
-
-        if (pDIS->CtlID == IDC_BTN_GITHUB) {
-            DrawModernButton(pDIS, RGB(240, 240, 240), COLOR_TEXT);
-        }
-        else if (pDIS->CtlID == IDC_BTN_DONATE) {
-            DrawModernButton(pDIS, COLOR_DONATE, RGB(255, 255, 255));
-        }
-        else if (pDIS->CtlID == IDOK) {
-            DrawModernButton(pDIS, RGB(240, 240, 240), COLOR_TEXT);
-        }
+        if (pDIS->CtlID == IDC_BTN_GITHUB) DrawModernButton(pDIS, RGB(240, 240, 240), COLOR_TEXT);
+        else if (pDIS->CtlID == IDC_BTN_DONATE) DrawModernButton(pDIS, COLOR_DONATE, RGB(255, 255, 255));
+        else if (pDIS->CtlID == IDOK) DrawModernButton(pDIS, RGB(240, 240, 240), COLOR_TEXT);
         return TRUE;
     }
-
-    case WM_CLOSE:
-        EndDialog(hwnd, IDOK);
-        return TRUE;
-
+    case WM_CLOSE: EndDialog(hwnd, IDOK); return TRUE;
     case WM_COMMAND:
         switch(LOWORD(wParam)) {
-        case IDC_BTN_GITHUB:
-            ShellExecute(NULL, L"open", L"https://github.com/h-jangra/nppvim", NULL, NULL, SW_SHOWNORMAL);
-            return TRUE;
-        case IDC_BTN_DONATE:
-            ShellExecute(NULL, L"open", L"https://paypal.me/h8imansh8u", NULL, NULL, SW_SHOWNORMAL);
-            return TRUE;
-        case IDOK:
-            EndDialog(hwnd, IDOK);
-            return TRUE;
+        case IDC_BTN_GITHUB: ShellExecute(NULL, L"open", L"https://github.com/h-jangra/nppvim", NULL, NULL, SW_SHOWNORMAL); return TRUE;
+        case IDC_BTN_DONATE: ShellExecute(NULL, L"open", L"https://paypal.me/h8imansh8u", NULL, NULL, SW_SHOWNORMAL); return TRUE;
+        case IDOK: EndDialog(hwnd, IDOK); return TRUE;
         }
         break;
     }
@@ -402,26 +486,20 @@ INT_PTR CALLBACK ConfigDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM
     switch (message) {
     case WM_INITDIALOG: {
         InitDialogResources();
-
-        // Set fonts
         SendDlgItemMessage(hwnd, IDC_ESCAPE_KEY, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
         SendDlgItemMessage(hwnd, IDC_TIMEOUT, WM_SETFONT, (WPARAM)g_hFontNormal, TRUE);
-
-        // Populate escape key combo
         HWND hCombo = GetDlgItem(hwnd, IDC_ESCAPE_KEY);
         SendMessage(hCombo, CB_ADDSTRING, 0, (LPARAM)TEXT("Escape key only"));
         SendMessage(hCombo, CB_ADDSTRING, 0, (LPARAM)TEXT("jj (double tap j)"));
         SendMessage(hCombo, CB_ADDSTRING, 0, (LPARAM)TEXT("jk"));
         SendMessage(hCombo, CB_ADDSTRING, 0, (LPARAM)TEXT("kj"));
         SendMessage(hCombo, CB_ADDSTRING, 0, (LPARAM)TEXT("Custom"));
-
         int selIndex = 0;
         if (g_config.escapeKey == "jj") selIndex = 1;
         else if (g_config.escapeKey == "jk") selIndex = 2;
         else if (g_config.escapeKey == "kj") selIndex = 3;
         else if (g_config.escapeKey == "custom") selIndex = 4;
         SendMessage(hCombo, CB_SETCURSEL, selIndex, 0);
-
         SetDlgItemInt(hwnd, IDC_TIMEOUT, g_config.escapeTimeout, FALSE);
         CheckDlgButton(hwnd, IDC_CHECK_CTRL_D, g_config.overrideCtrlD ? BST_CHECKED : BST_UNCHECKED);
         CheckDlgButton(hwnd, IDC_CHECK_CTRL_U, g_config.overrideCtrlU ? BST_CHECKED : BST_UNCHECKED);
@@ -430,43 +508,25 @@ INT_PTR CALLBACK ConfigDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM
         CheckDlgButton(hwnd, IDC_CHECK_C_CLIPBOARD, g_config.cStoreClipboard ? BST_CHECKED : BST_UNCHECKED);
         CheckDlgButton(hwnd, IDC_CHECK_X_CLIPBOARD, g_config.xStoreClipboard ? BST_CHECKED : BST_UNCHECKED);
         CheckDlgButton(hwnd, IDC_CHECK_KB_LAYOUT, g_config.enableKeyboardLayoutSwitching ? BST_CHECKED : BST_UNCHECKED);
+        SetDlgItemTextA(hwnd, IDC_NORMAL_LAYOUT, g_config.normallayout.c_str());
+        SetDlgItemTextA(hwnd, IDC_INSERT_LAYOUT, g_config.insertlayout.c_str());
         SetDlgItemTextA(hwnd, IDC_CUSTOM_ESCAPE, g_config.customEscape.c_str());
         EnableWindow(GetDlgItem(hwnd, IDC_CUSTOM_ESCAPE), selIndex == 4);
-
-        // Center dialog
-        RECT rc, rcOwner;
-        GetWindowRect(GetParent(hwnd), &rcOwner);
-        GetWindowRect(hwnd, &rc);
-        SetWindowPos(hwnd, NULL,
-            rcOwner.left + (rcOwner.right - rcOwner.left - (rc.right - rc.left)) / 2,
-            rcOwner.top + (rcOwner.bottom - rcOwner.top - (rc.bottom - rc.top)) / 2,
-            0, 0, SWP_NOSIZE | SWP_NOZORDER);
-
         return TRUE;
     }
-
-    case WM_CTLCOLORDLG:
-        return (INT_PTR)g_hBrushBg;
-
+    case WM_CTLCOLORDLG: return (INT_PTR)g_hBrushBg;
     case WM_CTLCOLORSTATIC: {
         HDC hdc = (HDC)wParam;
         SetTextColor(hdc, COLOR_TEXT);
         SetBkColor(hdc, COLOR_BG);
         return (INT_PTR)g_hBrushBg;
     }
-
     case WM_DRAWITEM: {
         LPDRAWITEMSTRUCT pDIS = (LPDRAWITEMSTRUCT)lParam;
-
-        if (pDIS->CtlID == IDOK) {
-            DrawModernButton(pDIS, COLOR_ACCENT, RGB(255, 255, 255));
-        }
-        else if (pDIS->CtlID == IDCANCEL || pDIS->CtlID == IDC_RESET_BUTTON) {
-            DrawModernButton(pDIS, RGB(240, 240, 240), COLOR_TEXT);
-        }
+        if (pDIS->CtlID == IDOK) DrawModernButton(pDIS, COLOR_ACCENT, RGB(255, 255, 255));
+        else if (pDIS->CtlID == IDCANCEL || pDIS->CtlID == IDC_RESET_BUTTON) DrawModernButton(pDIS, RGB(240, 240, 240), COLOR_TEXT);
         return TRUE;
     }
-
     case WM_COMMAND:
         switch (LOWORD(wParam)) {
         case IDC_RESET_BUTTON:
@@ -481,45 +541,26 @@ INT_PTR CALLBACK ConfigDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM
             CheckDlgButton(hwnd, IDC_CHECK_C_CLIPBOARD, BST_CHECKED);
             CheckDlgButton(hwnd, IDC_CHECK_X_CLIPBOARD, BST_CHECKED);
             CheckDlgButton(hwnd, IDC_CHECK_KB_LAYOUT, BST_UNCHECKED);
-            MessageBox(hwnd, TEXT("Settings reset to defaults."), TEXT("Reset"), MB_OK | MB_ICONINFORMATION);
+            SetDlgItemTextA(hwnd, IDC_NORMAL_LAYOUT, "en-US");
+            SetDlgItemTextA(hwnd, IDC_INSERT_LAYOUT, "system");
             break;
-
-        case IDC_ESCAPE_KEY:
-            if (HIWORD(wParam) == CBN_SELCHANGE) {
-                int sel = SendMessage((HWND)lParam, CB_GETCURSEL, 0, 0);
-                EnableWindow(GetDlgItem(hwnd, IDC_CUSTOM_ESCAPE), sel == 4);
-            }
-            break;
-
+        case IDC_ESCAPE_KEY: if (HIWORD(wParam) == CBN_SELCHANGE) EnableWindow(GetDlgItem(hwnd, IDC_CUSTOM_ESCAPE), SendMessage((HWND)lParam, CB_GETCURSEL, 0, 0) == 4); break;
         case IDOK: {
             int sel = SendMessage(GetDlgItem(hwnd, IDC_ESCAPE_KEY), CB_GETCURSEL, 0, 0);
             switch (sel) {
                 case 1: g_config.escapeKey = "jj"; break;
                 case 2: g_config.escapeKey = "jk"; break;
                 case 3: g_config.escapeKey = "kj"; break;
-                case 4: 
+                case 4: {
+                    char buf[128]; GetDlgItemTextA(hwnd, IDC_CUSTOM_ESCAPE, buf, 128);
+                    g_config.customEscape = buf;
+                    if (g_config.customEscape.empty()) return TRUE;
                     g_config.escapeKey = "custom";
-                    char customBuf[128];
-                    GetDlgItemTextA(hwnd, IDC_CUSTOM_ESCAPE, customBuf, 128);
-                    g_config.customEscape = customBuf;
-                    if (g_config.customEscape.empty()) {
-                        MessageBox(hwnd, TEXT("Please enter a custom escape sequence."),
-                                  TEXT("Invalid Input"), MB_OK | MB_ICONWARNING);
-                        return TRUE;
-                    }
                     break;
+                }
                 default: g_config.escapeKey = "esc"; break;
             }
-
-            BOOL success;
-            int timeout = GetDlgItemInt(hwnd, IDC_TIMEOUT, &success, FALSE);
-            if (sel != 0 && (!success || timeout < 100 || timeout > 1000)) {
-                MessageBox(hwnd, TEXT("Timeout must be between 100-1000 ms."),
-                          TEXT("Invalid Input"), MB_OK | MB_ICONWARNING);
-                return TRUE;
-            }
-            if (sel != 0) g_config.escapeTimeout = timeout;
-
+            g_config.escapeTimeout = GetDlgItemInt(hwnd, IDC_TIMEOUT, NULL, FALSE);
             g_config.overrideCtrlD = (IsDlgButtonChecked(hwnd, IDC_CHECK_CTRL_D) == BST_CHECKED);
             g_config.overrideCtrlU = (IsDlgButtonChecked(hwnd, IDC_CHECK_CTRL_U) == BST_CHECKED);
             g_config.overrideCtrlR = (IsDlgButtonChecked(hwnd, IDC_CHECK_CTRL_R) == BST_CHECKED);
@@ -527,549 +568,230 @@ INT_PTR CALLBACK ConfigDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM
             g_config.cStoreClipboard = (IsDlgButtonChecked(hwnd, IDC_CHECK_C_CLIPBOARD) == BST_CHECKED);
             g_config.xStoreClipboard = (IsDlgButtonChecked(hwnd, IDC_CHECK_X_CLIPBOARD) == BST_CHECKED);
             g_config.enableKeyboardLayoutSwitching = (IsDlgButtonChecked(hwnd, IDC_CHECK_KB_LAYOUT) == BST_CHECKED);
+            
+            char normBuf[128], insBuf[128];
+            GetDlgItemTextA(hwnd, IDC_NORMAL_LAYOUT, normBuf, 128);
+            GetDlgItemTextA(hwnd, IDC_INSERT_LAYOUT, insBuf, 128);
+            g_config.normallayout = normBuf;
+            g_config.insertlayout = insBuf;
 
             saveConfig();
             EndDialog(hwnd, IDOK);
             return TRUE;
         }
-
-        case IDCANCEL:
-            EndDialog(hwnd, IDCANCEL);
-            return TRUE;
+        case IDCANCEL: EndDialog(hwnd, IDCANCEL); return TRUE;
         }
         break;
     }
     return FALSE;
 }
-void showConfigDialog() {
-    DialogBox(g_hInstance, MAKEINTRESOURCE(IDD_CONFIG), nppData._nppHandle, ConfigDialogProc);
-}
+
+void showConfigDialog() { DialogBox(g_hInstance, MAKEINTRESOURCE(IDD_CONFIG), nppData._nppHandle, ConfigDialogProc); }
 
 bool checkEscapeSequence(char c) {
     DWORD currentTime = GetTickCount64();
-
-    if (g_firstKey != 0 && currentTime - g_firstKeyTime > g_config.escapeTimeout) {
-        g_firstKey = 0;
-    }
-
+    if (g_firstKey != 0 && currentTime - g_firstKeyTime > g_config.escapeTimeout) g_firstKey = 0;
     if (g_config.escapeKey == "custom" && !g_config.customEscape.empty()) {
-        // Skip ctrl+, alt+, shift+ combinations
-        if (g_config.customEscape.find("ctrl+") == 0 || 
-            g_config.customEscape.find("alt+") == 0 || 
-            g_config.customEscape.find("shift+") == 0) {
-            return false;
-        }
-        
-        // Handle two-character custom sequences
+        if (g_config.customEscape.find("ctrl+") == 0) return false;
         if (g_config.customEscape.length() == 2) {
-            if (g_firstKey == 0) {
-                if (c == g_config.customEscape[0]) {
-                    g_firstKey = c;
-                    g_firstKeyTime = currentTime;
-                    return false;
-                }
-            } else if (g_firstKey == g_config.customEscape[0] && c == g_config.customEscape[1]) {
-                g_firstKey = 0;
-                return true;
-            }
+            if (g_firstKey == 0) { if (c == g_config.customEscape[0]) { g_firstKey = c; g_firstKeyTime = currentTime; return false; } }
+            else if (g_firstKey == g_config.customEscape[0] && c == g_config.customEscape[1]) { g_firstKey = 0; return true; }
         }
     }
-
     if (g_firstKey == 0) {
-        if ((g_config.escapeKey == "jj" && c == 'j') ||
-            (g_config.escapeKey == "jk" && c == 'j') ||
-            (g_config.escapeKey == "kj" && c == 'k')) {
-            g_firstKey = c;
-            g_firstKeyTime = currentTime;
-            return false;
+        if ((g_config.escapeKey == "jj" && c == 'j') || (g_config.escapeKey == "jk" && c == 'j') || (g_config.escapeKey == "kj" && c == 'k')) {
+            g_firstKey = c; g_firstKeyTime = currentTime; return false;
         }
         return false;
     }
-
-    if ((g_config.escapeKey == "jj" && g_firstKey == 'j' && c == 'j') ||
-        (g_config.escapeKey == "jk" && g_firstKey == 'j' && c == 'k') ||
-        (g_config.escapeKey == "kj" && g_firstKey == 'k' && c == 'j')) {
-        g_firstKey = 0;
-        return true;
+    if ((g_config.escapeKey == "jj" && g_firstKey == 'j' && c == 'j') || (g_config.escapeKey == "jk" && g_firstKey == 'j' && c == 'k') || (g_config.escapeKey == "kj" && g_firstKey == 'k' && c == 'j')) {
+        g_firstKey = 0; return true;
     }
-
-    g_firstKey = 0;
-    return false;
+    g_firstKey = 0; return false;
 }
 
 LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     WNDPROC orig = nullptr;
     auto it = origProcMap.find(hwnd);
     if (it != origProcMap.end()) orig = it->second;
-
-    if (!orig) {
-        return DefWindowProc(hwnd, msg, wParam, lParam);
-    }
-
-    if (msg == WM_CLOSE || msg == WM_DESTROY || msg == WM_NCDESTROY)
-        return CallWindowProc(orig, hwnd, msg, wParam, lParam);
-
-    if (!state.vimEnabled) {
-        if (orig) {
-            return CallWindowProc(orig, hwnd, msg, wParam, lParam);
-        }
-        else {
-            return DefWindowProc(hwnd, msg, wParam, lParam);
-        }
-    }
+    if (!orig) return DefWindowProc(hwnd, msg, wParam, lParam);
+    if (msg == WM_CLOSE || msg == WM_DESTROY || msg == WM_NCDESTROY) return CallWindowProc(orig, hwnd, msg, wParam, lParam);
+    if (!state.vimEnabled) return CallWindowProc(orig, hwnd, msg, wParam, lParam);
 
     if (msg == WM_INPUTLANGCHANGE && g_config.enableKeyboardLayoutSwitching) {
-        g_userLayout = GetKeyboardLayout(0);
+        g_userLayout = (HKL)lParam;
+        if (state.mode == INSERT) state.savedInsertLayout = g_userLayout;
     }
 
-    HWND hwndEdit = hwnd;
-
-    // Handle Ctrl key overrides in NORMAL and VISUAL modes
     if ((state.mode == NORMAL || state.mode == VISUAL) && msg == WM_KEYDOWN) {
         bool ctrlPressed = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
-
-        if (ctrlPressed && (state.mode == NORMAL || state.mode == VISUAL)) {
-            if (wParam == 'Q') {
-                if (state.mode == VISUAL && state.isBlockVisual) {
-                    g_normalMode->enter();
-                } else {
-                    g_visualMode->enterBlock(hwndEdit);
-                }
-                return 0;
-            }
-     
-            if (wParam == 'D' && g_config.overrideCtrlD) {
-                // Ctrl+D: Page down
-                Motion::pageDown(hwndEdit);
-                if (state.mode == NORMAL) {
-                    state.recordLastOp(OP_MOTION, state.repeatCount > 0 ? state.repeatCount : 1, 4); // 4 represents Ctrl+D
-                }
-                state.repeatCount = 0;
-                return 0;
-            }
-            else if (wParam == 'U' && g_config.overrideCtrlU) {
-                // Ctrl+U: Page up
-                Motion::pageUp(hwndEdit);
-                if (state.mode == NORMAL) {
-                    state.recordLastOp(OP_MOTION, state.repeatCount > 0 ? state.repeatCount : 1, 21); // 21 represents Ctrl+U
-                }
-                state.repeatCount = 0;
-                return 0;
-            }
-            else if (wParam == 'R' && g_config.overrideCtrlR && state.mode == NORMAL) {
-                // Ctrl+R: Redo in normal mode
-                ::SendMessage(hwndEdit, SCI_REDO, 0, 0);
-                state.recordLastOp(OP_MOTION, 1, 'R');
-                return 0;
-            }
-            else if (wParam == 'F' && g_config.overrideCtrlF) {
-                Motion::pageDown(hwndEdit);
-                if (state.mode == NORMAL) {
-                    state.recordLastOp(OP_MOTION, state.repeatCount > 0 ? state.repeatCount : 1, 6);
-                }
-                state.repeatCount = 0;
-                return 0;
-            }
-            else if (wParam == 'B' && g_config.overrideCtrlB) {
-                Motion::pageUp(hwndEdit);
-                if (state.mode == NORMAL) {
-                    state.recordLastOp(OP_MOTION, state.repeatCount > 0 ? state.repeatCount : 1, 2);
-                }
-                state.repeatCount = 0;
-                return 0;
-            }
+        if (ctrlPressed) {
+            if (wParam == 'Q') { if (state.mode == VISUAL && state.isBlockVisual) g_normalMode->enter(); else g_visualMode->enterBlock(hwnd); return 0; }
+            if (wParam == 'D' && g_config.overrideCtrlD) { Motion::pageDown(hwnd); state.repeatCount = 0; return 0; }
+            if (wParam == 'U' && g_config.overrideCtrlU) { Motion::pageUp(hwnd); state.repeatCount = 0; return 0; }
+            if (wParam == 'R' && g_config.overrideCtrlR && state.mode == NORMAL) { ::SendMessage(hwnd, SCI_REDO, 0, 0); return 0; }
         }
     }
 
-    // Handle command mode
     if (state.commandMode) {
         if (msg == WM_KEYDOWN) {
-            if (wParam == VK_RETURN) {
-                g_commandMode->handleEnter(hwndEdit);
-                return 0;
-            }
-            else if (wParam == VK_ESCAPE) {
-                Utils::clearSearchHighlights(hwndEdit);
-                state.lastSearchMatchCount = -1;
-                g_commandMode->exit();
-                return 0;
-            }
-            else if (wParam == VK_BACK) {
-                g_commandMode->handleBackspace(hwndEdit);
-                return 0;
-            }
+            if (wParam == VK_RETURN) { g_commandMode->handleEnter(hwnd); return 0; }
+            if (wParam == VK_ESCAPE) { Utils::clearSearchHighlights(hwnd); state.lastSearchMatchCount = -1; g_commandMode->exit(); return 0; }
+            if (wParam == VK_BACK) { g_commandMode->handleBackspace(hwnd); return 0; }
         }
-
-        if (msg == WM_CHAR) {
-            char c = (char)wParam;
-            if (c >= 32 && c != 10 && c != 13) {
-                g_commandMode->handleKey(hwndEdit, c);
-            }
-            return 0;
+        if (msg == WM_CHAR) { 
+            wchar_t wChar = (wchar_t)wParam;
+            g_commandMode->handleKey(hwnd, wChar); 
+            return 0; 
         }
         return CallWindowProc(orig, hwnd, msg, wParam, lParam);
     }
 
-    // Handle INSERT mode
     if (state.mode == INSERT) {
-        // Handle custom Ctrl+ escape sequences
-        if (msg == WM_KEYDOWN && g_config.escapeKey == "custom" && !g_config.customEscape.empty()) {
-            std::string lower = g_config.customEscape;
-            std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-            
-            // Parse modifier+key combinations
-            if (lower.find("ctrl+") == 0 || lower.find("alt+") == 0 || 
-                lower.find("shift+") == 0 || lower.find("ctrl+shift+") == 0 ||
-                lower.find("ctrl+alt+") == 0 || lower.find("alt+shift+") == 0) {
-                
-                bool ctrlPressed = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
-                bool altPressed = (GetKeyState(VK_MENU) & 0x8000) != 0;
-                bool shiftPressed = (GetKeyState(VK_SHIFT) & 0x8000) != 0;
-                
-                // Extract the key part after the modifier
-                size_t plusPos = lower.rfind('+');
-                if (plusPos != std::string::npos && plusPos + 1 < lower.length()) {
-                    char expectedKey = toupper(lower[plusPos + 1]);
-                    char actualKey = toupper((char)wParam);
-                    
-                    bool modifiersMatch = false;
-                    
-                    if (lower.find("ctrl+shift+") == 0) {
-                        modifiersMatch = ctrlPressed && shiftPressed && !altPressed;
-                    }
-                    else if (lower.find("ctrl+alt+") == 0) {
-                        modifiersMatch = ctrlPressed && altPressed && !shiftPressed;
-                    }
-                    else if (lower.find("alt+shift+") == 0) {
-                        modifiersMatch = altPressed && shiftPressed && !ctrlPressed;
-                    }
-                    else if (lower.find("ctrl+") == 0) {
-                        modifiersMatch = ctrlPressed && !altPressed && !shiftPressed;
-                    }
-                    else if (lower.find("alt+") == 0) {
-                        modifiersMatch = altPressed && !ctrlPressed && !shiftPressed;
-                    }
-                    else if (lower.find("shift+") == 0) {
-                        modifiersMatch = shiftPressed && !ctrlPressed && !altPressed;
-                    }
-                    
-                    if (modifiersMatch && actualKey == expectedKey) {
-                        ::SendMessage(hwndEdit, SCI_SETOVERTYPE, false, 0);
-                        g_firstKey = 0;
-                        if (state.recordingInsertMacro) {
-                            state.insertMacroBuffers.back().push_back('\x1B');
-                            state.recordingInsertMacro = false;
-                        }
-                        g_normalMode->enter();
-                        return 0;
-                    }
-                }
-            }
-        }
-
         if (msg == WM_CHAR) {
-            char c = (char)wParam;
-
-            if (state.recordingInsertMacro && c != VK_ESCAPE) {
-                state.insertMacroBuffers.back().push_back(c);
+            wchar_t wChar = (wchar_t)wParam;
+            if (state.recordingInsertMacro && wChar != VK_ESCAPE) {
+                std::string utf8 = Utils::toUtf8(wChar);
+                for (char ch : utf8) state.insertMacroBuffers.back().push_back(ch);
             }
-
-            if ((int)wParam == VK_ESCAPE) {
-                ::SendMessage(hwndEdit, SCI_SETOVERTYPE, false, 0);
-                g_firstKey = 0;
-
-                if (state.recordingInsertMacro) {
-                    state.insertMacroBuffers.back().push_back('\x1B'); // ESC character
-                    state.recordingInsertMacro = false;
-                }
-
-                g_normalMode->enter();
-                return 0;
-            }
-
-            if (g_config.escapeKey != "esc") {
-                bool isEscape = checkEscapeSequence(c);
-                if (isEscape) {
-
-                    if (state.recordingInsertMacro && !state.insertMacroBuffers.empty()) {
-                        auto& currentBuffer = state.insertMacroBuffers.back();
-                        size_t removeCount = 0;
-                        if (g_config.escapeKey == "jj" || g_config.escapeKey == "jk" || g_config.escapeKey == "kj") {
-                            removeCount = 2; // Remove the two-char sequence
-                        }
-                        if (currentBuffer.size() >= removeCount) {
-                            for (size_t i = 0; i < removeCount; i++) {
-                                currentBuffer.pop_back();
-                            }
-                        }
-                        currentBuffer.push_back('\x1B');
-                        state.recordingInsertMacro = false;
-                    }
-
-                    int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
-                    if (pos >= 1) {
-                      ::SendMessage(hwndEdit, SCI_SETSEL, pos - 1, pos);
-                      ::SendMessage(hwndEdit, SCI_REPLACESEL, 0, (LPARAM)"");
-                    }
-                    ::SendMessage(hwndEdit, SCI_SETOVERTYPE, false, 0);
-                    g_normalMode->enter();
-                    return 0;
-                }
+            if ((int)wParam == VK_ESCAPE) { ::SendMessage(hwnd, SCI_SETOVERTYPE, false, 0); g_firstKey = 0; if (state.recordingInsertMacro) { state.insertMacroBuffers.back().push_back('\x1B'); state.recordingInsertMacro = false; } g_normalMode->enter(); return 0; }
+            if (g_config.escapeKey != "esc" && checkEscapeSequence((char)wParam)) {
+                if (state.recordingInsertMacro && !state.insertMacroBuffers.empty()) { state.insertMacroBuffers.back().push_back('\x1B'); state.recordingInsertMacro = false; }
+                int pos = (int)::SendMessage(hwnd, SCI_GETCURRENTPOS, 0, 0);
+                if (pos >= 1) { ::SendMessage(hwnd, SCI_SETSEL, pos - 1, pos); ::SendMessage(hwnd, SCI_REPLACESEL, 0, (LPARAM)""); }
+                ::SendMessage(hwnd, SCI_SETOVERTYPE, false, 0); g_normalMode->enter(); return 0;
             }
         }
-
         return CallWindowProc(orig, hwnd, msg, wParam, lParam);
     }
 
-    // Handle NORMAL and VISUAL modes
     if (msg == WM_CHAR) {
-        char c = (char)wParam;
+        wchar_t wChar = (wchar_t)wParam;
+        char c = Utils::applyLangmap(wChar);
+        if (c == 0) return 0; // Consume unmapped non-ASCII in Normal/Visual mode to prevent text insertion
 
-        if ((int)wParam == VK_ESCAPE) {
-            g_firstKey = 0;
-            g_normalMode->enter();
-            return 0;
-        }
-
-        if (state.replacePending && state.mode == NORMAL) {
-            int pos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
-            int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
-            if (pos < docLen) {
-                char currentChar = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, pos, 0);
-                if (currentChar != '\r' && currentChar != '\n') {
-                    ::SendMessage(hwndEdit, SCI_SETSEL, pos, pos + 1);
-                    std::string repl(1, c);
-                    ::SendMessage(hwndEdit, SCI_REPLACESEL, 0, (LPARAM)repl.c_str());
-                    ::SendMessage(hwndEdit, SCI_SETCURRENTPOS, pos + 1, 0);
-                }
-            }
-            state.replacePending = false;
-            state.repeatCount = 0;
-            return 0;
-        }
-
-        if (state.mode == NORMAL) {
-            g_normalMode->handleKey(hwndEdit, c);
-            return 0;
-        }
-        else if (state.mode == VISUAL) {
-            g_visualMode->handleKey(hwndEdit, c);
-            return 0;
-        }
+        if (c == 27) { g_firstKey = 0; g_normalMode->enter(); return 0; }
+        if (state.mode == NORMAL) { g_normalMode->handleKey(hwnd, c); return 0; }
+        else if (state.mode == VISUAL) { g_visualMode->handleKey(hwnd, c); return 0; }
     }
-
-    if (msg == WM_KEYDOWN) {
-        switch (wParam) {
-        case VK_LEFT:
-        case VK_RIGHT:
-        case VK_UP:
-        case VK_DOWN:
-        case VK_HOME:
-        case VK_END:
-        case VK_PRIOR:
-        case VK_NEXT:
-        case VK_INSERT:
-        case VK_DELETE:
-            g_firstKey = 0;
-            break;
-        }
-
-        if (wParam == VK_SHIFT || wParam == VK_CONTROL || wParam == VK_MENU) {
-            g_firstKey = 0;
-        }
-    }
-
     return CallWindowProc(orig, hwnd, msg, wParam, lParam);
 }
 
 void installScintillaHookFor(HWND hwnd) {
     if (!hwnd || origProcMap.find(hwnd) != origProcMap.end()) return;
-
     WNDPROC prev = (WNDPROC)SetWindowLongPtr(hwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(ScintillaHookProc));
-    if (prev) {
-        origProcMap[hwnd] = prev;
-    }
+    if (prev) origProcMap[hwnd] = prev;
 }
 
 void removeAllScintillaHooks() {
-    for (auto& p : origProcMap) {
-        if (IsWindow(p.first)) {
-            SetWindowLongPtr(p.first, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(p.second));
-        }
-    }
+    for (auto& p : origProcMap) if (IsWindow(p.first)) SetWindowLongPtr(p.first, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(p.second));
     origProcMap.clear();
 }
 
-void ensureScintillaHooks() {
-    installScintillaHookFor(nppData._scintillaMainHandle);
-    installScintillaHookFor(nppData._scintillaSecondHandle);
-}
+void ensureScintillaHooks() { installScintillaHookFor(nppData._scintillaMainHandle); installScintillaHookFor(nppData._scintillaSecondHandle); }
 
 void updateCursorForCurrentMode() {
     HWND hwndEdit = Utils::getCurrentScintillaHandle();
     if (!hwndEdit || !IsWindow(hwndEdit)) return;
-
     if (state.vimEnabled) {
-        if (state.mode == NORMAL) {
-            ::SendMessage(hwndEdit, SCI_SETCARETSTYLE, CARETSTYLE_BLOCK, 0);
-            ::SendMessage(hwndEdit, SCI_SETCARETSTICKY, SC_CARETSTICKY_OFF, 0);
-        }
-        else if (state.mode == VISUAL) {
-            ::SendMessage(hwndEdit, SCI_SETCARETSTYLE, CARETSTYLE_BLOCK, 0);
-            ::SendMessage(hwndEdit, SCI_SETCARETSTICKY, SC_CARETSTICKY_ON, 0);
-        }
-        else if (state.mode == INSERT) {
-            ::SendMessage(hwndEdit, SCI_SETCARETSTYLE, CARETSTYLE_LINE, 0);
-            ::SendMessage(hwndEdit, SCI_SETCARETSTICKY, SC_CARETSTICKY_OFF, 0);
-        }
-    }
-    else {
-        ::SendMessage(hwndEdit, SCI_SETCARETSTYLE, CARETSTYLE_LINE, 0);
-        ::SendMessage(hwndEdit, SCI_SETCARETSTICKY, SC_CARETSTICKY_OFF, 0);
-    }
+        if (state.mode == NORMAL || state.mode == VISUAL) ::SendMessage(hwndEdit, SCI_SETCARETSTYLE, CARETSTYLE_BLOCK, 0);
+        else if (state.mode == INSERT) ::SendMessage(hwndEdit, SCI_SETCARETSTYLE, CARETSTYLE_LINE, 0);
+    } else ::SendMessage(hwndEdit, SCI_SETCARETSTYLE, CARETSTYLE_LINE, 0);
 }
 
 void toggleVimMode() {
-    state.vimEnabled = !state.vimEnabled;
-    g_config.vimEnabled = state.vimEnabled;
-    saveConfig();
-
+    state.vimEnabled = !state.vimEnabled; g_config.vimEnabled = state.vimEnabled; saveConfig();
     HMENU hMenu = (HMENU)::SendMessage(nppData._nppHandle, NPPM_GETMENUHANDLE, NPPPLUGINMENU, 0);
-    if (hMenu) {
-        ::CheckMenuItem(hMenu, funcItem[0]._cmdID,
-            MF_BYCOMMAND | (state.vimEnabled ? MF_CHECKED : MF_UNCHECKED));
-    }
-
-    if (state.vimEnabled) {
-        ensureScintillaHooks();
-        g_normalMode->enter();
-        updateCursorForCurrentMode();
-        Utils::setStatus(TEXT("-- NORMAL --"));
-    }
-    else {
-        Utils::setStatus(TEXT(" "));
-
-        HWND editors[] = {
-            nppData._scintillaMainHandle,
-            nppData._scintillaSecondHandle,
-            Utils::getCurrentScintillaHandle()
-        };
-
-        for (HWND hwnd : editors) {
-            if (hwnd && IsWindow(hwnd)) {
-                ::SendMessage(hwnd, SCI_SETCARETSTYLE, CARETSTYLE_LINE, 0);
-                ::SendMessage(hwnd, SCI_SETOVERTYPE, false, 0);
-
-                int pos = (int)Utils::caretPos(hwnd);
-                ::SendMessage(hwnd, SCI_SETSEL, pos, pos);
-
-                ::InvalidateRect(hwnd, NULL, TRUE);
-                ::UpdateWindow(hwnd);
-            }
-        }
-
-        removeAllScintillaHooks();
-
-        SetTimer(nppData._nppHandle, 1, 100, [](HWND, UINT, UINT_PTR id, DWORD) {
-            HWND hwndEdit = Utils::getCurrentScintillaHandle();
-            if (hwndEdit && IsWindow(hwndEdit)) {
-                ::SendMessage(hwndEdit, SCI_SETCARETSTYLE, CARETSTYLE_LINE, 0);
-            }
-            KillTimer(nppData._nppHandle, id);
-            });
-    }
+    if (hMenu) ::CheckMenuItem(hMenu, funcItem[0]._cmdID, MF_BYCOMMAND | (state.vimEnabled ? MF_CHECKED : MF_UNCHECKED));
+    if (state.vimEnabled) { ensureScintillaHooks(); g_normalMode->enter(); updateCursorForCurrentMode(); Utils::setStatus(TEXT("-- NORMAL --")); }
+    else { Utils::setStatus(TEXT(" ")); removeAllScintillaHooks(); updateCursorForCurrentMode(); }
 }
 
-void about() {
-    DialogBox(g_hInstance, MAKEINTRESOURCE(IDD_ABOUT), nppData._nppHandle, AboutDlgProc);
-}
+void about() { DialogBox(g_hInstance, MAKEINTRESOURCE(IDD_ABOUT), nppData._nppHandle, AboutDlgProc); }
 
-BOOL APIENTRY DllMain(HANDLE hModule, DWORD reasonForCall, LPVOID /*lpReserved*/) {
-    if (reasonForCall == DLL_PROCESS_ATTACH) {
-        g_hInstance = (HINSTANCE)hModule;
-    }
+BOOL APIENTRY DllMain(HANDLE hModule, DWORD reasonForCall, LPVOID) {
+    if (reasonForCall == DLL_PROCESS_ATTACH) g_hInstance = (HINSTANCE)hModule;
     else if (reasonForCall == DLL_PROCESS_DETACH) {
-        if (nppData._scintillaMainHandle || nppData._scintillaSecondHandle)
-            removeAllScintillaHooks();
-    
-        CleanupDialogResources();
-
-        if (g_normalMode) delete g_normalMode;
-        if (g_visualMode) delete g_visualMode;
-        if (g_commandMode) delete g_commandMode;
+        removeNppHook();
+        removeAllScintillaHooks(); CleanupDialogResources();
+        if (g_normalMode) delete g_normalMode; if (g_visualMode) delete g_visualMode; if (g_commandMode) delete g_commandMode;
     }
     return TRUE;
 }
 
 extern "C" __declspec(dllexport) void setInfo(NppData notpadPlusData) {
-    nppData = notpadPlusData;
-    setNppData(notpadPlusData);
-
+    nppData = notpadPlusData; setNppData(notpadPlusData);
+    installNppHook();
+    initializeOptions();
+    g_normalMode = new NormalMode(state); g_visualMode = new VisualMode(state); g_commandMode = new CommandMode(state);
     loadConfig();
+    g_englishLayout = LoadKeyboardLayout(TEXT("00000409"), KLF_ACTIVATE); g_userLayout = GetKeyboardLayout(0);
+    state.vimEnabled = g_config.vimEnabled; if (state.vimEnabled) { ensureScintillaHooks(); g_normalMode->enter(); updateCursorForCurrentMode(); }
+}
 
-    g_normalMode = new NormalMode(state);
-    g_visualMode = new VisualMode(state);
+extern "C" __declspec(dllexport) const TCHAR* getName() { return PLUGIN_NAME; }
+
+void reloadConfiguration() { 
+    if (g_normalMode) delete g_normalMode; 
+    if (g_visualMode) delete g_visualMode; 
+    if (g_commandMode) delete g_commandMode;
+    
+    MappingManager::getInstance().clearMappings();
+    CommandMode::clearUserCommands();
+    OptionRegistry::getInstance().resetToDefaults();
+
+    g_normalMode = new NormalMode(state); 
+    g_visualMode = new VisualMode(state); 
     g_commandMode = new CommandMode(state);
 
-    g_englishLayout = LoadKeyboardLayout(TEXT("00000409"), KLF_ACTIVATE);
-    g_userLayout = GetKeyboardLayout(0);
-
-    state.vimEnabled = g_config.vimEnabled;
-    ensureScintillaHooks();
-    g_normalMode->enter();
-    updateCursorForCurrentMode();
+    loadConfig(); 
+    Utils::setStatus(TEXT("Configuration reloaded")); 
 }
-
-extern "C" __declspec(dllexport) const TCHAR* getName() {
-    return PLUGIN_NAME;
-}
+void editRcFile() { ConfigManager::getInstance().editRc(); }
+void editIniFile() { ConfigManager::getInstance().editIni(); }
 
 extern "C" __declspec(dllexport) FuncItem* getFuncsArray(int* nbF) {
     *nbF = nbFunc;
-
-    lstrcpy(funcItem[0]._itemName, TEXT("Toggle Vim Mode"));
-    funcItem[0]._pFunc = toggleVimMode;
-    funcItem[0]._pShKey = NULL;
-    funcItem[0]._init2Check = g_config.vimEnabled;
-
-    lstrcpy(funcItem[1]._itemName, TEXT("Configuration"));
-    funcItem[1]._pFunc = showConfigDialog;
-    funcItem[1]._pShKey = NULL;
-    funcItem[1]._init2Check = false;
-
-    lstrcpy(funcItem[2]._itemName, TEXT("--SEPARATOR--"));
-    funcItem[2]._pFunc = NULL;
-    funcItem[2]._pShKey = NULL;
-    funcItem[2]._init2Check = false;
-
-    lstrcpy(funcItem[3]._itemName, TEXT("About"));
-    funcItem[3]._pFunc = about;
-    funcItem[3]._pShKey = NULL;
-    funcItem[3]._init2Check = false;
-
+    lstrcpy(funcItem[0]._itemName, TEXT("Toggle Vim Mode")); funcItem[0]._pFunc = toggleVimMode; funcItem[0]._init2Check = g_config.vimEnabled;
+    lstrcpy(funcItem[1]._itemName, TEXT("Configuration Dialog")); funcItem[1]._pFunc = showConfigDialog;
+    lstrcpy(funcItem[2]._itemName, TEXT("Reload nppvim.rc")); funcItem[2]._pFunc = reloadConfiguration;
+    lstrcpy(funcItem[3]._itemName, TEXT("--SEPARATOR--"));
+    lstrcpy(funcItem[4]._itemName, TEXT("Edit nppvim.rc")); funcItem[4]._pFunc = editRcFile;
+    lstrcpy(funcItem[5]._itemName, TEXT("Edit config.ini")); funcItem[5]._pFunc = editIniFile;
+    lstrcpy(funcItem[6]._itemName, TEXT("--SEPARATOR--"));
+    lstrcpy(funcItem[7]._itemName, TEXT("About")); funcItem[7]._pFunc = about;
     return funcItem;
 }
 
 extern "C" __declspec(dllexport) void beNotified(SCNotification* notifyCode) {
     if (!notifyCode) return;
 
-    switch (notifyCode->nmhdr.code) {
-    case NPPN_BUFFERACTIVATED:
-    case NPPN_READY:
-        if (state.vimEnabled) {
-            ensureScintillaHooks();
-            updateCursorForCurrentMode();
+    if ((notifyCode->nmhdr.code == NPPN_BUFFERACTIVATED || notifyCode->nmhdr.code == NPPN_READY) && state.vimEnabled) {
+        ensureScintillaHooks(); 
+        updateCursorForCurrentMode();
+        // Force update immediately
+        HWND hwnd = Utils::getCurrentScintillaHandle();
+        if (hwnd) updateRelativeLineNumbers(hwnd, true);
+    }
+
+    if (notifyCode->nmhdr.code == NPPN_WORDSTYLESUPDATED || notifyCode->nmhdr.code == NPPN_DARKMODECHANGED) {
+        HWND hwnd = Utils::getCurrentScintillaHandle();
+        if (hwnd) {
+            ::SendMessage(hwnd, SCI_SETMARGINTYPEN, 0, SC_MARGIN_NUMBER);
+            updateRelativeLineNumbers(hwnd, true);
         }
-        break;
+    }
+
+    if (notifyCode->nmhdr.code == SCN_UPDATEUI) {
+        // Always update on selection/scroll/content change
+        if (notifyCode->updated & (SC_UPDATE_SELECTION | SC_UPDATE_V_SCROLL | SC_UPDATE_CONTENT | SC_UPDATE_H_SCROLL)) {
+            updateRelativeLineNumbers((HWND)notifyCode->nmhdr.hwndFrom);
+        }
     }
 }
 
-extern "C" __declspec(dllexport) LRESULT messageProc(UINT Message, WPARAM wParam, LPARAM lParam) {
-    return 0;
-}
+extern "C" __declspec(dllexport) LRESULT messageProc(UINT, WPARAM, LPARAM) { return 0; }
 
 #ifdef UNICODE
-extern "C" __declspec(dllexport) BOOL isUnicode() {
-    return TRUE;
-}
+extern "C" __declspec(dllexport) BOOL isUnicode() { return TRUE; }
 #endif

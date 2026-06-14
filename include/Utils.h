@@ -76,6 +76,8 @@ public:
     static void setClipboardText(const std::string& text);
 
     static std::string buildTutorText();
+    static std::string getPluginPath();
+    static std::string readPluginFile(const std::string& filename);
     static int getCharBlocking();
 
     static std::string getRegisterContent(char reg);
@@ -86,7 +88,14 @@ public:
     static void setCurrentRegister(char reg);
     static void storeRegister(char reg, const std::string& text, bool syncClipboard = true);
 
+    static std::string toUtf8(wchar_t wch);
+    static std::string toUtf8(const std::wstring& wstr);
+    static std::string trim(const std::string& s);
     static std::string getTextRange(HWND h, int start, int end);
+    static void parseLangmap(const std::string& langmapStr);
+    static char applyLangmap(wchar_t c);
+    static HKL resolveLayout(const std::string& layoutName);
+
     static void rot13(HWND hwnd, int start, int end);
     static int sci(HWND h, int msg, WPARAM w = 0, LPARAM l = 0);
 

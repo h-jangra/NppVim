@@ -45,6 +45,11 @@ public:
     bool handleKey(HWND hwnd, char key);
     void reset();
     
+    // Support for dynamic mappings
+    void addMapping(const std::string& from, const std::string& to, bool recursive);
+    void removeMapping(const std::string& from);
+    void clearDynamicMappings();
+
     std::string getPendingSequence() const { return pendingKeys; }
     bool hasPending() const { return !pendingKeys.empty(); }
 

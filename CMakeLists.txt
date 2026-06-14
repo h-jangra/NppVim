@@ -11,6 +11,10 @@ set(SOURCES
     src/TextObject.cpp
     src/Utils.cpp
     src/VisualMode.cpp
+    src/ConfigManager.cpp
+    src/OptionRegistry.cpp
+    src/MappingManager.cpp
+    src/RcParser.cpp
     plugin/NppVim.rc
 )
 

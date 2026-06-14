@@ -36,3 +36,7 @@ NppVim brings **Vim-like modal editing** to Notepad++.
 | Normal mode | `Esc` |
 | Visual modes | `v`/`V`/`Ctrl+q` |
 | Command mode | `:` |
+
+## Documentation
+
+- [Help](docs/help.md)

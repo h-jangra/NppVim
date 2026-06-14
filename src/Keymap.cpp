@@ -108,3 +108,47 @@ void Keymap::reset() {
     pendingKeys.clear();
     state.repeatCount = 0;
 }
+
+void Keymap::addMapping(const std::string& from, const std::string& to, bool recursive) {
+    auto handler = [this, to, recursive](HWND hwnd, int count) {
+        // Feed the 'to' sequence back into the keymap
+        // To prevent infinite recursion, we use a depth counter
+        static int depth = 0;
+        if (depth > 10) return;
+        depth++;
+        
+        for (int i = 0; i < count; ++i) {
+            for (char c : to) {
+                // If it's <Esc>, handle it specially
+                if (c == '<') {
+                    // Check for <Esc>, <CR>, etc.
+                    // For now, just handle <Esc>
+                    if (to.find("<Esc>") == 0) {
+                        // Enter normal mode
+                        // This is a bit of a hack, but works for the JJ -> Esc case
+                        ::PostMessage(hwnd, WM_CHAR, 27, 0); 
+                        depth--;
+                        return;
+                    }
+                }
+                this->handleKey(hwnd, c);
+            }
+        }
+        depth--;
+    };
+    insertKeySequence(from, handler);
+}
+
+void Keymap::removeMapping(const std::string& from) {
+    // Basic implementation: find the node and clear handler
+    auto node = root;
+    for (char key : from) {
+        if (node->children.find(key) == node->children.end()) return;
+        node = node->children[key];
+    }
+    node->handler = nullptr;
+    node->isLeaf = false;
+}
+
+void Keymap::clearDynamicMappings() {
+}

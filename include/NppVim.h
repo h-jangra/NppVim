@@ -41,6 +41,8 @@ struct VimConfig {
     std::string escapeKey = "esc";
     std::string customEscape = "";
     bool enableKeyboardLayoutSwitching;
+    std::string normallayout = "en-US";
+    std::string insertlayout = "system";
     int escapeTimeout = 300;
     bool overrideCtrlD = false;
     bool overrideCtrlU = false;
@@ -49,6 +51,9 @@ struct VimConfig {
     bool overrideCtrlB = false;
     bool overrideCtrlO = false;
     bool overrideCtrlI = false;
+    bool overrideCtrlV = false;
+    bool overrideCtrlA = false;
+    bool overrideCtrlX = false;
     bool xStoreClipboard = true;
     bool dStoreClipboard = true;
     bool cStoreClipboard = true;

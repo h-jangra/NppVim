@@ -1303,6 +1303,20 @@ void VisualMode::setupKeyMaps() {
 
 void VisualMode::enterChar(HWND hwnd) {
     state.mode = VISUAL;
+    
+    if (g_config.enableKeyboardLayoutSwitching) {
+        HWND focusWnd = ::GetFocus();
+        HKL targetLayout = Utils::resolveLayout(g_config.normallayout);
+        if (!targetLayout) targetLayout = ::LoadKeyboardLayout(L"00000409", KLF_ACTIVATE);
+
+        HKL currentLayout = ::GetKeyboardLayout(0);
+        if (currentLayout != targetLayout) {
+            state.savedInsertLayout = currentLayout;
+            ::ActivateKeyboardLayout(targetLayout, 0);
+            ::PostMessage(focusWnd, WM_INPUTLANGCHANGEREQUEST, 0, (LPARAM)targetLayout);
+        }
+    }
+
     state.isLineVisual = false;
     state.isBlockVisual = false;
     

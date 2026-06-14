@@ -12,6 +12,11 @@ public:
     void enter();
     void handleKey(HWND hwnd, char c);
     void enterInsertMode();
+
+    void incrementNumber(HWND hwnd, int count);
+    void decrementNumber(HWND hwnd, int count);
+    void jumpBackward(HWND hwnd);
+    void jumpForward(HWND hwnd);
     
 private:
     VimState& state;

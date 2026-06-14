@@ -4,15 +4,37 @@
 #include "../include/Keymap.h"
 #include "../include/NppVim.h"
 #include "../include/Marks.h"
-#include "../include/Utils.h"
 #include "../plugin/Scintilla.h"
 #include "../plugin/Notepad_plus_msgs.h"
 #include "../plugin/PluginInterface.h"
 #include "../plugin/menuCmdID.h"
-#include "CommandMode.h"
+#include <sstream>
+#include <algorithm>
+#include <vector>
+
+#include <unordered_map>
 
 extern NormalMode *g_normalMode;
 extern NppData nppData;
+extern HINSTANCE g_hInstance;
+
+static std::unordered_map<std::string, std::string> g_userCommands;
+
+void CommandMode::addUserCommand(const std::string& alias, const std::string& target) {
+    g_userCommands[alias] = target;
+}
+
+void CommandMode::clearUserCommands() {
+    g_userCommands.clear();
+}
+
+std::string CommandMode::resolveUserCommand(const std::string& alias) {
+    auto it = g_userCommands.find(alias);
+    if (it != g_userCommands.end()) {
+        return it->second;
+    }
+    return alias;
+}
 
 static void appendNonKeymapHelp(std::string& help);
 
@@ -34,6 +56,21 @@ void CommandMode::enter(char prompt) {
   state.commandMode = true;
   state.commandBuffer.clear();
   state.commandBuffer.push_back(prompt);
+
+  if (g_config.enableKeyboardLayoutSwitching) {
+    HWND focusWnd = ::GetFocus();
+    HKL targetLayout = Utils::resolveLayout(g_config.normallayout);
+    if (!targetLayout) targetLayout = ::LoadKeyboardLayout(L"00000409", KLF_ACTIVATE);
+
+    DWORD threadId = GetWindowThreadProcessId(focusWnd,nullptr);
+    HKL currentLayout = GetKeyboardLayout(threadId);
+    
+    if (currentLayout != targetLayout) {
+      state.savedInsertLayout = currentLayout;
+      ::ActivateKeyboardLayout(targetLayout, 0);
+      ::PostMessage(focusWnd, WM_INPUTLANGCHANGEREQUEST, 0, (LPARAM)targetLayout);
+    }
+  }
 
   HWND h = Utils::getCurrentScintillaHandle();
   if (h) {
@@ -75,19 +112,11 @@ void CommandMode::updateStatus() {
   std::wstring display(state.commandBuffer.begin(), state.commandBuffer.end());
 
   if (state.lastSearchMatchCount >= 0) {
-    const int totalWidth = 60;
-    int commandLength = static_cast<int>(display.length());
-
     std::wstring matchInfo;
     if (state.lastSearchMatchCount > 0) {
-      matchInfo = L"[" + std::to_wstring(state.lastSearchMatchCount) + L" matches]";
+      matchInfo = L"  [" + std::to_wstring(state.lastSearchMatchCount) + L" matches]";
     } else {
-      matchInfo = L"[Pattern not found]";
-    }
-
-    int padding = totalWidth - commandLength - static_cast<int>(matchInfo.length());
-    if (padding > 0) {
-      display += std::wstring(padding, L' ');
+      matchInfo = L"  [Pattern not found]";
     }
     display += matchInfo;
   }
@@ -95,21 +124,22 @@ void CommandMode::updateStatus() {
   Utils::setStatus(display.c_str());
 }
 
-void CommandMode::handleKey(HWND hwndEdit, char c) {
+void CommandMode::handleKey(HWND hwndEdit, wchar_t wChar) {
   if (!hwndEdit) return;
 
-  if (c == 13 || c == 10) {
+  if (wChar == 13 || wChar == 10) {
     handleEnter(hwndEdit);
     return;
   }
 
-  if (c == 27) {
+  if (wChar == 27) {
     exit();
     return;
   }
 
-  if (c >= 32 && c <= 126) {
-    state.commandBuffer.push_back(c);
+  if (wChar >= 32) {
+    std::string utf8 = Utils::toUtf8(wChar);
+    state.commandBuffer += utf8;
     updateStatus();
 
     if (state.commandBuffer[0] == '/' && state.commandBuffer.size() > 1) {
@@ -131,16 +161,20 @@ void CommandMode::handleBackspace(HWND hwndEdit) {
   if (!hwndEdit) return;
 
   if (state.commandBuffer.size() > 1) {
-    state.commandBuffer.pop_back();
+    // Correctly handle UTF-8 backspace by removing the last multi-byte character
+    if (!state.commandBuffer.empty()) {
+        size_t last = state.commandBuffer.size() - 1;
+        while (last > 0 && (state.commandBuffer[last] & 0xC0) == 0x80) {
+            last--;
+        }
+        state.commandBuffer.erase(last);
+    }
+    
     updateStatus();
 
     if (state.commandBuffer[0] == '/' && state.commandBuffer.size() > 1) {
       std::string currentSearch = state.commandBuffer.substr(1);
       Utils::updateSearchHighlight(hwndEdit, currentSearch, false);
-    } else if (state.commandBuffer[0] == ':' && state.commandBuffer.size() > 3 &&
-             state.commandBuffer[1] == 's' && state.commandBuffer[2] == ' ') {
-      std::string currentPattern = state.commandBuffer.substr(3);
-      Utils::updateSearchHighlight(hwndEdit, currentPattern, true);
     } else if (state.commandBuffer.size() == 1) {
       Utils::clearSearchHighlights(hwndEdit);
       state.lastSearchMatchCount = -1;
@@ -149,7 +183,7 @@ void CommandMode::handleBackspace(HWND hwndEdit) {
     previewSubstitutionFromBuffer(hwndEdit);
   }
   else {
-    exit();
+    this->exit();
   }
 }
 
@@ -160,7 +194,7 @@ void CommandMode::handleEnter(HWND hwndEdit) {
 
 void CommandMode::handleCommand(HWND hwndEdit) {
   if (state.commandBuffer.empty()) {
-    exit();
+    this->exit();
     return;
   }
 
@@ -184,7 +218,7 @@ void CommandMode::handleCommand(HWND hwndEdit) {
       if (buf.size() > 1) {
         handleColonCommand(hwndEdit, buf.substr(1));
       } else {
-        exit();
+        this->exit();
       }
     } else {
       Utils::setStatus(TEXT("Unknown command type"));
@@ -206,12 +240,108 @@ void CommandMode::handleSearchCommand(HWND hwndEdit, const std::string &searchTe
   performSearch(hwndEdit, searchTerm, searchFlags);
 }
 
+#include "../include/ConfigManager.h"
+#include "../include/OptionRegistry.h"
+#include "../include/MappingManager.h"
+#include "../include/RcParser.h"
+
 void CommandMode::handleColonCommand(HWND hwndEdit, const std::string &cmd) {
   if (cmd.empty()) return;
 
-  if (cmd == "marks" || cmd == "m" || cmd.find("delm") == 0 || cmd.find("dm") == 0) {
-    handleMarksCommand(hwndEdit, cmd);
-    return;
+  std::string fullCmd = cmd;
+  std::stringstream ss(fullCmd);
+  std::string baseCmd;
+  ss >> baseCmd;
+
+  // Resolve user-defined alias first
+  baseCmd = resolveUserCommand(baseCmd);
+
+  if (baseCmd == "set") {
+      std::string args;
+      std::getline(ss, args);
+      args = Utils::trim(args);
+      if (args.empty()) {
+          // Display all options
+          std::string help = "Options:\n========\n";
+          auto options = OptionRegistry::getInstance().getAllOptions();
+          for (const auto& opt : options) {
+              help += opt.name + " = ";
+              if (opt.type == OptionType::Bool) help += (std::get<bool>(opt.value) ? "on" : "off");
+              else if (opt.type == OptionType::Number) help += std::to_string(std::get<int>(opt.value));
+              else help += std::get<std::string>(opt.value);
+              help += "\n";
+          }
+          // Show in a new buffer or status
+          Utils::setStatus(TEXT("Options listed in Help (use :h for now)")); // Temporary
+      } else {
+          if (!OptionRegistry::getInstance().setOptionFromString(args)) {
+              Utils::setStatus(TEXT("E518: Unknown option"));
+          }
+      }
+      return;
+  }
+
+  if (baseCmd == "map" || baseCmd == "nmap" || baseCmd == "imap" || baseCmd == "vmap" ||
+      baseCmd == "noremap" || baseCmd == "nnoremap" || baseCmd == "inoremap" || baseCmd == "vnoremap") {
+      std::string args;
+      std::getline(ss, args);
+      args = Utils::trim(args);
+      if (args.empty()) {
+          // List mappings
+          Utils::setStatus(TEXT("Use :map with args for now"));
+      } else {
+          RcParser::getInstance().executeLine(fullCmd, hwndEdit);
+      }
+      return;
+  }
+
+  if (baseCmd == "source" || baseCmd == "so") {
+      std::string path;
+      ss >> path;
+      if (!RcParser::getInstance().parseFile(path, hwndEdit)) {
+          Utils::setStatus(TEXT("E484: Cannot open file"));
+      } else {
+          Utils::setStatus(TEXT("Configuration sourced"));
+      }
+      return;
+  }
+
+  if (baseCmd == "NppVimReload") {
+      loadConfig();
+      Utils::setStatus(TEXT("NppVim reloaded"));
+      return;
+  }
+
+  if (baseCmd == "version" || baseCmd == "ver") {
+      WCHAR path[MAX_PATH];
+      GetModuleFileNameW((HMODULE)g_hInstance, path, MAX_PATH);
+      DWORD handle = 0;
+      DWORD size = GetFileVersionInfoSizeW(path, &handle);
+      if (size) {
+          std::vector<BYTE> data(size);
+          if (GetFileVersionInfoW(path, 0, size, data.data())) {
+              VS_FIXEDFILEINFO* info = nullptr;
+              UINT len = 0;
+              if (VerQueryValueW(data.data(), L"\\", (LPVOID*)&info, &len)) {
+                  WCHAR version[64];
+                  wsprintfW(version, L"NppVim Version: %d.%d.%d.%d",
+                      HIWORD(info->dwFileVersionMS), LOWORD(info->dwFileVersionMS),
+                      HIWORD(info->dwFileVersionLS), LOWORD(info->dwFileVersionLS));
+                  Utils::setStatus(version);
+              }
+          }
+      }
+      return;
+  }
+
+  if (baseCmd == "editrc" || baseCmd == "erc") {
+      ConfigManager::getInstance().editRc();
+      return;
+  }
+
+  if (baseCmd == "editini" || baseCmd == "eini") {
+      ConfigManager::getInstance().editIni();
+      return;
   }
 
   bool isNumber = true;
@@ -324,23 +454,37 @@ auto helpHandler = [](HWND, int) {
     ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_FILE_NEW);
 
     HWND h = Utils::getCurrentScintillaHandle();
-    std::string help =
-        "NppVim — Command Mode Help\n"
-        "=========================\n\n";
-
-    const size_t CMD_COL = 18;
-
-    for (const auto& b : g_commandKeymap->getBindings()) {
-        std::string cmd = ":" + b.keys;
-
-        help += cmd;
-        if (cmd.size() < CMD_COL)
-            help += std::string(CMD_COL - cmd.size(), ' ');
-
-        help += " - ";
-        help += b.desc;
-        help += "\n";
+    std::string help = Utils::readPluginFile("docs\\help.md");
+    if (help.empty()) {
+        help = "NppVim — Help\n"
+               "=========================\n\n";
     }
+
+    auto appendKeymap = [&](const char* title, const Keymap* km, bool isCommandMode = false) {
+        if (!km) return;
+        help += "\n";
+        help += title;
+        help += "\n";
+        help += std::string(strlen(title), '-') + "\n";
+
+        size_t pad = 0;
+        for (const auto& b : km->getBindings())
+            pad = (std::max)(pad, b.keys.size());
+
+        for (const auto& b : km->getBindings()) {
+            help += "  ";
+            if (isCommandMode) help += ":";
+            help += b.keys;
+            help += std::string(pad - b.keys.size() + (isCommandMode ? 1 : 2), ' ');
+            help += "- ";
+            help += b.desc;
+            help += "\n";
+        }
+    };
+
+    appendKeymap("Normal Mode Mappings", g_normalKeymap.get());
+    appendKeymap("Visual Mode Mappings", g_visualKeymap.get());
+    appendKeymap("Command Mode Commands", g_commandKeymap.get(), true);
 
     appendNonKeymapHelp(help);
 
@@ -420,20 +564,36 @@ CommandMode::CommandMode(VimState &state) : state(state)
         Utils::setStatus(TEXT("Search highlight cleared"));
     })
     .set("set nu", "Enable line numbers", [](HWND hwnd, int) {
-        ::SendMessage(hwnd, SCI_SETMARGINWIDTHN, 0, 50);
+        OptionRegistry::getInstance().setOption("number", true);
         Utils::setStatus(TEXT("Line numbers enabled"));
     })
     .set("set number", "Enable line numbers", [](HWND hwnd, int) {
-        ::SendMessage(hwnd, SCI_SETMARGINWIDTHN, 0, 50);
+        OptionRegistry::getInstance().setOption("number", true);
         Utils::setStatus(TEXT("Line numbers enabled"));
     })
     .set("set nonu", "Disable line numbers", [](HWND hwnd, int) {
-        ::SendMessage(hwnd, SCI_SETMARGINWIDTHN, 0, 0);
+        OptionRegistry::getInstance().setOption("number", false);
         Utils::setStatus(TEXT("Line numbers disabled"));
     })
     .set("set nonumber", "Disable line numbers", [](HWND hwnd, int) {
-        ::SendMessage(hwnd, SCI_SETMARGINWIDTHN, 0, 0);
+        OptionRegistry::getInstance().setOption("number", false);
         Utils::setStatus(TEXT("Line numbers disabled"));
+    })
+    .set("set rnu", "Enable relative numbers", [](HWND hwnd, int) {
+        OptionRegistry::getInstance().setOption("relativenumber", true);
+        Utils::setStatus(TEXT("Relative numbers enabled"));
+    })
+    .set("set relativenumber", "Enable relative numbers", [](HWND hwnd, int) {
+        OptionRegistry::getInstance().setOption("relativenumber", true);
+        Utils::setStatus(TEXT("Relative numbers enabled"));
+    })
+    .set("set nornu", "Disable relative numbers", [](HWND hwnd, int) {
+        OptionRegistry::getInstance().setOption("relativenumber", false);
+        Utils::setStatus(TEXT("Relative numbers disabled"));
+    })
+    .set("set norelativenumber", "Disable relative numbers", [](HWND hwnd, int) {
+        OptionRegistry::getInstance().setOption("relativenumber", false);
+        Utils::setStatus(TEXT("Relative numbers disabled"));
     })
     .set("m", "Move line to specific line number", [](HWND h, int c) {
         int currentLine = ::SendMessage(h, SCI_LINEFROMPOSITION, Utils::caretPos(h), 0);
@@ -472,25 +632,29 @@ CommandMode::CommandMode(VimState &state) : state(state)
 }
 
 static void appendNonKeymapHelp(std::string& help) {
-    help += "\nOther Commands\n";
-    help += "--------------\n";
-    help += ":<number>          - Jump to line number\n";
-    help += ":q!                - Force close file\n";
-    help += ":quit!             - Force close file\n";
-    help += ":marks, :m         - Show marks\n";
-    help += ":delm, :dm         - Delete marks\n";
-    help += ":sort              - Sort lines (A→Z)\n";
-    help += ":sort!             - Sort lines (Z→A)\n";
-    help += ":sort n            - Numeric sort\n";
-    help += ":sort n!           - Numeric sort (desc)\n";
-    help += ":s/old/new/        - Substitute\n";
-    help += ":set tw=NN         - Set text width\n";
-    help += ":wrap              - Enable word wrap\n";
-    help += ":nowrap            - Disable wrap\n";
-    help += ":wrap char         - Character wrap\n";
-    help += ":wrap whitespace   - Whitespace wrap\n";
-    help += "/pattern           - Search forward\n";
-    help += "?pattern           - Search backward\n";
+    help += "\nCommon Commands\n";
+    help += "---------------\n";
+    help += ":e, :edit <file>   - Open file\n";
+    help += ":w, :write         - Save file\n";
+    help += ":q, :quit          - Close file\n";
+    help += ":wq, :x            - Save and close\n";
+    help += ":qa, :quitall      - Close all\n";
+    help += ":wqa               - Save and close all\n";
+    help += ":reload            - Reload nppvim.rc\n";
+    help += ":config            - Open settings dialog\n";
+    help += ":tutor             - Open interactive tutor\n";
+    help += "\nConfiguration\n";
+    help += "-------------\n";
+    help += "Settings are saved in 'config.ini' and 'nppvim.rc' in the plugin directory.\n";
+    help += "Use :set <option> to change settings. Available options:\n";
+    help += "  number, relativenumber, hlsearch, ignorecase, smartcase,\n";
+    help += "  expandtab, tabstop, shiftwidth, wrap, cursorline, list,\n";
+    help += "  scrolloff, keylayout, langmap\n";
+    help += "\nExamples:\n";
+    help += "  :set number\n";
+    help += "  :set tabstop=4\n";
+    help += "  :map K 5j\n";
+    help += "  :nmap <C-S> :w<CR>\n";
 }
 
 void CommandMode::handleSubstitutionCommand(HWND hwndEdit, const std::string &cmd) {

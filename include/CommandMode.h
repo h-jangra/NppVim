@@ -12,7 +12,7 @@ public:
 
     void enter(char prompt);
     void exit();
-    void handleKey(HWND hwndEdit, char c);
+    void handleKey(HWND hwndEdit, wchar_t wChar);
     void handleBackspace(HWND hwndEdit);
     void handleEnter(HWND hwndEdit);
     void updateStatus();
@@ -23,14 +23,20 @@ public:
     void searchPrevious(HWND hwndEdit);
     void handleMarksCommand(HWND hwndEdit, const std::string& commandLine);
 
+    // User Commands (Aliases)
+    static void addUserCommand(const std::string& alias, const std::string& target);
+    static void clearUserCommands();
+    static std::string resolveUserCommand(const std::string& alias);
+
+    void handleColonCommand(HWND hwndEdit, const std::string& cmd);
+    void handleSearchCommand(HWND hwndEdit, const std::string& searchTerm, int searchFlags = 0);
+    void handleSubstitutionCommand(HWND hwndEdit, const std::string& cmd);
+
 private:
     VimState& state;
     std::string lastPreviewBuffer;
 
     void handleCommand(HWND hwndEdit);
-    void handleColonCommand(HWND hwndEdit, const std::string& cmd);
-    void handleSearchCommand(HWND hwndEdit, const std::string& searchTerm, int searchFlags = 0);
-    void handleSubstitutionCommand(HWND hwndEdit, const std::string& cmd);
     void performSubstitution(HWND hwndEdit, const std::string& pattern, const std::string& replacement,
          bool useRegex, bool caseInsensitive, bool replaceAll, bool confirmEach, bool globalReplace, int startPos, int endPos);
 

@@ -8,6 +8,8 @@ cmake --build build\x64
 
 taskkill /IM notepad++.exe /F >nul 2>&1
 if not exist %DIR% mkdir %DIR%
+if not exist %DIR%\docs mkdir %DIR%\docs
 copy /Y build\x64\NppVim.dll %DIR%
+copy /Y docs\* %DIR%\docs\
 
 start "" %NPP%

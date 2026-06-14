@@ -1,10 +1,12 @@
 // Utils.cpp
-#include "../include/Utils.h"
-#include "../include/NppVim.h"
-#include "../include/NormalMode.h"
-#include "../include/VisualMode.h"
-#include "../plugin/Notepad_plus_msgs.h"
 #include "Utils.h"
+#include <algorithm>
+#include <fstream>
+#include <sstream>
+#include "NppVim.h"
+#include "NormalMode.h"
+#include "VisualMode.h"
+#include "Notepad_plus_msgs.h"
 
 NppData Utils::nppData;
 
@@ -504,6 +506,7 @@ std::string Utils::buildTutorText() {
 
     out += "NppVim Tutor\n";
     out += "============\n\n";
+    out += "Welcome to NppVim! This tutor will guide you through the basics.\n\n";
 
     auto append = [&](const char* title, const Keymap* km) {
         if (!km) return;
@@ -527,18 +530,75 @@ std::string Utils::buildTutorText() {
         out += "\n";
     };
 
-    append("Normal Mode", g_normalKeymap.get());
-    append("Visual Mode", g_visualKeymap.get());
-    append("Command Mode", g_commandKeymap.get());
+    append("1. Normal Mode (Navigation & Editing)", g_normalKeymap.get());
+    append("2. Visual Mode (Selection)", g_visualKeymap.get());
+    append("3. Command Mode (System Commands)", g_commandKeymap.get());
+
+    out += "4. Search and Replace\n";
+    out += "---------------------\n";
+    out += "  /pattern           - Search forward for pattern\n";
+    out += "  ?pattern           - Search backward for pattern\n";
+    out += "  n                  - Next match\n";
+    out += "  N                  - Previous match\n";
+    out += "  :s/old/new/        - Replace first 'old' with 'new' in current line\n";
+    out += "  :s/old/new/g       - Replace all 'old' with 'new' in current line\n";
+    out += "  :%s/old/new/g      - Replace all 'old' with 'new' in entire file\n";
+    out += "  :%s/old/new/gc     - Replace all with confirmation\n";
     out += "\n";
-    out += ":s/foo/bar/g        - Replace all matches in line\n";
-    out += ":s/foo/bar/c        - Replace with confirmation\n";
-    out += ":s/foo/bar/gc       - Replace all in line (confirm)\n";
-    out += ":s/foo/bar/i        - Case-insensitive replace\n";
-    out += ":s/foo/bar/l        - Literal (no regex) replace\n";
-    out += ":%s/foo/bar/gc      - Replace in whole file (confirm)\n";
+
+    out += "5. Configuration and Persistence\n";
+    out += "--------------------------------\n";
+    out += "  :set <option>      - Set a temporary option\n";
+    out += "  :set nu            - Show line numbers\n";
+    out += "  :set nonu          - Hide line numbers\n";
+    out += "\n";
+    out += "  NppVim looks for configuration in two files in the plugin folder:\n";
+    out += "  1. config.ini      - Basic settings and state\n";
+    out += "  2. nppvim.rc       - Custom mappings and commands (Vim script style)\n";
+    out += "\n";
+    out += "  Use ':editrc' or ':editini' to modify these files directly.\n";
+    out += "  Use ':reload' to apply changes made to nppvim.rc.\n";
+    out += "\n";
+
+    out += "6. Tips\n";
+    out += "-------\n";
+    out += "  - Press 'ESC' to return to Normal mode from any other mode.\n";
+    out += "  - Use 'u' to undo and 'Ctrl+R' to redo changes.\n";
+    out += "  - Use ':help' or ':h' to see the full list of commands.\n";
 
     return out;
+}
+
+std::string Utils::getPluginPath() {
+    TCHAR path[MAX_PATH];
+    HMODULE hModule = GetModuleHandle(TEXT("NppVim.dll"));
+    if (hModule) {
+        GetModuleFileName(hModule, path, MAX_PATH);
+        std::wstring wFull(path);
+        
+        // Correct conversion from wstring to string
+        int size = WideCharToMultiByte(CP_UTF8, 0, wFull.c_str(), -1, NULL, 0, NULL, NULL);
+        if (size > 0) {
+            std::string full(size, 0);
+            WideCharToMultiByte(CP_UTF8, 0, wFull.c_str(), -1, &full[0], size, NULL, NULL);
+            while (!full.empty() && full.back() == '\0') full.pop_back();
+
+            size_t lastSlash = full.find_last_of("\\/");
+            if (lastSlash != std::string::npos) {
+                return full.substr(0, lastSlash);
+            }
+        }
+    }
+    return "";
+}
+
+std::string Utils::readPluginFile(const std::string& filename) {
+    std::string path = getPluginPath() + "\\" + filename;
+    std::ifstream ifs(path);
+    if (!ifs.is_open()) return "";
+    std::stringstream ss;
+    ss << ifs.rdbuf();
+    return ss.str();
 }
 
 int Utils::getCharBlocking() {
@@ -602,7 +662,81 @@ void Utils::storeRegister(char reg, const std::string& text, bool syncClipboard)
     }
 }
 
-std::string Utils::getTextRange(HWND h, int start, int end){
+static std::unordered_map<wchar_t, char> g_langmap;
+
+void Utils::parseLangmap(const std::string& langmapStr) {
+    g_langmap.clear();
+    if (langmapStr.empty()) return;
+
+    // We need to decode the UTF-8 langmapStr into wide characters
+    int wideLen = MultiByteToWideChar(CP_UTF8, 0, langmapStr.c_str(), -1, NULL, 0);
+    if (wideLen <= 0) return;
+    std::wstring wStr(wideLen, 0);
+    MultiByteToWideChar(CP_UTF8, 0, langmapStr.c_str(), -1, &wStr[0], wideLen);
+    
+    // Remove the null terminator added by MultiByteToWideChar
+    while (!wStr.empty() && wStr.back() == L'\0') wStr.pop_back();
+
+    std::vector<std::wstring> parts;
+    std::wstring current;
+    bool escaped = false;
+    for (wchar_t c : wStr) {
+        if (escaped) {
+            current += c;
+            escaped = false;
+        } else if (c == L'\\') {
+            escaped = true;
+        } else if (c == L',') {
+            parts.push_back(current);
+            current.clear();
+        } else {
+            current += c;
+        }
+    }
+    parts.push_back(current);
+
+    for (const auto& part : parts) {
+        if (part.empty()) continue;
+        size_t semi = part.find(L';');
+        if (semi != std::wstring::npos) {
+            std::wstring from = part.substr(0, semi);
+            std::wstring to = part.substr(semi + 1);
+            for (size_t i = 0; i < from.length() && i < to.length(); ++i) {
+                g_langmap[from[i]] = (char)to[i];
+            }
+        } else {
+            for (size_t i = 0; i + 1 < part.length(); i += 2) {
+                g_langmap[part[i]] = (char)part[i+1];
+            }
+        }
+    }
+}
+
+std::string Utils::toUtf8(wchar_t wch) {
+    if (wch == 0) return "";
+    wchar_t buf[2] = {wch, 0};
+    return toUtf8(std::wstring(buf));
+}
+
+std::string Utils::toUtf8(const std::wstring& wstr) {
+    if (wstr.empty()) return "";
+    int size = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, NULL, 0, NULL, NULL);
+    if (size <= 0) return "";
+    std::string str(size, 0);
+    WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, &str[0], size, NULL, NULL);
+    while (!str.empty() && str.back() == '\0') str.pop_back();
+    return str;
+}
+
+std::string Utils::trim(const std::string& s) {
+    size_t first = s.find_first_not_of(" \t\r\n");
+    if (std::string::npos == first) return "";
+    size_t last = s.find_last_not_of(" \t\r\n");
+    return s.substr(first, (last - first + 1));
+}
+
+std::string Utils::getTextRange(HWND h, int start, int end) {
+    if (start >= end) return "";
     std::vector<char> buffer(end - start + 1);
     Sci_TextRangeFull tr;
     tr.chrg.cpMin = start;
@@ -614,17 +748,44 @@ std::string Utils::getTextRange(HWND h, int start, int end){
 
 void Utils::rot13(HWND hwnd, int start, int end) {
     if (start >= end) return;
-
     std::string text = getTextRange(hwnd, start, end);
-
     for (char &c : text) {
-        if (c >= 'a' && c <= 'z')
-            c = 'a' + (c - 'a' + 13) % 26;
-        else if (c >= 'A' && c <= 'Z')
-            c = 'A' + (c - 'A' + 13) % 26;
+        if (c >= 'a' && c <= 'z') c = 'a' + (c - 'a' + 13) % 26;
+        else if (c >= 'A' && c <= 'Z') c = 'A' + (c - 'A' + 13) % 26;
     }
-
     ::SendMessage(hwnd, SCI_SETTARGETSTART, start, 0);
     ::SendMessage(hwnd, SCI_SETTARGETEND, end, 0);
     ::SendMessage(hwnd, SCI_REPLACETARGET, text.size(), (LPARAM)text.c_str());
+}
+
+char Utils::applyLangmap(wchar_t c) {
+    auto it = g_langmap.find(c);
+    if (it != g_langmap.end()) return it->second;
+    if (c <= 0x7F) return (char)c;
+    return 0;
+}
+
+HKL Utils::resolveLayout(const std::string& layoutName) {
+    if (layoutName == "system" || layoutName.empty()) return nullptr;
+
+    // Mapping some common names to LCIDs
+    static std::map<std::string, std::string> nameToLcid = {
+        {"en-US", "00000409"}, {"en-GB", "00000809"},
+        {"ru-RU", "00000419"}, {"hi-IN", "00000439"},
+        {"fr-FR", "0000040c"}, {"de-DE", "00000407"},
+        {"es-ES", "0000040a"}, {"it-IT", "00000410"},
+        {"ja-JP", "00000411"}, {"ko-KR", "00000412"},
+        {"zh-CN", "00000804"}
+    };
+
+    std::string lcid = "00000409"; // Default to US English
+    auto it = nameToLcid.find(layoutName);
+    if (it != nameToLcid.end()) {
+        lcid = it->second;
+    } else if (layoutName.length() == 8 && std::all_of(layoutName.begin(), layoutName.end(), ::isxdigit)) {
+        lcid = layoutName;
+    }
+
+    std::wstring wlcid(lcid.begin(), lcid.end());
+    return ::LoadKeyboardLayout(wlcid.c_str(), KLF_ACTIVATE);
 }

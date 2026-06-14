@@ -1,3 +1,25 @@
+# 1.14.0.0
+
+## Added
+
+### Relative Line Numbers
+- **Themed Integration**: Numbers now automatically match active Notepad++ colors and fonts.
+- **Hybrid Mode**: Show absolute line number for the current line and relative for others (enable both `nu` and `rnu`).
+- **Dynamic Width**: Gutter width now adjusts automatically based on document size.
+- **Performance**: Optimized updates to eliminate flickering during cursor movement.
+- **Instant Load**: Fixed numbering not showing immediately on file open or buffer switch.
+
+### Configuration (.rc and .ini)
+- **Startup Script**: `nppvim.rc` now supports executing any command-mode command (e.g., `:w`, `:split`, `:command`).
+- **Improved Parsing**: Correctly handles `no` prefix for aliases (e.g., `set nonu`, `set nornu`).
+- **Keyboard Layouts**: Support for `set normallayout` and `set insertlayout` directly in `.rc`.
+- **Persistent States**: Plugin now correctly resets and reloads all options from scratch when reloading configuration.
+
+## Fixed
+- Fixed flickering when moving cursor with relative numbers enabled.
+- Fixed configuration reload not disabling features removed from `nppvim.rc`.
+- Fixed build failures in `CommandMode.cpp` related to member access and name ambiguity.
+
 # 1.12.0.0
 
 ## Fixed

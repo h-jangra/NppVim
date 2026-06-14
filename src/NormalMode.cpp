@@ -1278,44 +1278,17 @@ void NormalMode::setupKeyMaps() {
     });
 
     k.set("\x01", "Ctrl+A Increment number", [this](HWND h, int c) {
-        int pos = Utils::caretPos(h);
-        int line = Utils::caretLine(h);
-        int start = Utils::lineStart(h, line);
-        int end = Utils::lineEnd(h, line);
-
-        int s = pos;
-        int e = pos;
-
-        if (pos < end && std::isdigit(::SendMessage(h, SCI_GETCHARAT, pos, 0))) {
-            s = pos;
-        } else {
-            while (s < end && !std::isdigit(::SendMessage(h, SCI_GETCHARAT, s, 0))) s++;
-            if (s == end) {
-                s = pos;
-                while (s > start && !std::isdigit(::SendMessage(h, SCI_GETCHARAT, s - 1, 0))) s--;
-                if (s == start) return;
-                s--;
-            }
-        }
-
-        while (s > start && std::isdigit(::SendMessage(h, SCI_GETCHARAT, s - 1, 0))) s--;
-        if (s > start && ::SendMessage(h, SCI_GETCHARAT, s - 1, 0) == '-') s--;
-
-        e = s;
-        while (e < end && std::isdigit(::SendMessage(h, SCI_GETCHARAT, e, 0))) e++;
-
-        std::vector<char> buf(e - s + 1);
-        Sci_TextRangeFull tr{ { s, e }, buf.data() };
-        ::SendMessage(h, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
-
-        int n = std::stoi(buf.data()) + c;
-        std::string r = std::to_string(n);
-
-        ::SendMessage(h, SCI_SETTARGETRANGE, s, e);
-        ::SendMessage(h, SCI_REPLACETARGET, r.size(), (LPARAM)r.c_str());
+        incrementNumber(h, c);
     })
     .set("\x18", "Ctrl+X Decrement number", [this](HWND h, int c) {
-        g_normalKeymap->handleKey(h, '\x01');
+        decrementNumber(h, c);
+    });
+
+    k.set("\x0F", "Ctrl+O - Jump backward", [this](HWND h, int c) {
+        for (int i = 0; i < c; i++) jumpBackward(h);
+    })
+    .set("\x09", "Ctrl+I - Jump forward", [this](HWND h, int c) {
+        for (int i = 0; i < c; i++) jumpForward(h);
     });
 
     k.set("\x12", "Ctrl+R - Redo", [this](HWND h, int c) {
@@ -1395,10 +1368,6 @@ void NormalMode::setupKeyMaps() {
 
 void NormalMode::enter() {
     
-    if (!g_config.enableKeyboardLayoutSwitching) {
-        ActivateKeyboardLayout(g_englishLayout, 0);
-    }
-
     HWND hwnd = Utils::getCurrentScintillaHandle();
 
     if (state.mode == VISUAL && !state.restoringVisual) {
@@ -1413,14 +1382,17 @@ void NormalMode::enter() {
         state.lastVisualWasBlock = state.isBlockVisual;
     }
 
-    // Save current layout and switch to English for Normal mode
-    HWND focusWnd = ::GetFocus();
-    HKL currentLayout = ::GetKeyboardLayout(::GetWindowThreadProcessId(focusWnd, nullptr));
-    HKL englishLayout = ::LoadKeyboardLayout(TEXT("00000409"), KLF_ACTIVATE);
-    if (currentLayout != englishLayout) {
-        state.savedInsertLayout = currentLayout;
-        ::PostMessage(focusWnd, WM_INPUTLANGCHANGEREQUEST, 0, (LPARAM)englishLayout);
-        ::ActivateKeyboardLayout(englishLayout, 0);
+    if (g_config.enableKeyboardLayoutSwitching) {
+        HWND focusWnd = ::GetFocus();
+        HKL targetLayout = Utils::resolveLayout(g_config.normallayout);
+        if (!targetLayout) targetLayout = ::LoadKeyboardLayout(L"00000409", KLF_ACTIVATE);
+
+        HKL currentLayout = ::GetKeyboardLayout(0);
+        if (currentLayout != targetLayout) {
+            state.savedInsertLayout = currentLayout;
+            ::ActivateKeyboardLayout(targetLayout, 0);
+            ::PostMessage(focusWnd, WM_INPUTLANGCHANGEREQUEST, 0, (LPARAM)targetLayout);
+        }
     }
 
     state.mode = NORMAL;
@@ -1447,19 +1419,25 @@ void NormalMode::enter() {
 void NormalMode::enterInsertMode() {
     state.lastInsertPos = Utils::caretPos(Utils::getCurrentScintillaHandle());
 
-    if (g_config.enableKeyboardLayoutSwitching && g_userLayout) {
-        ActivateKeyboardLayout(g_userLayout, 0);
-    }
-
     HWND hwnd = Utils::getCurrentScintillaHandle();
     state.mode = INSERT;
     state.reset();
 
-    HWND focusWnd = ::GetFocus();
+    if (g_config.enableKeyboardLayoutSwitching) {
+        HWND focusWnd = ::GetFocus();
+        HKL targetLayout = nullptr;
+        
+        if (g_config.insertlayout == "system") {
+            targetLayout = state.savedInsertLayout;
+            if (!targetLayout) targetLayout = g_userLayout;
+        } else {
+            targetLayout = Utils::resolveLayout(g_config.insertlayout);
+        }
 
-    if (state.savedInsertLayout) {
-        ::PostMessage(focusWnd, WM_INPUTLANGCHANGEREQUEST, 0, (LPARAM)state.savedInsertLayout);
-        ::ActivateKeyboardLayout(state.savedInsertLayout, 0);
+        if (targetLayout) {
+            ::PostMessage(focusWnd, WM_INPUTLANGCHANGEREQUEST, 0, (LPARAM)targetLayout);
+            ::ActivateKeyboardLayout(targetLayout, 0);
+        }
     }
 
     if (state.recordingMacro) {
@@ -1757,6 +1735,9 @@ void NormalMode::deleteLineOnce(HWND hwnd) {
     ::SendMessage(hwnd, SCI_CUT, 0, 0);
 
     int newPos = Utils::lineStart(hwnd, line);
+    if (newPos == -1) {
+        newPos = (int)::SendMessage(hwnd, SCI_GETLENGTH, 0, 0);
+    }
     ::SendMessage(hwnd, SCI_GOTOPOS, newPos, 0);
 }
 
@@ -2070,4 +2051,106 @@ void NormalMode::gotoDefinition(HWND h, VimState& state, bool applyOp) {
             NormalMode::enterInsertMode();
             break;
     }
+}
+
+void NormalMode::incrementNumber(HWND h, int c) {
+    int pos = Utils::caretPos(h);
+    int line = Utils::caretLine(h);
+    int start = Utils::lineStart(h, line);
+    int end = Utils::lineEnd(h, line);
+
+    int s = pos;
+    int e = pos;
+
+    if (pos < end && std::isdigit(::SendMessage(h, SCI_GETCHARAT, pos, 0))) {
+        s = pos;
+    } else {
+        while (s < end && !std::isdigit(::SendMessage(h, SCI_GETCHARAT, s, 0))) s++;
+        if (s == end) {
+            s = pos;
+            while (s > start && !std::isdigit(::SendMessage(h, SCI_GETCHARAT, s - 1, 0))) s--;
+            if (s == start) return;
+            s--;
+        }
+    }
+
+    while (s > start && std::isdigit(::SendMessage(h, SCI_GETCHARAT, s - 1, 0))) s--;
+    if (s > start && ::SendMessage(h, SCI_GETCHARAT, s - 1, 0) == '-') s--;
+
+    e = s;
+    while (e < end && std::isdigit(::SendMessage(h, SCI_GETCHARAT, e, 0))) e++;
+
+    std::vector<char> buf(e - s + 1);
+    Sci_TextRangeFull tr{ { s, e }, buf.data() };
+    ::SendMessage(h, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
+
+    try {
+        int n = std::stoi(buf.data()) + (c > 0 ? c : 1);
+        std::string r = std::to_string(n);
+
+        ::SendMessage(h, SCI_SETTARGETRANGE, s, e);
+        ::SendMessage(h, SCI_REPLACETARGET, r.size(), (LPARAM)r.c_str());
+        ::SendMessage(h, SCI_SETEMPTYSELECTION, s + (int)r.size() - 1, 0);
+    } catch (...) {}
+}
+
+void NormalMode::decrementNumber(HWND h, int c) {
+    int pos = Utils::caretPos(h);
+    int line = Utils::caretLine(h);
+    int start = Utils::lineStart(h, line);
+    int end = Utils::lineEnd(h, line);
+
+    int s = pos;
+    int e = pos;
+
+    if (pos < end && std::isdigit(::SendMessage(h, SCI_GETCHARAT, pos, 0))) {
+        s = pos;
+    } else {
+        while (s < end && !std::isdigit(::SendMessage(h, SCI_GETCHARAT, s, 0))) s++;
+        if (s == end) {
+            s = pos;
+            while (s > start && !std::isdigit(::SendMessage(h, SCI_GETCHARAT, s - 1, 0))) s--;
+            if (s == start) return;
+            s--;
+        }
+    }
+
+    while (s > start && std::isdigit(::SendMessage(h, SCI_GETCHARAT, s - 1, 0))) s--;
+    if (s > start && ::SendMessage(h, SCI_GETCHARAT, s - 1, 0) == '-') s--;
+
+    e = s;
+    while (e < end && std::isdigit(::SendMessage(h, SCI_GETCHARAT, e, 0))) e++;
+
+    std::vector<char> buf(e - s + 1);
+    Sci_TextRangeFull tr{ { s, e }, buf.data() };
+    ::SendMessage(h, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
+
+    try {
+        int n = std::stoi(buf.data()) - (c > 0 ? c : 1);
+        std::string r = std::to_string(n);
+
+        ::SendMessage(h, SCI_SETTARGETRANGE, s, e);
+        ::SendMessage(h, SCI_REPLACETARGET, r.size(), (LPARAM)r.c_str());
+        ::SendMessage(h, SCI_SETEMPTYSELECTION, s + (int)r.size() - 1, 0);
+    } catch (...) {}
+}
+
+void NormalMode::jumpBackward(HWND hwnd) {
+    if (state.jumpList.empty() || state.jumpIndex <= 0) return;
+    
+    state.jumpIndex--;
+    auto& jump = state.jumpList[state.jumpIndex];
+    ::SendMessage(hwnd, SCI_GOTOPOS, jump.position, 0);
+    ::SendMessage(hwnd, SCI_SETSEL, jump.position, jump.position);
+    ::SendMessage(hwnd, SCI_SCROLLCARET, 0, 0);
+}
+
+void NormalMode::jumpForward(HWND hwnd) {
+    if (state.jumpList.empty() || state.jumpIndex >= (int)state.jumpList.size() - 1) return;
+    
+    state.jumpIndex++;
+    auto& jump = state.jumpList[state.jumpIndex];
+    ::SendMessage(hwnd, SCI_GOTOPOS, jump.position, 0);
+    ::SendMessage(hwnd, SCI_SETSEL, jump.position, jump.position);
+    ::SendMessage(hwnd, SCI_SCROLLCARET, 0, 0);
 }

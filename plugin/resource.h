@@ -32,6 +32,8 @@
 #define IDC_CHECK_C_CLIPBOARD           117
 #define IDC_CHECK_X_CLIPBOARD           118
 #define IDC_CHECK_KB_LAYOUT             119
+#define IDC_NORMAL_LAYOUT               1008
+#define IDC_INSERT_LAYOUT               1009
 // //
 // #define SW_HIDE                         0
 // #define HIDE_WINDOW                     0
