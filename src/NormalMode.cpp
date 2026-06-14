@@ -1466,6 +1466,7 @@ void NormalMode::setupKeyMaps() {
 void NormalMode::enter() {
     
     HWND hwnd = Utils::getCurrentScintillaHandle();
+    int caret = Utils::caretPos(hwnd);
 
     if (state.mode == VISUAL && !state.restoringVisual) {
         if (state.isBlockVisual) {
@@ -1509,7 +1510,6 @@ void NormalMode::enter() {
     ::SendMessage(hwnd, SCI_CLEARSELECTIONS, 0, 0);
 
     if (!state.restoringVisual) {
-        int caret = Utils::caretPos(hwnd);
         Utils::select(hwnd, caret, caret);
     }
 
@@ -1994,9 +1994,14 @@ void NormalMode::applyOperatorToMotion(HWND hwnd, char op, char motion, int coun
         break;
     case 'c':
         ::SendMessage(hwnd, SCI_CUT, 0, 0);
-        ::SendMessage(hwnd, SCI_HOME, 0, 0);
-        ::SendMessage(hwnd, SCI_NEWLINE, 0, 0);
-        Motion::lineUp(hwnd, 1);
+        if (isLineMotion) {
+            ::SendMessage(hwnd, SCI_HOME, 0, 0);
+            ::SendMessage(hwnd, SCI_NEWLINE, 0, 0);
+            Motion::lineUp(hwnd, 1);
+        } else {
+            ::SendMessage(hwnd, SCI_SETCURRENTPOS, start, 0);
+            ::SendMessage(hwnd, SCI_SETSEL, start, start);
+        }
         enterInsertMode();
         state.recordLastOp(OP_MOTION, count, motion);
         break;

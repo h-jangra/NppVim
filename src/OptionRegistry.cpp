@@ -36,13 +36,6 @@ void OptionRegistry::resetToDefaults() {
 }
 
 bool OptionRegistry::setOptionFromString(const std::string& line) {
-    // Expected formats:
-    // set number
-    // set nonumber
-    // set nu
-    // set nonu
-    // set clipboard=unnamed
-    
     std::string s = line;
     if (s.find("set ") == 0) s = s.substr(4);
     
@@ -52,46 +45,71 @@ bool OptionRegistry::setOptionFromString(const std::string& line) {
 
     if (s.empty()) return false;
 
-    std::string name = s;
-    OptionValue value;
-    bool isBool = true;
-    bool boolVal = true;
-
-    size_t eqPos = s.find('=');
-    if (eqPos != std::string::npos) {
-        name = s.substr(0, eqPos);
-        std::string valStr = s.substr(eqPos + 1);
-        isBool = false;
-        
-        // Check if it's a number or string
-        try {
-            value = std::stoi(valStr);
-        } catch (...) {
-            value = valStr;
-        }
-    } else {
-        if (name.find("no") == 0) {
-            std::string potentialName = name.substr(2);
-            // Handle aliases before checking prefix
-            if (potentialName == "nu") potentialName = "number";
-            if (potentialName == "rnu") potentialName = "relativenumber";
-
-            if (options.count(potentialName)) {
-                name = potentialName;
-                boolVal = false;
-            } else if (options.count(name)) {
-                // it's an option that happens to start with 'no'
-                boolVal = true;
-            }
-        }
-        value = boolVal;
+    // Split s by whitespace into individual option strings
+    std::vector<std::string> tokens;
+    std::string token;
+    std::stringstream ss(s);
+    while (ss >> token) {
+        tokens.push_back(token);
     }
 
-    // Handle aliases (for positive case)
-    if (name == "nu") name = "number";
-    if (name == "rnu") name = "relativenumber";
+    bool allSuccess = true;
 
-    return setOption(name, value);
+    for (const auto& tok : tokens) {
+        std::string name = tok;
+        OptionValue value;
+        bool isBool = true;
+        bool boolVal = true;
+
+        size_t eqPos = tok.find('=');
+        if (eqPos != std::string::npos) {
+            name = tok.substr(0, eqPos);
+            std::string valStr = tok.substr(eqPos + 1);
+            
+            // Trim name and valStr
+            name.erase(0, name.find_first_not_of(" \t"));
+            name.erase(name.find_last_not_of(" \t") + 1);
+            valStr.erase(0, valStr.find_first_not_of(" \t"));
+            valStr.erase(valStr.find_last_not_of(" \t") + 1);
+
+            isBool = false;
+            
+            // Check if it's a number or string
+            try {
+                value = std::stoi(valStr);
+            } catch (...) {
+                value = valStr;
+            }
+        } else {
+            if (name.find("no") == 0) {
+                std::string potentialName = name.substr(2);
+                // Handle aliases before checking prefix
+                if (potentialName == "nu") potentialName = "number";
+                if (potentialName == "rnu") potentialName = "relativenumber";
+                if (potentialName == "tw") potentialName = "textwidth";
+
+                if (options.count(potentialName)) {
+                    name = potentialName;
+                    boolVal = false;
+                } else if (options.count(name)) {
+                    // it's an option that happens to start with 'no'
+                    boolVal = true;
+                }
+            }
+            value = boolVal;
+        }
+
+        // Handle aliases (for positive case)
+        if (name == "nu") name = "number";
+        if (name == "rnu") name = "relativenumber";
+        if (name == "tw") name = "textwidth";
+
+        if (!setOption(name, value)) {
+            allSuccess = false;
+        }
+    }
+
+    return allSuccess;
 }
 
 OptionValue OptionRegistry::getOption(const std::string& name) const {

@@ -353,6 +353,38 @@ void initializeOptions() {
     reg.registerOption("langmap", OptionType::String, std::string(""), [](const OptionValue& v) {
         Utils::parseLangmap(std::get<std::string>(v));
     }, "Translate characters in Normal/Visual modes");
+
+    reg.registerOption("textwidth", OptionType::Number, 0, [](const OptionValue& v) {
+        int width = 0;
+        if (std::holds_alternative<int>(v)) {
+            width = std::get<int>(v);
+        } else if (std::holds_alternative<std::string>(v)) {
+            try {
+                width = std::stoi(std::get<std::string>(v));
+            } catch (...) {
+                width = 0;
+            }
+        } else if (std::holds_alternative<bool>(v)) {
+            width = std::get<bool>(v) ? 80 : 0;
+        }
+
+        HWND mainWnd = nppData._scintillaMainHandle;
+        HWND secondWnd = nppData._scintillaSecondHandle;
+
+        if (width > 0) {
+            if (mainWnd) {
+                ::SendMessage(mainWnd, SCI_SETEDGECOLUMN, width, 0);
+                ::SendMessage(mainWnd, SCI_SETEDGEMODE, EDGE_LINE, 0);
+            }
+            if (secondWnd) {
+                ::SendMessage(secondWnd, SCI_SETEDGECOLUMN, width, 0);
+                ::SendMessage(secondWnd, SCI_SETEDGEMODE, EDGE_LINE, 0);
+            }
+        } else {
+            if (mainWnd) ::SendMessage(mainWnd, SCI_SETEDGEMODE, EDGE_NONE, 0);
+            if (secondWnd) ::SendMessage(secondWnd, SCI_SETEDGEMODE, EDGE_NONE, 0);
+        }
+    }, "Maximum width of text that is being inserted");
 }
 
 void loadConfig() {
