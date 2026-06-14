@@ -26,6 +26,79 @@ int g_macroDepth = 0;
 
 extern VimConfig g_config;
 
+static std::vector<std::string> splitLines(const std::string& str) {
+    std::vector<std::string> lines;
+    std::string current;
+    for (char c : str) {
+        if (c == '\r') continue;
+        if (c == '\n') {
+            lines.push_back(current);
+            current.clear();
+        } else {
+            current.push_back(c);
+        }
+    }
+    if (!current.empty() || str.empty()) {
+        lines.push_back(current);
+    }
+    if (!lines.empty() && lines.back().empty() && !str.empty() && str.back() == '\n') {
+        lines.pop_back();
+    }
+    return lines;
+}
+
+static void pasteBlock(HWND h, const std::string& content, bool pasteAfter) {
+    std::vector<std::string> lines = splitLines(content);
+    if (lines.empty()) return;
+
+    int caretPos = Utils::caretPos(h);
+    int startLine = ::SendMessage(h, SCI_LINEFROMPOSITION, caretPos, 0);
+    int startCol = ::SendMessage(h, SCI_GETCOLUMN, caretPos, 0);
+
+    int targetCol = pasteAfter ? (startCol + 1) : startCol;
+    if (pasteAfter) {
+        int lineStart = ::SendMessage(h, SCI_POSITIONFROMLINE, startLine, 0);
+        int lineEnd = Utils::lineEnd(h, startLine);
+        if (lineStart == lineEnd) {
+            targetCol = 0;
+        }
+    }
+
+    int totalLines = ::SendMessage(h, SCI_GETLINECOUNT, 0, 0);
+
+    Utils::beginUndo(h);
+
+    for (size_t i = 0; i < lines.size(); i++) {
+        int curLine = startLine + (int)i;
+        
+        if (curLine >= totalLines) {
+            int docLen = ::SendMessage(h, SCI_GETLENGTH, 0, 0);
+            ::SendMessage(h, SCI_SETCURRENTPOS, docLen, 0);
+            ::SendMessage(h, SCI_REPLACESEL, 0, (LPARAM)"\r\n");
+            totalLines = ::SendMessage(h, SCI_GETLINECOUNT, 0, 0);
+        }
+
+        int lineStart = ::SendMessage(h, SCI_POSITIONFROMLINE, curLine, 0);
+        int lineEnd = Utils::lineEnd(h, curLine);
+        int colPos = ::SendMessage(h, SCI_FINDCOLUMN, curLine, targetCol);
+
+        int curLineEndCol = ::SendMessage(h, SCI_GETCOLUMN, lineEnd, 0);
+        if (curLineEndCol < targetCol) {
+            int padCount = targetCol - curLineEndCol;
+            std::string padding(padCount, ' ');
+            ::SendMessage(h, SCI_INSERTTEXT, lineEnd, (LPARAM)padding.c_str());
+            colPos = lineEnd + padCount;
+        }
+
+        ::SendMessage(h, SCI_INSERTTEXT, colPos, (LPARAM)lines[i].c_str());
+    }
+
+    int finalCaret = ::SendMessage(h, SCI_FINDCOLUMN, startLine, targetCol);
+    Utils::select(h, finalCaret, finalCaret);
+
+    Utils::endUndo(h);
+}
+
 NormalMode::NormalMode(VimState& state) : state(state) {
     g_normalKeymap = std::make_unique<Keymap>(state);
     setupKeyMaps();
@@ -702,11 +775,16 @@ void NormalMode::setupKeyMaps() {
 
         Utils::beginUndo(h);
 
-        bool linewise = state.lastYankLinewise;
+        if (state.lastVisualWasBlock) {
+            for (int i = 0; i < c; i++) {
+                pasteBlock(h, content, true);
+            }
+        } else {
+            bool linewise = state.lastYankLinewise;
 
-        for (int i = 0; i < c; i++) {
+            for (int i = 0; i < c; i++) {
 
-            if (linewise) {
+                if (linewise) {
 
                 int line = Utils::caretLine(h);
 
@@ -754,6 +832,7 @@ void NormalMode::setupKeyMaps() {
                 );
             }
         }
+        } // end else for !state.lastVisualWasBlock
 
         Utils::endUndo(h);
 
@@ -794,11 +873,16 @@ void NormalMode::setupKeyMaps() {
 
         Utils::beginUndo(h);
 
-        bool linewise = state.lastYankLinewise;
+        if (state.lastVisualWasBlock) {
+            for (int i = 0; i < c; i++) {
+                pasteBlock(h, content, false);
+            }
+        } else {
+            bool linewise = state.lastYankLinewise;
 
-        for (int i = 0; i < c; i++) {
+            for (int i = 0; i < c; i++) {
 
-            if (linewise) {
+                if (linewise) {
 
                 int line = Utils::caretLine(h);
 
@@ -838,6 +922,7 @@ void NormalMode::setupKeyMaps() {
                 );
             }
         }
+        } // end else for !state.lastVisualWasBlock
 
         Utils::endUndo(h);
 
@@ -1227,13 +1312,25 @@ void NormalMode::setupKeyMaps() {
         state.mode = VISUAL;
         state.isLineVisual = state.lastVisualWasLine;
         state.isBlockVisual = state.lastVisualWasBlock;
+        state.visualAnchor = state.lastVisualAnchor;
+        state.visualAnchorLine = ::SendMessage(h, SCI_LINEFROMPOSITION, state.lastVisualAnchor, 0);
+        state.visualSearchAnchor = -1;
+        state.visualPreferredColumn = ::SendMessage(h, SCI_GETCOLUMN, state.lastVisualCaret, 0);
 
         if (state.isBlockVisual) {
-            ::SendMessage( h, SCI_SETSELECTIONMODE, SC_SEL_RECTANGLE, 0);
-            ::SendMessage( h, SCI_SETRECTANGULARSELECTIONANCHOR, state.lastVisualAnchor, 0);
-            ::SendMessage( h, SCI_SETRECTANGULARSELECTIONCARET, state.lastVisualCaret, 0);
+            ::SendMessage(h, SCI_SETSELECTIONMODE, SC_SEL_RECTANGLE, 0);
+            ::SendMessage(h, SCI_SETCURRENTPOS, state.lastVisualCaret, 0);
+            ::SendMessage(h, SCI_SETRECTANGULARSELECTIONANCHOR, state.lastVisualAnchor, 0);
+            ::SendMessage(h, SCI_SETRECTANGULARSELECTIONCARET, state.lastVisualCaret, 0);
+            Utils::setStatus(TEXT("-- VISUAL BLOCK --"));
+        } else if (state.isLineVisual) {
+            ::SendMessage(h, SCI_SETSELECTIONMODE, SC_SEL_STREAM, 0);
+            Utils::select(h, state.lastVisualAnchor, state.lastVisualCaret);
+            Utils::setStatus(TEXT("-- VISUAL LINE --"));
         } else {
-            Utils::select( h, state.lastVisualAnchor, state.lastVisualCaret);
+            ::SendMessage(h, SCI_SETSELECTIONMODE, SC_SEL_STREAM, 0);
+            Utils::select(h, state.lastVisualAnchor, state.lastVisualCaret);
+            Utils::setStatus(TEXT("-- VISUAL --"));
         }
 
         ::SendMessage(h, SCI_SCROLLCARET, 0, 0);
@@ -1375,8 +1472,8 @@ void NormalMode::enter() {
             state.lastVisualAnchor = ::SendMessage(hwnd, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
             state.lastVisualCaret  = ::SendMessage(hwnd, SCI_GETRECTANGULARSELECTIONCARET, 0, 0);
         } else {
-            state.lastVisualAnchor = ::SendMessage(hwnd, SCI_GETSELECTIONSTART, 0, 0);
-            state.lastVisualCaret  = ::SendMessage(hwnd, SCI_GETSELECTIONEND, 0, 0);
+            state.lastVisualAnchor = ::SendMessage(hwnd, SCI_GETANCHOR, 0, 0);
+            state.lastVisualCaret  = ::SendMessage(hwnd, SCI_GETCURRENTPOS, 0, 0);
         }
         state.lastVisualWasLine  = state.isLineVisual;
         state.lastVisualWasBlock = state.isBlockVisual;
@@ -1397,6 +1494,7 @@ void NormalMode::enter() {
 
     state.mode = NORMAL;
     state.isLineVisual = false;
+    state.isBlockVisual = false;
     state.visualAnchor = -1;
     state.visualAnchorLine = -1;
     state.reset();
@@ -1406,6 +1504,9 @@ void NormalMode::enter() {
 
     Utils::setStatus(TEXT("-- NORMAL --"));
     ::SendMessage(hwnd, SCI_SETCARETSTYLE, CARETSTYLE_BLOCK, 0);
+
+    ::SendMessage(hwnd, SCI_SETSELECTIONMODE, SC_SEL_STREAM, 0);
+    ::SendMessage(hwnd, SCI_CLEARSELECTIONS, 0, 0);
 
     if (!state.restoringVisual) {
         int caret = Utils::caretPos(hwnd);
@@ -2054,6 +2155,11 @@ void NormalMode::gotoDefinition(HWND h, VimState& state, bool applyOp) {
 }
 
 void NormalMode::incrementNumber(HWND h, int c) {
+    static DWORD lastTime = 0;
+    DWORD now = GetTickCount();
+    if (now - lastTime < 100) return;
+    lastTime = now;
+
     int pos = Utils::caretPos(h);
     int line = Utils::caretLine(h);
     int start = Utils::lineStart(h, line);
@@ -2078,6 +2184,7 @@ void NormalMode::incrementNumber(HWND h, int c) {
     if (s > start && ::SendMessage(h, SCI_GETCHARAT, s - 1, 0) == '-') s--;
 
     e = s;
+    if (e < end && ::SendMessage(h, SCI_GETCHARAT, e, 0) == '-') e++;
     while (e < end && std::isdigit(::SendMessage(h, SCI_GETCHARAT, e, 0))) e++;
 
     std::vector<char> buf(e - s + 1);
@@ -2095,6 +2202,11 @@ void NormalMode::incrementNumber(HWND h, int c) {
 }
 
 void NormalMode::decrementNumber(HWND h, int c) {
+    static DWORD lastTime = 0;
+    DWORD now = GetTickCount();
+    if (now - lastTime < 100) return;
+    lastTime = now;
+
     int pos = Utils::caretPos(h);
     int line = Utils::caretLine(h);
     int start = Utils::lineStart(h, line);
@@ -2119,6 +2231,7 @@ void NormalMode::decrementNumber(HWND h, int c) {
     if (s > start && ::SendMessage(h, SCI_GETCHARAT, s - 1, 0) == '-') s--;
 
     e = s;
+    if (e < end && ::SendMessage(h, SCI_GETCHARAT, e, 0) == '-') e++;
     while (e < end && std::isdigit(::SendMessage(h, SCI_GETCHARAT, e, 0))) e++;
 
     std::vector<char> buf(e - s + 1);
@@ -2136,6 +2249,11 @@ void NormalMode::decrementNumber(HWND h, int c) {
 }
 
 void NormalMode::jumpBackward(HWND hwnd) {
+    static DWORD lastTime = 0;
+    DWORD now = GetTickCount();
+    if (now - lastTime < 100) return;
+    lastTime = now;
+
     if (state.jumpList.empty() || state.jumpIndex <= 0) return;
     
     state.jumpIndex--;
@@ -2146,6 +2264,11 @@ void NormalMode::jumpBackward(HWND hwnd) {
 }
 
 void NormalMode::jumpForward(HWND hwnd) {
+    static DWORD lastTime = 0;
+    DWORD now = GetTickCount();
+    if (now - lastTime < 100) return;
+    lastTime = now;
+
     if (state.jumpList.empty() || state.jumpIndex >= (int)state.jumpList.size() - 1) return;
     
     state.jumpIndex++;

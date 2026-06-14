@@ -309,10 +309,20 @@ void Motion::documentEnd(HWND hwndEdit) {
 }
 
 void Motion::pageUp(HWND hwndEdit) {
+    static DWORD lastTime = 0;
+    DWORD now = GetTickCount();
+    if (now - lastTime < 100) return;
+    lastTime = now;
+
     doMotion(hwndEdit, SCI_PAGEUP, SCI_PAGEUPEXTEND, 1);
 }
 
 void Motion::pageDown(HWND hwndEdit) {
+    static DWORD lastTime = 0;
+    DWORD now = GetTickCount();
+    if (now - lastTime < 100) return;
+    lastTime = now;
+
     doMotion(hwndEdit, SCI_PAGEDOWN, SCI_PAGEDOWNEXTEND, 1);
 }
 

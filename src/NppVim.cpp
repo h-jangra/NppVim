@@ -6,6 +6,7 @@
 #include <shellapi.h>
 #include <commctrl.h>
 #include <vector>
+#include <algorithm>
 #pragma comment(lib, "Version.lib")
 
 #include "../plugin/PluginInterface.h"
@@ -106,7 +107,7 @@ LRESULT CALLBACK NppHostHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
                 Motion::pageDown(hwndEdit); 
                 return 0;
             }
-            if (cmd == IDM_EDIT_BEGINENDSELECT_COLUMNMODE && g_config.overrideCtrlB) {
+            if ((cmd == IDM_EDIT_BEGINENDSELECT_COLUMNMODE || cmd == IDM_SEARCH_GOTOMATCHINGBRACE) && g_config.overrideCtrlB) {
                 Motion::pageUp(hwndEdit);
                 return 0;
             }
@@ -114,7 +115,7 @@ LRESULT CALLBACK NppHostHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPar
                 if (g_normalMode) g_normalMode->jumpBackward(hwndEdit);
                 return 0;
             }
-            if (cmd == IDM_SEARCH_FINDINCREMENT && g_config.overrideCtrlI) {
+            if ((cmd == IDM_SEARCH_FINDINCREMENT || cmd == IDM_EDIT_SPLIT_LINES) && g_config.overrideCtrlI) {
                 if (g_normalMode) g_normalMode->jumpForward(hwndEdit);
                 return 0;
             }
@@ -360,6 +361,8 @@ void loadConfig() {
     
     g_config.vimEnabled = ConfigManager::getInstance().isEnabled();
     
+    ::SendMessage(nppData._nppHandle, NPPM_HIDESTATUSBAR, 0, ConfigManager::getInstance().isShowStatusBar() ? FALSE : TRUE);
+
     // Load RC file
     RcParser::getInstance().parseFile(ConfigManager::getInstance().getRcPath());
 }
@@ -367,6 +370,7 @@ void loadConfig() {
 void saveConfig() {
     ConfigManager::getInstance().setEnabled(g_config.vimEnabled);
     ConfigManager::getInstance().saveConfig();
+    ::SendMessage(nppData._nppHandle, NPPM_HIDESTATUSBAR, 0, ConfigManager::getInstance().isShowStatusBar() ? FALSE : TRUE);
 }
 
 void InitDialogResources() {
@@ -504,6 +508,13 @@ INT_PTR CALLBACK ConfigDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM
         CheckDlgButton(hwnd, IDC_CHECK_CTRL_D, g_config.overrideCtrlD ? BST_CHECKED : BST_UNCHECKED);
         CheckDlgButton(hwnd, IDC_CHECK_CTRL_U, g_config.overrideCtrlU ? BST_CHECKED : BST_UNCHECKED);
         CheckDlgButton(hwnd, IDC_CHECK_CTRL_R, g_config.overrideCtrlR ? BST_CHECKED : BST_UNCHECKED);
+        CheckDlgButton(hwnd, IDC_CHECK_CTRL_F, g_config.overrideCtrlF ? BST_CHECKED : BST_UNCHECKED);
+        CheckDlgButton(hwnd, IDC_CHECK_CTRL_B, g_config.overrideCtrlB ? BST_CHECKED : BST_UNCHECKED);
+        CheckDlgButton(hwnd, IDC_CHECK_CTRL_O, g_config.overrideCtrlO ? BST_CHECKED : BST_UNCHECKED);
+        CheckDlgButton(hwnd, IDC_CHECK_CTRL_I, g_config.overrideCtrlI ? BST_CHECKED : BST_UNCHECKED);
+        CheckDlgButton(hwnd, IDC_CHECK_CTRL_V, g_config.overrideCtrlV ? BST_CHECKED : BST_UNCHECKED);
+        CheckDlgButton(hwnd, IDC_CHECK_CTRL_A, g_config.overrideCtrlA ? BST_CHECKED : BST_UNCHECKED);
+        CheckDlgButton(hwnd, IDC_CHECK_CTRL_X, g_config.overrideCtrlX ? BST_CHECKED : BST_UNCHECKED);
         CheckDlgButton(hwnd, IDC_CHECK_D_CLIPBOARD, g_config.dStoreClipboard ? BST_CHECKED : BST_UNCHECKED);
         CheckDlgButton(hwnd, IDC_CHECK_C_CLIPBOARD, g_config.cStoreClipboard ? BST_CHECKED : BST_UNCHECKED);
         CheckDlgButton(hwnd, IDC_CHECK_X_CLIPBOARD, g_config.xStoreClipboard ? BST_CHECKED : BST_UNCHECKED);
@@ -537,6 +548,13 @@ INT_PTR CALLBACK ConfigDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM
             CheckDlgButton(hwnd, IDC_CHECK_CTRL_D, BST_UNCHECKED);
             CheckDlgButton(hwnd, IDC_CHECK_CTRL_U, BST_UNCHECKED);
             CheckDlgButton(hwnd, IDC_CHECK_CTRL_R, BST_UNCHECKED);
+            CheckDlgButton(hwnd, IDC_CHECK_CTRL_F, BST_UNCHECKED);
+            CheckDlgButton(hwnd, IDC_CHECK_CTRL_B, BST_UNCHECKED);
+            CheckDlgButton(hwnd, IDC_CHECK_CTRL_O, BST_UNCHECKED);
+            CheckDlgButton(hwnd, IDC_CHECK_CTRL_I, BST_UNCHECKED);
+            CheckDlgButton(hwnd, IDC_CHECK_CTRL_V, BST_UNCHECKED);
+            CheckDlgButton(hwnd, IDC_CHECK_CTRL_A, BST_UNCHECKED);
+            CheckDlgButton(hwnd, IDC_CHECK_CTRL_X, BST_UNCHECKED);
             CheckDlgButton(hwnd, IDC_CHECK_D_CLIPBOARD, BST_CHECKED);
             CheckDlgButton(hwnd, IDC_CHECK_C_CLIPBOARD, BST_CHECKED);
             CheckDlgButton(hwnd, IDC_CHECK_X_CLIPBOARD, BST_CHECKED);
@@ -564,6 +582,13 @@ INT_PTR CALLBACK ConfigDialogProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM
             g_config.overrideCtrlD = (IsDlgButtonChecked(hwnd, IDC_CHECK_CTRL_D) == BST_CHECKED);
             g_config.overrideCtrlU = (IsDlgButtonChecked(hwnd, IDC_CHECK_CTRL_U) == BST_CHECKED);
             g_config.overrideCtrlR = (IsDlgButtonChecked(hwnd, IDC_CHECK_CTRL_R) == BST_CHECKED);
+            g_config.overrideCtrlF = (IsDlgButtonChecked(hwnd, IDC_CHECK_CTRL_F) == BST_CHECKED);
+            g_config.overrideCtrlB = (IsDlgButtonChecked(hwnd, IDC_CHECK_CTRL_B) == BST_CHECKED);
+            g_config.overrideCtrlO = (IsDlgButtonChecked(hwnd, IDC_CHECK_CTRL_O) == BST_CHECKED);
+            g_config.overrideCtrlI = (IsDlgButtonChecked(hwnd, IDC_CHECK_CTRL_I) == BST_CHECKED);
+            g_config.overrideCtrlV = (IsDlgButtonChecked(hwnd, IDC_CHECK_CTRL_V) == BST_CHECKED);
+            g_config.overrideCtrlA = (IsDlgButtonChecked(hwnd, IDC_CHECK_CTRL_A) == BST_CHECKED);
+            g_config.overrideCtrlX = (IsDlgButtonChecked(hwnd, IDC_CHECK_CTRL_X) == BST_CHECKED);
             g_config.dStoreClipboard = (IsDlgButtonChecked(hwnd, IDC_CHECK_D_CLIPBOARD) == BST_CHECKED);
             g_config.cStoreClipboard = (IsDlgButtonChecked(hwnd, IDC_CHECK_C_CLIPBOARD) == BST_CHECKED);
             g_config.xStoreClipboard = (IsDlgButtonChecked(hwnd, IDC_CHECK_X_CLIPBOARD) == BST_CHECKED);
@@ -630,6 +655,13 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
             if (wParam == 'D' && g_config.overrideCtrlD) { Motion::pageDown(hwnd); state.repeatCount = 0; return 0; }
             if (wParam == 'U' && g_config.overrideCtrlU) { Motion::pageUp(hwnd); state.repeatCount = 0; return 0; }
             if (wParam == 'R' && g_config.overrideCtrlR && state.mode == NORMAL) { ::SendMessage(hwnd, SCI_REDO, 0, 0); return 0; }
+            if (wParam == 'F' && g_config.overrideCtrlF) { Motion::pageDown(hwnd); state.repeatCount = 0; return 0; }
+            if (wParam == 'B' && g_config.overrideCtrlB) { Motion::pageUp(hwnd); state.repeatCount = 0; return 0; }
+            if (wParam == 'O' && g_config.overrideCtrlO) { if (g_normalMode) g_normalMode->jumpBackward(hwnd); return 0; }
+            if (wParam == 'I' && g_config.overrideCtrlI) { if (g_normalMode) g_normalMode->jumpForward(hwnd); return 0; }
+            if (wParam == 'V' && g_config.overrideCtrlV) { if (state.mode == VISUAL && state.isBlockVisual) g_normalMode->enter(); else g_visualMode->enterBlock(hwnd); return 0; }
+            if (wParam == 'A' && g_config.overrideCtrlA) { if (g_normalMode) g_normalMode->incrementNumber(hwnd, 1); return 0; }
+            if (wParam == 'X' && g_config.overrideCtrlX) { if (g_normalMode) g_normalMode->decrementNumber(hwnd, 1); return 0; }
         }
     }
 
@@ -779,6 +811,30 @@ extern "C" __declspec(dllexport) void beNotified(SCNotification* notifyCode) {
         if (hwnd) {
             ::SendMessage(hwnd, SCI_SETMARGINTYPEN, 0, SC_MARGIN_NUMBER);
             updateRelativeLineNumbers(hwnd, true);
+        }
+    }
+
+    if (notifyCode->nmhdr.code == NPPN_FILESAVED) {
+        TCHAR savedPath[MAX_PATH];
+        if (::SendMessage(nppData._nppHandle, NPPM_GETFULLPATHFROMBUFFERID, notifyCode->nmhdr.idFrom, (LPARAM)savedPath) != 0) {
+            std::string rcPath = ConfigManager::getInstance().getRcPath();
+            std::string iniPath = ConfigManager::getInstance().getConfigPath();
+#ifdef UNICODE
+            std::string sSavedPath = Utils::toUtf8(savedPath);
+#else
+            std::string sSavedPath(savedPath);
+#endif
+            auto normalize = [](std::string p) {
+                std::transform(p.begin(), p.end(), p.begin(), ::tolower);
+                std::replace(p.begin(), p.end(), '/', '\\');
+                return p;
+            };
+            std::string normSaved = normalize(sSavedPath);
+            std::string normRc = normalize(rcPath);
+            std::string normIni = normalize(iniPath);
+            if (normSaved == normRc || normSaved == normIni) {
+                reloadConfiguration();
+            }
         }
     }
 

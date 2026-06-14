@@ -19,6 +19,13 @@
 #define IDC_CHECK_CTRL_U                1005
 #define IDC_CHECK_CTRL_R                1006
 #define IDC_CUSTOM_ESCAPE               1007
+#define IDC_CHECK_CTRL_F                1013
+#define IDC_CHECK_CTRL_B                1014
+#define IDC_CHECK_CTRL_O                1015
+#define IDC_CHECK_CTRL_I                1016
+#define IDC_CHECK_CTRL_V                1017
+#define IDC_CHECK_CTRL_A                1018
+#define IDC_CHECK_CTRL_X                1019
 
 #define IDC_HEADER                      5000
 #define IDC_BTN_GITHUB                  6001

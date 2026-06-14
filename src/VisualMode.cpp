@@ -22,19 +22,11 @@ VisualMode::VisualMode(VimState& state) : state(state) {
 }
 
 std::string VisualMode::getSelectedText(HWND h) {
-    int startPos = ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
-    int endPos = ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
-
-    if (startPos == endPos) return "";
-
-    std::vector<char> buffer(endPos - startPos + 1);
-    Sci_TextRangeFull tr;
-    tr.chrg.cpMin = startPos;
-    tr.chrg.cpMax = endPos;
-    tr.lpstrText = buffer.data();
-    ::SendMessage(h, SCI_GETTEXTRANGEFULL, 0, (LPARAM)&tr);
-
-    return std::string(buffer.data(), endPos - startPos);
+    int len = (int)::SendMessage(h, SCI_GETSELTEXT, 0, 0);
+    if (len <= 0) return "";
+    std::vector<char> buffer(len + 2);
+    ::SendMessage(h, SCI_GETSELTEXT, 0, (LPARAM)buffer.data());
+    return std::string(buffer.data());
 }
 
 void VisualMode::updateBlockAfterMove(HWND h, int newCaret) {
@@ -117,20 +109,33 @@ void VisualMode::setupKeyMaps() {
 
         Utils::beginUndo(h);
 
-        int startPos = ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
-        int endPos = ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
+        if (state.isBlockVisual) {
+            if (!toBlackhole && g_config.xStoreClipboard) {
+                std::string content = getSelectedText(h);
+                if (!content.empty()) {
+                    Utils::storeRegister(reg, content, g_config.xStoreClipboard);
+                }
+            }
+            ::SendMessage(h, SCI_CLEAR, 0, 0);
+            Utils::clearBlockSelection(h);
+            int pos = Utils::caretPos(h);
+            Utils::select(h, pos, pos);
+        } else {
+            int startPos = ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
+            int endPos = ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
 
-        if (!toBlackhole && g_config.xStoreClipboard) {
-            std::string content = getSelectedText(h);
+            if (!toBlackhole && g_config.xStoreClipboard) {
+                std::string content = getSelectedText(h);
 
-            if (!content.empty()) {
-                Utils::storeRegister(reg, content, g_config.xStoreClipboard);
+                if (!content.empty()) {
+                    Utils::storeRegister(reg, content, g_config.xStoreClipboard);
+                }
+
+                state.lastYankLinewise = state.isLineVisual;
             }
 
-            state.lastYankLinewise = state.isLineVisual;
+            Utils::clear(h, startPos, endPos);
         }
-
-        Utils::clear(h, startPos, endPos);
 
         Utils::endUndo(h);
 
@@ -154,14 +159,11 @@ void VisualMode::setupKeyMaps() {
                 return;
             }
 
-            BlockSelection blk = Utils::blockSelection(h);
-
             std::string content = getSelectedText(h);
 
             if (!content.empty() && reg != '_') {
                 Utils::storeRegister(reg, content, true);
             }
-            Utils::clearBlockSelection(h);
         }
         else if (state.isLineVisual) {
             int startPos = ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
@@ -217,9 +219,8 @@ void VisualMode::setupKeyMaps() {
             // Set up multiple cursors at the start of each line in the block
             bool first = true;
             for (int line = blk.startLine; line <= blk.endLine; line++) {
-                int lineStart = Utils::lineStart(h, line);
                 int lineEnd = Utils::lineEnd(h, line);
-                int pos = lineStart + blk.startCol;
+                int pos = (int)::SendMessage(h, SCI_FINDCOLUMN, line, blk.startCol);
                 if (pos > lineEnd) pos = lineEnd;
 
                 if (first) {
@@ -529,10 +530,14 @@ void VisualMode::setupKeyMaps() {
 
     k.motion("h", 'h', [this](HWND h, int c) {
         if (state.isBlockVisual) {
-            for (int i = 0; i < c; i++) {
-                int caret = Utils::caretPos(h);
-                updateBlockAfterMove(h, caret - 1);
-            }
+            int pos = Utils::caretPos(h);
+            int line = Utils::caretLine(h);
+            int col = (int)::SendMessage(h, SCI_GETCOLUMN, pos, 0);
+            int newCol = col - c;
+            if (newCol < 0) newCol = 0;
+            int newPos = (int)::SendMessage(h, SCI_FINDCOLUMN, line, newCol);
+            updateBlockAfterMove(h, newPos);
+            state.visualPreferredColumn = newCol;
         } else {
             int anchor = state.visualAnchor;
             int caret = Utils::caretPos(h);
@@ -544,10 +549,16 @@ void VisualMode::setupKeyMaps() {
     })
     .motion("l", 'l', [this](HWND h, int c) {
         if (state.isBlockVisual) {
-            for (int i = 0; i < c; i++) {
-                int caret = Utils::caretPos(h);
-                updateBlockAfterMove(h, caret + 1);
-            }
+            int pos = Utils::caretPos(h);
+            int line = Utils::caretLine(h);
+            int col = (int)::SendMessage(h, SCI_GETCOLUMN, pos, 0);
+            int lineEndPos = Utils::lineEnd(h, line);
+            int maxCol = (int)::SendMessage(h, SCI_GETCOLUMN, lineEndPos, 0);
+            int newCol = col + c;
+            if (newCol > maxCol) newCol = maxCol;
+            int newPos = (int)::SendMessage(h, SCI_FINDCOLUMN, line, newCol);
+            updateBlockAfterMove(h, newPos);
+            state.visualPreferredColumn = newCol;
         } else {
             int anchor = state.visualAnchor;
             int caret = Utils::caretPos(h);
@@ -564,7 +575,7 @@ void VisualMode::setupKeyMaps() {
             int newLine = line + c;
             if (newLine >= total) newLine = total - 1;
 
-            int newPos = ::SendMessage(h, SCI_POSITIONFROMLINE, newLine, 0);
+            int newPos = (int)::SendMessage(h, SCI_FINDCOLUMN, newLine, state.visualPreferredColumn);
             updateBlockAfterMove(h, newPos);
         }
         else if (state.isLineVisual) {
@@ -611,7 +622,7 @@ void VisualMode::setupKeyMaps() {
             int newLine = line - c;
             if (newLine < 0) newLine = 0;
 
-            int newPos = ::SendMessage(h, SCI_POSITIONFROMLINE, newLine, 0);
+            int newPos = (int)::SendMessage(h, SCI_FINDCOLUMN, newLine, state.visualPreferredColumn);
             updateBlockAfterMove(h, newPos);
         } 
         else if (state.isLineVisual) {
@@ -1003,6 +1014,26 @@ void VisualMode::setupKeyMaps() {
         if (content.empty())
             return;
 
+        if (state.isBlockVisual) {
+            std::string replaced = getSelectedText(h);
+            Utils::beginUndo(h);
+            if (!replaced.empty() && reg != '"') {
+                Utils::storeRegister('"', replaced, false);
+            }
+            std::string repeatedContent = "";
+            for (int i = 0; i < c; i++) {
+                repeatedContent += content;
+            }
+            ::SendMessage(h, SCI_REPLACESEL, 0, (LPARAM)repeatedContent.c_str());
+            Utils::clearBlockSelection(h);
+            Utils::endUndo(h);
+            if (reg == '"') {
+                Utils::storeRegister('"', originalContent, false);
+            }
+            exitToNormal(h);
+            return;
+        }
+
         int start =
             ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
 
@@ -1078,6 +1109,26 @@ void VisualMode::setupKeyMaps() {
 
         if (content.empty())
             return;
+
+        if (state.isBlockVisual) {
+            std::string replaced = getSelectedText(h);
+            Utils::beginUndo(h);
+            if (!replaced.empty() && reg != '"') {
+                Utils::storeRegister('"', replaced, false);
+            }
+            std::string repeatedContent = "";
+            for (int i = 0; i < c; i++) {
+                repeatedContent += content;
+            }
+            ::SendMessage(h, SCI_REPLACESEL, 0, (LPARAM)repeatedContent.c_str());
+            Utils::clearBlockSelection(h);
+            Utils::endUndo(h);
+            if (reg == '"') {
+                Utils::storeRegister('"', originalContent, false);
+            }
+            exitToNormal(h);
+            return;
+        }
 
         int start =
             ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
@@ -1372,10 +1423,9 @@ void VisualMode::enterBlock(HWND hwnd) {
     state.visualAnchor = caret;
     state.visualAnchorLine = ::SendMessage(hwnd, SCI_LINEFROMPOSITION, caret, 0);
     state.visualSearchAnchor = -1;
+    state.visualPreferredColumn = ::SendMessage(hwnd, SCI_GETCOLUMN, caret, 0);
 
     ::SendMessage(hwnd, SCI_SETSELECTIONMODE, SC_SEL_RECTANGLE, 0);
-
-    int nextPos = ::SendMessage(hwnd, SCI_POSITIONAFTER, caret, 0);
 
     ::SendMessage(hwnd, SCI_SETRECTANGULARSELECTIONANCHOR, caret, 0);
     ::SendMessage(hwnd, SCI_SETRECTANGULARSELECTIONCARET, caret, 0);
@@ -1394,9 +1444,9 @@ void VisualMode::exitToNormal(HWND h) {
                 ::SendMessage(h, SCI_GETRECTANGULARSELECTIONCARET, 0, 0);
         } else {
             state.lastVisualAnchor =
-                ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
+                ::SendMessage(h, SCI_GETANCHOR, 0, 0);
             state.lastVisualCaret =
-                ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
+                ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
         }
 
         state.lastVisualWasLine  = state.isLineVisual;
@@ -1405,6 +1455,7 @@ void VisualMode::exitToNormal(HWND h) {
 
     state.isLineVisual = false;
     state.isBlockVisual = false;
+    state.mode = NORMAL;
 
     if (g_normalMode) g_normalMode->enter();
 }
@@ -1738,8 +1789,13 @@ void VisualMode::handleVisualReplaceInput(HWND hwnd, char replaceChar) {
 }
 
 void VisualMode::saveVisualSelection(HWND h) {
-    state.lastVisualAnchor = ::SendMessage(h, SCI_GETANCHOR, 0, 0);
-    state.lastVisualCaret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+    if (state.isBlockVisual) {
+        state.lastVisualAnchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
+        state.lastVisualCaret = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONCARET, 0, 0);
+    } else {
+        state.lastVisualAnchor = ::SendMessage(h, SCI_GETANCHOR, 0, 0);
+        state.lastVisualCaret = ::SendMessage(h, SCI_GETCURRENTPOS, 0, 0);
+    }
 
     state.lastVisualWasLine = state.isLineVisual;
     state.lastVisualWasBlock = state.isBlockVisual;

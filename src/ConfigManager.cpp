@@ -105,7 +105,7 @@ void ConfigManager::saveConfig() {
         file << "enabled=" << (enabled ? "1" : "0") << "\n";
         file << "show_status_bar=" << (showStatusBar ? "1" : "0") << "\n";
         file << "debug_logging=" << (debugLogging ? "1" : "0") << "\n";
-        file << "rc_file=" << rcFilePath << "\n";
+        file << "rc_file=" << (rcFilePath.empty() ? getRcPath() : rcFilePath) << "\n";
         
         file << "\n# NppVim Configuration File\n";
         file << "# Escape key options: esc, jj, jk, kj\n";
@@ -120,6 +120,9 @@ void ConfigManager::saveConfig() {
         file << "override_ctrl_b=" << (g_config.overrideCtrlB ? "1" : "0") << "\n";
         file << "override_ctrl_o=" << (g_config.overrideCtrlO ? "1" : "0") << "\n";
         file << "override_ctrl_i=" << (g_config.overrideCtrlI ? "1" : "0") << "\n";
+        file << "override_ctrl_v=" << (g_config.overrideCtrlV ? "1" : "0") << "\n";
+        file << "override_ctrl_a=" << (g_config.overrideCtrlA ? "1" : "0") << "\n";
+        file << "override_ctrl_x=" << (g_config.overrideCtrlX ? "1" : "0") << "\n";
         file << "x_store_clipboard=" << (g_config.xStoreClipboard ? "1" : "0") << "\n";
         file << "d_store_clipboard=" << (g_config.dStoreClipboard ? "1" : "0") << "\n";
         file << "c_store_clipboard=" << (g_config.cStoreClipboard ? "1" : "0") << "\n";

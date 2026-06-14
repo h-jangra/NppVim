@@ -8,6 +8,8 @@
 #include "VisualMode.h"
 #include "Notepad_plus_msgs.h"
 
+#include "ConfigManager.h"
+
 NppData Utils::nppData;
 
 extern NormalMode* g_normalMode;
@@ -26,6 +28,8 @@ HWND Utils::getCurrentScintillaHandle()
 
 void Utils::setStatus(const TCHAR *msg)
 {
+  if (!ConfigManager::getInstance().isShowStatusBar())
+    return;
   ::SendMessage(nppData._nppHandle, NPPM_SETSTATUSBAR, STATUSBAR_DOC_TYPE, (LPARAM)msg);
 }
 
