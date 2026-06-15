@@ -1,0 +1,124 @@
+" ==============================================================================
+" NppVim Configuration File (nppvim.rc)
+" ==============================================================================
+" This file is your primary startup script for Vim-specific settings and key
+" mappings in NppVim (Vim-like modal editing plugin for Notepad++).
+"
+" Location fallback order on startup:
+"   1. %USERPROFILE%\.nppvimrc
+"   2. %APPDATA%\Notepad++\plugins\Config\NppVim\nppvim.rc
+"
+" Any standard Vim ex-command can be placed in this file (e.g. set, map, etc.).
+" Lines starting with " are treated as comments.
+" ==============================================================================
+
+" ------------------------------------------------------------------------------
+" 1. Line Numbering Options
+" ------------------------------------------------------------------------------
+
+" Enable absolute line numbering (default: off).
+" Alias: nu
+"set number
+"set nonumber
+
+" Enable relative line numbering (default: off).
+" Alias: rnu
+"set relativenumber
+"set norelativenumber
+
+" Note: Enabling both 'number' and 'relativenumber' enables Hybrid Line Numbering
+" (absolute number on the current line, relative numbers on all other lines).
+
+
+" ------------------------------------------------------------------------------
+" 2. Search Options
+" ------------------------------------------------------------------------------
+
+" Highlight all search matches (default: on).
+"set hlsearch
+"set nohlsearch
+
+" Ignore case in search patterns (default: off).
+"set ignorecase
+"set noignorecase
+
+" Override 'ignorecase' if search pattern contains uppercase characters (default: off).
+"set smartcase
+"set nosmartcase
+
+
+" ------------------------------------------------------------------------------
+" 3. Text and Editing Behavior
+" ------------------------------------------------------------------------------
+
+" Expand tabs to spaces (default: off).
+"set expandtab
+"set noexpandtab
+
+" Number of spaces that a <Tab> character in the file counts for (default: 4).
+"set tabstop=4
+
+" Number of spaces to use for each step of (auto)indent (default: 4).
+"set shiftwidth=4
+
+" Visually wrap long lines (default: off).
+"set wrap
+"set nowrap
+
+" Highlight the line containing the cursor (default: off).
+"set cursorline
+"set nocursorline
+
+" Show whitespace characters (tabs and trailing spaces) (default: off).
+"set list
+"set nolist
+
+" Minimal number of screen lines to keep above and below the cursor (default: 0).
+"set scrolloff=0
+
+" Maximum width of text being inserted (default: 0).
+" Alias: tw
+" Draws a vertical line in Scintilla at the specified column. Set to 0 to disable.
+"set textwidth=0
+
+" Clipboard mode. Set to 'unnamed' to share registers with Windows clipboard (default: unnamed).
+"set clipboard=unnamed
+
+
+" ------------------------------------------------------------------------------
+" 4. Keyboard Layout & Language Mapping
+" ------------------------------------------------------------------------------
+
+" Enable automatic keyboard layout switching when moving between modes (default: off).
+" Alias: keylayout
+"set keylayout
+"set nokeylayout
+
+" Keyboard layout target for Normal mode (default: en-US).
+"set normallayout=en-US
+
+" Keyboard layout target for Insert mode (default: system).
+" Set to 'system' to keep the active layout.
+"set insertlayout=system
+
+" Translate characters in Normal/Visual modes (e.g. for non-US keyboard layouts).
+" Default is empty.
+"set langmap=
+
+
+" ------------------------------------------------------------------------------
+" 5. Custom Mappings & Commands Examples
+" ------------------------------------------------------------------------------
+" Syntax: [n|v|i][nore]map <keys> <action>
+"
+" Normal Mode mappings:
+"nmap ; :
+"nnoremap H ^
+"nnoremap L $
+"
+" Insert Mode mappings:
+"inoremap jj <Esc>
+"
+" Command alias mappings (case sensitive, must start with an uppercase letter):
+"command W w
+"command Q q

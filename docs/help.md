@@ -60,8 +60,42 @@ Define custom key mappings and aliases using the following syntax:
 
 nmap ; :
 nnoremap <C-s> :w<CR>
+imap jj <Esc>
+inoremap <C-d> <Esc>:w<CR>a
 command W w
 ```
+
+##### Supported Mappings by Mode:
+* **Normal Mode**: `nmap` / `nnoremap`
+* **Visual Mode**: `vmap` / `vnoremap`
+* **Insert Mode**: `imap` / `inoremap`
+
+##### Expanded Key Notation Support:
+Key notations can be used in both LHS (keys to trigger) and RHS (actions to execute):
+* `<CR>` / `<Enter>` / `<Return>`: Carriage return / Enter
+* `<Tab>`: Tab key
+* `<BS>` / `<Backspace>`: Backspace key
+* `<Space>`: Spacebar
+* `<Esc>` / `<Escape>`: Escape key
+* `<Leader>`: Map leader character (defaults to `\`)
+* `<C-a>` to `<C-z>`: Ctrl + character key combinations (e.g. `<C-s>` for Ctrl-S)
+* `<S-Tab>`: Shift + Tab combination
+* `<F1>` to `<F12>`: Function keys
+
+#### Insert Mode Vim Shortcuts
+
+The following standard Vim keyboard shortcuts are natively supported inside Insert mode:
+* `Ctrl-W`: Delete the previous word
+* `Ctrl-U`: Delete to the beginning of the current line
+* `Ctrl-H`: Backspace (delete character to the left)
+* `Ctrl-T`: Indent the current line by one `shiftwidth`
+* `Ctrl-D`: Unindent the current line by one `shiftwidth`
+
+#### File Editing Command
+
+The `:edit` (or `:e`) command is fully compatible with Vim:
+* `:edit` / `:e`: Reloads the current buffer file from disk.
+* `:edit <filename>` / `:e <filename>`: Opens the specified file. If the file does not exist, it will be created automatically. Supports both relative and absolute paths.
 
 ### config.ini (UI & Shortcut Overrides)
 

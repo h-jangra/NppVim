@@ -5,6 +5,7 @@
 std::unique_ptr<Keymap> g_normalKeymap;
 std::unique_ptr<Keymap> g_visualKeymap;
 std::unique_ptr<Keymap> g_commandKeymap;
+std::unique_ptr<Keymap> g_insertKeymap;
 
 Keymap::Keymap(VimState& state) 
     : state(state), root(std::make_shared<KeymapNode>()), currentNode(root) {}
@@ -85,6 +86,23 @@ bool Keymap::processKey(HWND hwnd, char key, int count) {
     }
 
     if (currentNode->isLeaf && currentNode->handler) {
+        if (this == g_insertKeymap.get()) {
+            int charsToDelete = 0;
+            for (size_t i = 0; i < pendingKeys.length() - 1; ++i) {
+                unsigned char c = (unsigned char)pendingKeys[i];
+                if (c < 0x80) {
+                    charsToDelete++;
+                }
+            }
+            if (charsToDelete > 0) {
+                int pos = Utils::caretPos(hwnd);
+                Utils::beginUndo(hwnd);
+                ::SendMessage(hwnd, SCI_SETSEL, pos - charsToDelete, pos);
+                ::SendMessage(hwnd, SCI_REPLACESEL, 0, (LPARAM)"");
+                Utils::endUndo(hwnd);
+            }
+        }
+
         currentNode->handler(hwnd, count);
 
         if (currentNode->motionChar) {
@@ -111,27 +129,26 @@ void Keymap::reset() {
 
 void Keymap::addMapping(const std::string& from, const std::string& to, bool recursive) {
     auto handler = [this, to, recursive](HWND hwnd, int count) {
-        // Feed the 'to' sequence back into the keymap
-        // To prevent infinite recursion, we use a depth counter
         static int depth = 0;
         if (depth > 10) return;
         depth++;
         
         for (int i = 0; i < count; ++i) {
             for (char c : to) {
-                // If it's <Esc>, handle it specially
-                if (c == '<') {
-                    // Check for <Esc>, <CR>, etc.
-                    // For now, just handle <Esc>
-                    if (to.find("<Esc>") == 0) {
-                        // Enter normal mode
-                        // This is a bit of a hack, but works for the JJ -> Esc case
-                        ::PostMessage(hwnd, WM_CHAR, 27, 0); 
-                        depth--;
-                        return;
+                if (recursive) {
+                    if (this->handleKey(hwnd, c)) {
+                        continue;
                     }
                 }
-                this->handleKey(hwnd, c);
+                
+                bool oldBypass = state.bypassKeymap;
+                if (!recursive) {
+                    state.bypassKeymap = true;
+                }
+                
+                ::SendMessage(hwnd, WM_CHAR, (WPARAM)(unsigned char)c, 0);
+                
+                state.bypassKeymap = oldBypass;
             }
         }
         depth--;

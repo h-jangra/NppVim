@@ -13,6 +13,7 @@ class Keymap;
 extern std::unique_ptr<Keymap> g_normalKeymap;
 extern std::unique_ptr<Keymap> g_visualKeymap;
 extern std::unique_ptr<Keymap> g_commandKeymap;
+extern std::unique_ptr<Keymap> g_insertKeymap;
 
 using KeyHandler = std::function<void(HWND, int)>;
 

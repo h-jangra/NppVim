@@ -41,13 +41,14 @@ NppVim brings **Vim-like modal editing** to Notepad++.
 
 NppVim uses two configuration files to manage editor behavior, custom mappings, and interface integrations:
 
-1. **`nppvim.rc`** (Vim Settings): Used for standard Vim options (e.g., `set relativenumber`, `set textwidth=80`, `set ignorecase`) and key mappings (`nmap`, `nnoremap`, etc.).
+1. **`nppvim.rc`** (Vim Settings): Used for Vim-style settings and mappings. Example: [NppVim RC file](docs/nppvim.rc)
    - Located by default at `%APPDATA%\Notepad++\plugins\Config\NppVim\nppvim.rc` (or `%USERPROFILE%\.nppvimrc` if it exists).
 2. **`config.ini`** (Plugin & UI Settings): Used for general settings (e.g., custom escape keys, clipboard integration, and overriding conflicting Notepad++ shortcut keys like `Ctrl+D`, `Ctrl+U`, `Ctrl+V`).
    - Located at `%APPDATA%\Notepad++\plugins\Config\NppVim\config.ini`.
 
-For a full list of supported settings and options, please refer to the [Help Documentation](docs/help.md).
+For a full list of supported settings and options, please refer to the [Help Documentation (Markdown)](docs/help.md) or the plain-text [Help File](docs/help.txt).
 
 ## Documentation
 
-- [Help](docs/help.md)
+- [Help (Markdown)](docs/help.md)
+- [Help (Plain Text)](docs/help.txt)

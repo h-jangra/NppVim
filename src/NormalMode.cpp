@@ -101,6 +101,8 @@ static void pasteBlock(HWND h, const std::string& content, bool pasteAfter) {
 
 NormalMode::NormalMode(VimState& state) : state(state) {
     g_normalKeymap = std::make_unique<Keymap>(state);
+    g_insertKeymap = std::make_unique<Keymap>(state);
+    g_insertKeymap->setAllowCount(false);
     setupKeyMaps();
 }
 

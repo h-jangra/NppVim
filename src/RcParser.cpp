@@ -105,16 +105,19 @@ void RcParser::handleMapping(const std::string& cmd, const std::string& args) {
 
     if (from.empty() || to.empty()) return;
 
+    std::string transFrom = Utils::translateKeyNotation(from);
+    std::string transTo = Utils::translateKeyNotation(to);
+
     if (cmd == "map" || cmd == "noremap") {
-        if (g_normalKeymap) g_normalKeymap->addMapping(from, to, recursive);
-        if (g_visualKeymap) g_visualKeymap->addMapping(from, to, recursive);
+        if (g_normalKeymap) g_normalKeymap->addMapping(transFrom, transTo, recursive);
+        if (g_visualKeymap) g_visualKeymap->addMapping(transFrom, transTo, recursive);
+        if (g_insertKeymap) g_insertKeymap->addMapping(transFrom, transTo, recursive);
     } else if (cmd == "nmap" || cmd == "nnoremap") {
-        if (g_normalKeymap) g_normalKeymap->addMapping(from, to, recursive);
+        if (g_normalKeymap) g_normalKeymap->addMapping(transFrom, transTo, recursive);
     } else if (cmd == "imap" || cmd == "inoremap") {
-        // In this plugin, Insert mode is handled by Scintilla directly.
-        // We could implement this by hooking WM_CHAR in INSERT mode.
+        if (g_insertKeymap) g_insertKeymap->addMapping(transFrom, transTo, recursive);
     } else if (cmd == "vmap" || cmd == "vnoremap") {
-        if (g_visualKeymap) g_visualKeymap->addMapping(from, to, recursive);
+        if (g_visualKeymap) g_visualKeymap->addMapping(transFrom, transTo, recursive);
     }
     
     // Also store in MappingManager for listing
@@ -129,13 +132,18 @@ void RcParser::handleUnmapping(const std::string& cmd, const std::string& args) 
     std::string from = trim(args);
     if (from.empty()) return;
 
+    std::string transFrom = Utils::translateKeyNotation(from);
+
     if (cmd == "unmap") {
-        if (g_normalKeymap) g_normalKeymap->removeMapping(from);
-        if (g_visualKeymap) g_visualKeymap->removeMapping(from);
+        if (g_normalKeymap) g_normalKeymap->removeMapping(transFrom);
+        if (g_visualKeymap) g_visualKeymap->removeMapping(transFrom);
+        if (g_insertKeymap) g_insertKeymap->removeMapping(transFrom);
     } else if (cmd == "nunmap") {
-        if (g_normalKeymap) g_normalKeymap->removeMapping(from);
+        if (g_normalKeymap) g_normalKeymap->removeMapping(transFrom);
+    } else if (cmd == "iunmap") {
+        if (g_insertKeymap) g_insertKeymap->removeMapping(transFrom);
     } else if (cmd == "vunmap") {
-        if (g_visualKeymap) g_visualKeymap->removeMapping(from);
+        if (g_visualKeymap) g_visualKeymap->removeMapping(transFrom);
     }
     
     MappingMode mode = MappingMode::All;

@@ -1,0 +1,218 @@
+*help.txt*   For NppVim version 1.0.0.   Last change: 2026 June 15
+
+==============================================================================
+NppVim Help                                                           *NppVim*
+
+Welcome to NppVim! This plugin brings Vim-like modal editing to Notepad++.
+
+==============================================================================
+1. Getting Started                                           *nppvim-started*
+
+Press <ESC> to enter Normal Mode. From there, you can use standard Vim motions
+like h, j, k, l to move the cursor.
+
+Use : to enter Command Mode for file operations and configuration.
+
+==============================================================================
+2. Configuration                                             *nppvim-config*
+
+NppVim uses two separate files for configuration to keep editing preferences
+and UI behavior organized.
+
+------------------------------------------------------------------------------
+2.1 nppvim.rc (Vim Environment)                             *nppvim-rc-file*
+
+This is your primary startup script, similar to a .vimrc file. It is used for
+Vim-specific settings, custom mappings, and executing commands on startup. 
+
+Note: Any command-mode command (e.g., :w, :split, :command) can be placed in
+this file.
+
+Supported Options in .rc                                    *nppvim-rc-options*
+------------------------
+You can configure Vim-specific options in nppvim.rc using the ":set <option>"
+command (or ":set <option>=<value>" for parameters). Boolean options can be
+disabled by prefixing them with "no" (e.g., "set nonumber" or "set nornu").
+
+Short  Long Name        Type     Default  Description
+------------------------------------------------------------------------------
+nu     number           Boolean  false    Enable absolute line numbering.
+                                          Disable with: set nonumber / nonu
+rnu    relativenumber   Boolean  false    Enable relative line numbering.
+                                          Disable with: set norelativenu / nornu
+-      hlsearch         Boolean  true     Highlight all search matches.
+                                          Disable with: set nohlsearch
+-      ignorecase       Boolean  false    Ignore case in search patterns.
+                                          Disable with: set noignorecase
+-      smartcase        Boolean  false    Override ignorecase if search pattern
+                                          contains uppercase characters.
+                                          Disable with: set nosmartcase
+-      clipboard        String   unnamed  Clipboard mode. Set to "unnamed" to
+                                          share registers with Windows clipboard.
+-      expandtab        Boolean  false    Expand tabs to spaces.
+                                          Disable with: set noexpandtab
+-      tabstop          Number   4        Number of spaces that a <Tab> counts for.
+-      shiftwidth       Number   4        Number of spaces for autoindent step.
+-      wrap             Boolean  false    Visually wrap long lines.
+                                          Disable with: set nowrap
+-      cursorline       Boolean  false    Highlight the line containing cursor.
+                                          Disable with: set nocursorline
+-      list             Boolean  false    Show tabs and trailing spaces.
+                                          Disable with: set nolist
+-      scrolloff        Number   0        Minimal screen lines to keep above
+                                          and below the cursor.
+-      keylayout        Boolean  false    Enable auto keyboard layout switching.
+                                          Disable with: set nokeylayout
+-      normallayout     String   en-US    Keyboard layout target for Normal mode.
+-      insertlayout     String   system   Keyboard layout target for Insert mode.
+-      langmap          String   ""       Translate characters in Normal/Visual
+                                          modes (e.g., for non-US layouts).
+tw     textwidth        Number   0        Maximum width of text being inserted.
+                                          Draws a visual edge line (e.g., set tw=80).
+                                          Set to 0 to disable.
+
+Hybrid Line Numbering                                    *nppvim-hybrid-lines*
+---------------------
+To enable Hybrid Line Numbering (which shows the absolute line number on the
+current line and relative line numbers on all other lines), set both options:
+
+    set number
+    set relativenumber
+
+Mappings in .rc                                               *nppvim-rc-maps*
+---------------
+Define custom key mappings and aliases using the following syntax:
+
+    " Syntax: [n|v|i][nore]map <keys> <action>
+    " Syntax: command <Alias> <command>
+
+    nmap ; :
+    nnoremap <C-s> :w<CR>
+    imap jj <Esc>
+    inoremap <C-d> <Esc>:w<CR>a
+    command W w
+
+Supported Mappings by Mode:
+  - Normal Mode:   nmap / nnoremap
+  - Visual Mode:   vmap / vnoremap
+  - Insert Mode:   imap / inoremap
+
+Expanded Key Notation Support:                               *nppvim-key-codes*
+Key notations can be used in both LHS (keys to trigger) and RHS (actions to execute):
+  <CR> / <Enter> / <Return>     Carriage return / Enter
+  <Tab>                         Tab key
+  <BS> / <Backspace>            Backspace key
+  <Space>                       Spacebar
+  <Esc> / <Escape>              Escape key
+  <Leader>                      Map leader character (defaults to \)
+  <C-a> to <C-z>                Ctrl + character key combinations (e.g., <C-s>)
+  <S-Tab>                       Shift + Tab combination
+  <F1> to <F12>                 Function keys
+
+Insert Mode Vim Shortcuts                                 *nppvim-insert-shcuts*
+-------------------------
+The following standard Vim keyboard shortcuts are natively supported inside
+Insert mode:
+  Ctrl-W    Delete the previous word.
+  Ctrl-U    Delete to the beginning of the current line.
+  Ctrl-H    Backspace (delete character to the left).
+  Ctrl-T    Indent the current line by one 'shiftwidth'.
+  Ctrl-D    Unindent the current line by one 'shiftwidth'.
+
+File Editing Command                                          *nppvim-rc-edit*
+--------------------
+The ":edit" (or ":e") command is fully compatible with Vim:
+  :edit / :e
+        Reloads the current buffer file from disk.
+  :edit <filename> / :e <filename>
+        Opens the specified file. If the file does not exist, it will be
+        created automatically. Supports both relative and absolute paths.
+
+------------------------------------------------------------------------------
+2.2 config.ini (UI & Shortcut Overrides)                     *nppvim-config-ini*
+
+This file stores settings managed via the Configuration Dialog ("Plugins ->
+NppVim -> Configuration Dialog"). These settings control how NppVim interacts
+with Notepad++ itself.
+
+Note: Changes made in the Dialog box are saved to config.ini only. They are not
+added to your .rc file.
+
+Supported Keys in config.ini                                  *nppvim-ini-keys*
+----------------------------
+Below is the list of keys recognized under the "[General]" section in config.ini:
+
+General Settings ~
+Key                     Type     Default  Description
+------------------------------------------------------------------------------
+enabled (or vim_enabled) Boolean  1        Enable or disable the NppVim emulator.
+show_status_bar         Boolean  1        Toggle Notepad++ status bar visibility.
+debug_logging           Boolean  0        Enable debug logging to a text file.
+rc_file                 String   (empty)  Custom path to the startup script.
+                                          If empty, checks ~/.nppvimrc first,
+                                          then falls back to:
+                                          %APPDATA%\Notepad++\plugins\Config\
+                                          NppVim\nppvim.rc
+escape_key              String   esc      Escape sequence: esc, jj, jk, kj,
+                                          or custom.
+escape_timeout          Number   100      Timeout in ms for multi-key escape.
+custom_escape           String   (empty)  Custom escape sequence (if custom).
+
+Clipboard Integration Settings ~
+Key                     Type     Default  Description
+------------------------------------------------------------------------------
+x_store_clipboard       Boolean  0        Delete char 'x'/'X' updates clipboard.
+d_store_clipboard       Boolean  0        Delete text 'd'/'D' updates clipboard.
+c_store_clipboard       Boolean  0        Change text 'c'/'C' updates clipboard.
+
+Shortcut Override Settings ~
+These keys resolve conflicts with native Notepad++ shortcuts. When set to
+1 or true, NppVim overrides the native Notepad++ shortcut in Normal and Visual
+modes to use the Vim functionality instead:
+
+Key                Vim Function              Npp Function        Default
+------------------------------------------------------------------------------
+override_ctrl_d    Half-page down            Duplicate Line      0
+override_ctrl_u    Half-page up              Convert to Lower    0
+override_ctrl_r    Redo                      Redo                0
+override_ctrl_f    Page forward              Find Dialog         0
+override_ctrl_b    Page backward             Select/Match Brack  0
+override_ctrl_o    Jump backward in list     Open File Dialog    0
+override_ctrl_i    Jump forward in list      (custom)            0
+override_ctrl_v    Enter Visual Block mode   Paste               0
+override_ctrl_a    Increment number          Select All          0
+override_ctrl_x    Decrement number          Cut                 0
+
+Keyboard Layout Settings ~
+Used to configure automatic keyboard layout switching:
+
+Key                     Type     Default  Description
+------------------------------------------------------------------------------
+keyboard_layout_switching
+(or keylayout)          Boolean  0        Enables automatic layout switching.
+normallayout            String   en-US    Normal mode target layout.
+insertlayout            String   system   Insert mode target layout.
+
+==============================================================================
+3. Relative Line Numbers                                     *nppvim-rel-lines*
+
+NppVim provides a high-performance, themed relative numbering system. It
+automatically integrates with Scintilla's line number margin, calculating
+relative offsets dynamically.
+
+==============================================================================
+4. Keyboard Layout Switching                                 *nppvim-layout-sw*
+
+NppVim can automatically switch your Windows keyboard layout when entering
+and exiting Insert mode.
+
+Configuration Example in .rc:
+    set keylayout " Enable switching
+    set normallayout=en-US
+    set insertlayout=ru-RU
+
+Common Layout Codes:
+  en-US (English - US)      en-GB (English - UK)      ru-RU (Russian)
+  hi-IN (Hindi)             ko-KR (Korean)            ja-JP (Japanese)
+
+==============================================================================

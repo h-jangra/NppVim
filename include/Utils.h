@@ -91,6 +91,7 @@ public:
     static std::string toUtf8(wchar_t wch);
     static std::string toUtf8(const std::wstring& wstr);
     static std::string trim(const std::string& s);
+    static std::string translateKeyNotation(const std::string& input);
     static std::string getTextRange(HWND h, int start, int end);
     static void parseLangmap(const std::string& langmapStr);
     static char applyLangmap(wchar_t c);

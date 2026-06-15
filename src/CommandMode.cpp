@@ -1,4 +1,6 @@
 #include "../include/CommandMode.h"
+#include <shlwapi.h>
+#include <fstream>
 #include "../include/Utils.h"
 #include "../include/NormalMode.h"
 #include "../include/Keymap.h"
@@ -334,6 +336,48 @@ void CommandMode::handleColonCommand(HWND hwndEdit, const std::string &cmd) {
       return;
   }
 
+  if (baseCmd == "edit" || baseCmd == "e") {
+      std::string path;
+      std::getline(ss, path);
+      path = Utils::trim(path);
+      if (path.empty()) {
+          // Preserve current behavior: reload current file
+          ::SendMessage(nppData._nppHandle, IDM_FILE_RELOAD, 0, 0);
+          Utils::setStatus(TEXT("File reloaded"));
+      } else {
+          // Support :edit <filename>
+          int wideLen = MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, NULL, 0);
+          if (wideLen > 0) {
+              std::vector<wchar_t> pathWide(wideLen);
+              MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, pathWide.data(), wideLen);
+
+              wchar_t currentFile[MAX_PATH] = {0};
+              ::SendMessageW(nppData._nppHandle, NPPM_GETFULLCURRENTPATH, MAX_PATH, (LPARAM)currentFile);
+
+              wchar_t currentDir[MAX_PATH] = {0};
+              wcscpy_s(currentDir, currentFile);
+              PathRemoveFileSpecW(currentDir);
+
+              wchar_t fullPath[MAX_PATH] = {0};
+              if (PathIsRelativeW(pathWide.data())) {
+                  PathCombineW(fullPath, currentDir, pathWide.data());
+              } else {
+                  wcscpy_s(fullPath, pathWide.data());
+              }
+
+              if (!PathFileExistsW(fullPath)) {
+                  // Create the file
+                  HANDLE hFile = CreateFileW(fullPath, GENERIC_WRITE, 0, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
+                  if (hFile != INVALID_HANDLE_VALUE) {
+                      CloseHandle(hFile);
+                  }
+              }
+              ::SendMessageW(nppData._nppHandle, NPPM_DOOPEN, 0, (LPARAM)fullPath);
+          }
+      }
+      return;
+  }
+
   if (baseCmd == "editrc" || baseCmd == "erc") {
       ConfigManager::getInstance().editRc();
       return;
@@ -454,7 +498,10 @@ auto helpHandler = [](HWND, int) {
     ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_FILE_NEW);
 
     HWND h = Utils::getCurrentScintillaHandle();
-    std::string help = Utils::readPluginFile("docs\\help.md");
+    std::string help = Utils::readPluginFile("docs\\help.txt");
+    if (help.empty()) {
+        help = Utils::readPluginFile("docs\\help.md");
+    }
     if (help.empty()) {
         help = "NppVim — Help\n"
                "=========================\n\n";

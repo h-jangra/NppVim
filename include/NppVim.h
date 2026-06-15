@@ -146,6 +146,7 @@ struct VimState {
     std::vector<std::vector<char>> insertMacroBuffers; 
     bool recordingInsertMacro = false;
     bool awaitingMacroRegister = false;
+    bool bypassKeymap = false;
 
     void reset() {
         repeatCount = 0;

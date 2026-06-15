@@ -667,6 +667,16 @@ bool checkEscapeSequence(char c) {
     g_firstKey = 0; return false;
 }
 
+static char translateVirtualKey(WPARAM wParam) {
+    if (wParam >= VK_F1 && wParam <= VK_F12) {
+        return (char)(0x80 + (wParam - VK_F1));
+    }
+    if (wParam == VK_TAB && (GetKeyState(VK_SHIFT) & 0x8000) != 0) {
+        return (char)0x8C; // Shift-Tab
+    }
+    return 0;
+}
+
 LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     WNDPROC orig = nullptr;
     auto it = origProcMap.find(hwnd);
@@ -675,12 +685,26 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
     if (msg == WM_CLOSE || msg == WM_DESTROY || msg == WM_NCDESTROY) return CallWindowProc(orig, hwnd, msg, wParam, lParam);
     if (!state.vimEnabled) return CallWindowProc(orig, hwnd, msg, wParam, lParam);
 
+    if (state.bypassKeymap) {
+        return CallWindowProc(orig, hwnd, msg, wParam, lParam);
+    }
+
     if (msg == WM_INPUTLANGCHANGE && g_config.enableKeyboardLayoutSwitching) {
         g_userLayout = (HKL)lParam;
         if (state.mode == INSERT) state.savedInsertLayout = g_userLayout;
     }
 
     if ((state.mode == NORMAL || state.mode == VISUAL) && msg == WM_KEYDOWN) {
+        char specialKey = translateVirtualKey(wParam);
+        if (specialKey != 0) {
+            if (state.mode == NORMAL && g_normalKeymap && g_normalKeymap->handleKey(hwnd, specialKey)) {
+                return 0;
+            }
+            if (state.mode == VISUAL && g_visualKeymap && g_visualKeymap->handleKey(hwnd, specialKey)) {
+                return 0;
+            }
+        }
+
         bool ctrlPressed = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
         if (ctrlPressed) {
             if (wParam == 'Q') { if (state.mode == VISUAL && state.isBlockVisual) g_normalMode->enter(); else g_visualMode->enterBlock(hwnd); return 0; }
@@ -712,8 +736,84 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
     }
 
     if (state.mode == INSERT) {
+        static DWORD lastInsertKeyTime = 0;
+        DWORD currentTime = GetTickCount();
+        if (g_insertKeymap && g_insertKeymap->hasPending() && currentTime - lastInsertKeyTime > g_config.escapeTimeout) {
+            g_insertKeymap->reset();
+        }
+
+        if (msg == WM_KEYDOWN) {
+            char specialKey = translateVirtualKey(wParam);
+            if (specialKey != 0 && g_insertKeymap) {
+                if (g_insertKeymap->handleKey(hwnd, specialKey)) {
+                    lastInsertKeyTime = currentTime;
+                    return 0;
+                }
+            }
+
+            bool ctrlPressed = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+            if (ctrlPressed) {
+                char ctrlChar = 0;
+                if (wParam >= 'A' && wParam <= 'Z') ctrlChar = wParam - 'A' + 1;
+
+                if (ctrlChar != 0 && g_insertKeymap && g_insertKeymap->handleKey(hwnd, ctrlChar)) {
+                    lastInsertKeyTime = currentTime;
+                    return 0;
+                }
+
+                if (wParam == 'W') {
+                    ::SendMessage(hwnd, SCI_DELWORDLEFT, 0, 0);
+                    return 0;
+                }
+                if (wParam == 'U') {
+                    int pos = Utils::caretPos(hwnd);
+                    int line = Utils::caretLine(hwnd);
+                    int start = Utils::lineStart(hwnd, line);
+                    if (pos > start) {
+                        Utils::beginUndo(hwnd);
+                        ::SendMessage(hwnd, SCI_DELETERANGE, start, pos - start);
+                        Utils::endUndo(hwnd);
+                    }
+                    return 0;
+                }
+                if (wParam == 'H') {
+                    ::SendMessage(hwnd, SCI_DELETEBACK, 0, 0);
+                    return 0;
+                }
+                if (wParam == 'T') {
+                    int line = Utils::caretLine(hwnd);
+                    int indent = (int)::SendMessage(hwnd, SCI_GETLINEINDENTATION, line, 0);
+                    auto val = OptionRegistry::getInstance().getOption("shiftwidth");
+                    int shiftWidth = std::holds_alternative<int>(val) ? std::get<int>(val) : 4;
+                    Utils::beginUndo(hwnd);
+                    ::SendMessage(hwnd, SCI_SETLINEINDENTATION, line, indent + shiftWidth);
+                    Utils::endUndo(hwnd);
+                    return 0;
+                }
+                if (wParam == 'D') {
+                    int line = Utils::caretLine(hwnd);
+                    int indent = (int)::SendMessage(hwnd, SCI_GETLINEINDENTATION, line, 0);
+                    auto val = OptionRegistry::getInstance().getOption("shiftwidth");
+                    int shiftWidth = std::holds_alternative<int>(val) ? std::get<int>(val) : 4;
+                    Utils::beginUndo(hwnd);
+                    ::SendMessage(hwnd, SCI_SETLINEINDENTATION, line, (std::max)(0, indent - shiftWidth));
+                    Utils::endUndo(hwnd);
+                    return 0;
+                }
+            }
+        }
+
         if (msg == WM_CHAR) {
             wchar_t wChar = (wchar_t)wParam;
+            char c = (char)wChar;
+
+            if (g_insertKeymap) {
+                if (g_insertKeymap->hasPending() || g_insertKeymap->handleKey(hwnd, c)) {
+                    lastInsertKeyTime = currentTime;
+                    return 0;
+                }
+            }
+
             if (state.recordingInsertMacro && wChar != VK_ESCAPE) {
                 std::string utf8 = Utils::toUtf8(wChar);
                 for (char ch : utf8) state.insertMacroBuffers.back().push_back(ch);

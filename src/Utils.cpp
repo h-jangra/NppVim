@@ -793,3 +793,70 @@ HKL Utils::resolveLayout(const std::string& layoutName) {
     std::wstring wlcid(lcid.begin(), lcid.end());
     return ::LoadKeyboardLayout(wlcid.c_str(), KLF_ACTIVATE);
 }
+
+std::string Utils::translateKeyNotation(const std::string& input) {
+    std::string result;
+    size_t i = 0;
+    while (i < input.size()) {
+        if (input[i] == '<') {
+            size_t end = input.find('>', i);
+            if (end != std::string::npos) {
+                std::string token = input.substr(i + 1, end - i - 1);
+                std::string lowerToken = token;
+                std::transform(lowerToken.begin(), lowerToken.end(), lowerToken.begin(), ::tolower);
+                
+                char translatedChar = 0;
+                bool found = false;
+
+                if (lowerToken == "cr" || lowerToken == "enter" || lowerToken == "return") {
+                    translatedChar = '\x0D';
+                    found = true;
+                } else if (lowerToken == "tab") {
+                    translatedChar = '\x09';
+                    found = true;
+                } else if (lowerToken == "bs" || lowerToken == "backspace") {
+                    translatedChar = '\x08';
+                    found = true;
+                } else if (lowerToken == "space") {
+                    translatedChar = '\x20';
+                    found = true;
+                } else if (lowerToken == "esc" || lowerToken == "escape") {
+                    translatedChar = '\x1B';
+                    found = true;
+                } else if (lowerToken == "leader") {
+                    translatedChar = '\\';
+                    found = true;
+                } else if (lowerToken.find("c-") == 0 && lowerToken.size() > 2) {
+                    char c = lowerToken[2];
+                    if (c >= 'a' && c <= 'z') {
+                        translatedChar = c - 'a' + 1;
+                        found = true;
+                    }
+                } else if (lowerToken.find("s-") == 0 && lowerToken.size() > 2) {
+                    std::string shiftKey = lowerToken.substr(2);
+                    if (shiftKey == "tab") {
+                        translatedChar = (char)0x8C;
+                        found = true;
+                    }
+                } else if (lowerToken.size() >= 2 && lowerToken[0] == 'f') {
+                    try {
+                        int fNum = std::stoi(lowerToken.substr(1));
+                        if (fNum >= 1 && fNum <= 12) {
+                            translatedChar = (char)(0x80 + (fNum - 1));
+                            found = true;
+                        }
+                    } catch (...) {}
+                }
+
+                if (found) {
+                    result += translatedChar;
+                    i = end + 1;
+                    continue;
+                }
+            }
+        }
+        result += input[i];
+        i++;
+    }
+    return result;
+}
