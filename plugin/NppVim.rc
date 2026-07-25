@@ -33,11 +33,11 @@ BEGIN
         BLOCK "040904b0"
         BEGIN
             VALUE "FileDescription", "Vim mode plugin for Notepad++"
-            VALUE "FileVersion", "VER_MAJOR.VER_MINOR.VER_PATCH.VER_BUILD"
+            VALUE "FileVersion", "1.14.0.0"
             VALUE "InternalName", "NppVim.dll"
             VALUE "OriginalFilename", "NppVim.dll"
             VALUE "ProductName", "NppVim"
-            VALUE "ProductVersion", "VER_MAJOR.VER_MINOR.VER_PATCH.VER_BUILD"
+            VALUE "ProductVersion", "1.14.0.0"
         END
     END
     BLOCK "VarFileInfo"

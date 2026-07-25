@@ -53,6 +53,10 @@ static HFONT g_hFontNormal = NULL;
 static HFONT g_hFontButton = NULL;
 static std::map<HWND, WNDPROC> origProcMap;
 static WNDPROC g_origNppProc = nullptr;
+static WNDPROC g_origMainProc = nullptr;
+static WNDPROC g_origSecondProc = nullptr;
+static bool g_relNum = false;
+static bool g_absNum = false;
 
 VimConfig g_config;
 HKL g_userLayout = NULL;
@@ -72,6 +76,7 @@ void loadConfig();
 void saveConfig();
 void initializeOptions();
 void updateRelativeLineNumbers(HWND hwnd, bool force = false);
+void applyScintillaScrollPolicy(HWND hwnd);
 
 void installNppHook() {
     if (nppData._nppHandle && !g_origNppProc) {
@@ -153,23 +158,40 @@ bool isNativeLineNumberEnabled() {
     return (state != (UINT)-1) && (state & MF_CHECKED);
 }
 
+void applyScintillaScrollPolicy(HWND hwnd) {
+    if (!hwnd || !IsWindow(hwnd)) return;
+    auto val = OptionRegistry::getInstance().getOption("scrolloff");
+    int scrolloff = std::holds_alternative<int>(val) ? std::get<int>(val) : 0;
+    int slop = (scrolloff > 0) ? scrolloff : 1;
+    ::SendMessage(hwnd, SCI_SETYCARETPOLICY, CARET_SLOP | CARET_EVEN | CARET_STRICT, slop);
+    ::SendMessage(hwnd, SCI_SETVISIBLEPOLICY, CARET_SLOP | CARET_EVEN, slop);
+}
+
 void updateRelativeLineNumbers(HWND hwnd, bool force) {
     if (!hwnd || !state.vimEnabled) return;
     
-    auto& reg = OptionRegistry::getInstance();
-    bool relNum = std::get<bool>(reg.getOption("relativenumber"));
-    bool absNum = std::get<bool>(reg.getOption("number"));
+    bool relNum = g_relNum;
+    bool absNum = g_absNum;
     
     struct MarginState {
         int currentLine = -1;
         int firstVisibleLine = -1;
+        int lastLineCount = -1;
         COLORREF lastBg = 0xFFFFFFFF;
         int lastWidth = -1;
+        int lastDigits = -1;
+        int charWidth = 0;
         bool lastRelNum = false;
         bool lastAbsNum = false;
+        std::map<int, std::string> lastTexts;
     };
     static std::map<HWND, MarginState> states;
     auto& s = states[hwnd];
+
+    if (force) {
+        s.lastTexts.clear();
+        s.currentLine = -1;
+    }
 
     // Case 1: Everything Disabled (set nonu nornu)
     if (!relNum && !absNum) {
@@ -188,6 +210,7 @@ void updateRelativeLineNumbers(HWND hwnd, bool force) {
             s.lastAbsNum = false;
             s.lastWidth = 0;
             s.currentLine = -1;
+            s.lastTexts.clear();
         }
         return;
     }
@@ -208,6 +231,7 @@ void updateRelativeLineNumbers(HWND hwnd, bool force) {
             s.lastAbsNum = true;
             s.lastWidth = 50;
             s.currentLine = -1;
+            s.lastTexts.clear();
         }
         return;
     }
@@ -215,7 +239,16 @@ void updateRelativeLineNumbers(HWND hwnd, bool force) {
     // Case 3: Relative numbering active (pure or hybrid)
     int currentLine = (int)::SendMessage(hwnd, SCI_LINEFROMPOSITION, ::SendMessage(hwnd, SCI_GETCURRENTPOS, 0, 0), 0);
     int firstVisibleLine = (int)::SendMessage(hwnd, SCI_GETFIRSTVISIBLELINE, 0, 0);
+    int lineCount = (int)::SendMessage(hwnd, SCI_GETLINECOUNT, 0, 0);
     
+    // Only update text if cursor moved, scrolled, or line count changed, unless forced
+    if (!force && s.currentLine == currentLine && s.firstVisibleLine == firstVisibleLine && s.lastLineCount == lineCount && s.lastRelNum == relNum && s.lastAbsNum == absNum) return;
+    s.currentLine = currentLine;
+    s.firstVisibleLine = firstVisibleLine;
+    s.lastLineCount = lineCount;
+    s.lastRelNum = relNum;
+    s.lastAbsNum = absNum;
+
     // Sync theme colors to our margin
     COLORREF bg = (COLORREF)::SendMessage(hwnd, SCI_STYLEGETBACK, STYLE_LINENUMBER, 0);
     
@@ -229,33 +262,31 @@ void updateRelativeLineNumbers(HWND hwnd, bool force) {
         ::SendMessage(nppData._nppHandle, NPPM_SETLINENUMBERWIDTHMODE, 0, LINENUMWIDTH_CONSTANT);
         
         s.lastBg = bg;
-        s.currentLine = -1; // Force text update
-    }
-
-    // Only update background if it changed
-    if (s.lastBg != bg) {
+        s.charWidth = 0;
+    } else if (s.lastBg != bg) {
         ::SendMessage(hwnd, SCI_SETMARGINBACKN, 0, bg);
         s.lastBg = bg;
+        s.charWidth = 0;
     }
 
     // Dynamic width calculation - only update if it changed
-    int lineCount = (int)::SendMessage(hwnd, SCI_GETLINECOUNT, 0, 0);
-    int charWidth = (int)::SendMessage(hwnd, SCI_TEXTWIDTH, STYLE_LINENUMBER, (LPARAM)"9");
-    int digits = (int)log10(max(1, lineCount)) + 1;
-    int targetWidth = (digits + 1) * charWidth;
-    if (s.lastWidth != targetWidth) {
-        ::SendMessage(hwnd, SCI_SETMARGINWIDTHN, 0, targetWidth);
-        s.lastWidth = targetWidth;
+    int digits = (int)log10((std::max)(1, lineCount)) + 1;
+    int minDigits = 3; // 3 digits min + 1 space = 4 chars width minimum (Vim default numberwidth standard)
+    int effectiveDigits = (std::max)(minDigits, digits);
+    if (s.charWidth <= 0 || s.lastDigits != effectiveDigits || force) {
+        s.charWidth = (int)::SendMessage(hwnd, SCI_TEXTWIDTH, STYLE_LINENUMBER, (LPARAM)"9");
+        if (s.charWidth <= 0) s.charWidth = 8;
+        s.lastDigits = effectiveDigits;
+        int targetWidth = (effectiveDigits + 1) * s.charWidth;
+        int actualWidth = (int)::SendMessage(hwnd, SCI_GETMARGINWIDTHN, 0, 0);
+        if (actualWidth != targetWidth || s.lastWidth != targetWidth) {
+            ::SendMessage(hwnd, SCI_SETMARGINWIDTHN, 0, targetWidth);
+            s.lastWidth = targetWidth;
+        }
     }
 
-    // Only update text if cursor moved or scrolled, unless forced
-    if (!force && s.currentLine == currentLine && s.firstVisibleLine == firstVisibleLine && s.lastRelNum == relNum && s.lastAbsNum == absNum) return;
-    s.currentLine = currentLine;
-    s.firstVisibleLine = firstVisibleLine;
-    s.lastRelNum = relNum;
-    s.lastAbsNum = absNum;
-
     int displayLines = (int)::SendMessage(hwnd, SCI_LINESONSCREEN, 0, 0);
+
     for (int i = 0; i <= displayLines; i++) {
         int displayLine = firstVisibleLine + i;
         int docLine = (int)::SendMessage(hwnd, SCI_DOCLINEFROMVISIBLE, displayLine, 0);
@@ -266,14 +297,17 @@ void updateRelativeLineNumbers(HWND hwnd, bool force) {
         
         if (rel == 0) {
             // Proper Vim behavior: Hybrid only if 'number' is also on
-            if (absNum) sprintf(buf, "%d", docLine + 1);
-            else sprintf(buf, "0");
+            if (absNum) sprintf_s(buf, sizeof(buf), "%d", docLine + 1);
+            else sprintf_s(buf, sizeof(buf), "0");
         } else {
-            sprintf(buf, "%d", rel);
+            sprintf_s(buf, sizeof(buf), "%d", rel);
         }
         
-        ::SendMessage(hwnd, SCI_MARGINSETTEXT, docLine, (LPARAM)buf);
-        ::SendMessage(hwnd, SCI_MARGINSETSTYLE, docLine, 0); // Offset 33 makes this STYLE_LINENUMBER
+        auto it = s.lastTexts.find(docLine);
+        if (it == s.lastTexts.end() || it->second != buf) {
+            s.lastTexts[docLine] = buf;
+            ::SendMessage(hwnd, SCI_MARGINSETTEXT, docLine, (LPARAM)buf);
+        }
     }
 }
 
@@ -281,6 +315,7 @@ void initializeOptions() {
     auto& reg = OptionRegistry::getInstance();
     
     reg.registerOption("number", OptionType::Bool, false, [](const OptionValue& v) {
+        g_absNum = std::get<bool>(v);
         HWND hwnd = Utils::getCurrentScintillaHandle();
         if (hwnd) {
             updateRelativeLineNumbers(hwnd, true);
@@ -288,6 +323,7 @@ void initializeOptions() {
     }, "Show line numbers");
 
     reg.registerOption("relativenumber", OptionType::Bool, false, [](const OptionValue& v) {
+        g_relNum = std::get<bool>(v);
         HWND hwnd = Utils::getCurrentScintillaHandle();
         if (hwnd) updateRelativeLineNumbers(hwnd, true);
     }, "Show relative line numbers");
@@ -332,10 +368,7 @@ void initializeOptions() {
 
     reg.registerOption("scrolloff", OptionType::Number, 0, [](const OptionValue& v) {
         HWND hwnd = Utils::getCurrentScintillaHandle();
-        if (hwnd) {
-            int lines = std::get<int>(v);
-            ::SendMessage(hwnd, SCI_SETYCARETPOLICY, CARET_SLOP | CARET_EVEN, lines);
-        }
+        if (hwnd) applyScintillaScrollPolicy(hwnd);
     }, "Minimal number of screen lines to keep above and below the cursor");
 
     reg.registerOption("keylayout", OptionType::Bool, false, [](const OptionValue& v) {
@@ -678,9 +711,12 @@ static char translateVirtualKey(WPARAM wParam) {
 }
 
 LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    WNDPROC orig = nullptr;
-    auto it = origProcMap.find(hwnd);
-    if (it != origProcMap.end()) orig = it->second;
+    WNDPROC orig = (hwnd == nppData._scintillaMainHandle) ? g_origMainProc :
+                   (hwnd == nppData._scintillaSecondHandle) ? g_origSecondProc : nullptr;
+    if (!orig) {
+        auto it = origProcMap.find(hwnd);
+        if (it != origProcMap.end()) orig = it->second;
+    }
     if (!orig) return DefWindowProc(hwnd, msg, wParam, lParam);
     if (msg == WM_CLOSE || msg == WM_DESTROY || msg == WM_NCDESTROY) return CallWindowProc(orig, hwnd, msg, wParam, lParam);
     if (!state.vimEnabled) return CallWindowProc(orig, hwnd, msg, wParam, lParam);
@@ -844,15 +880,26 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
 void installScintillaHookFor(HWND hwnd) {
     if (!hwnd || origProcMap.find(hwnd) != origProcMap.end()) return;
     WNDPROC prev = (WNDPROC)SetWindowLongPtr(hwnd, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(ScintillaHookProc));
-    if (prev) origProcMap[hwnd] = prev;
+    if (prev) {
+        origProcMap[hwnd] = prev;
+        if (hwnd == nppData._scintillaMainHandle) g_origMainProc = prev;
+        else if (hwnd == nppData._scintillaSecondHandle) g_origSecondProc = prev;
+    }
 }
 
 void removeAllScintillaHooks() {
     for (auto& p : origProcMap) if (IsWindow(p.first)) SetWindowLongPtr(p.first, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(p.second));
     origProcMap.clear();
+    g_origMainProc = nullptr;
+    g_origSecondProc = nullptr;
 }
 
-void ensureScintillaHooks() { installScintillaHookFor(nppData._scintillaMainHandle); installScintillaHookFor(nppData._scintillaSecondHandle); }
+void ensureScintillaHooks() {
+    installScintillaHookFor(nppData._scintillaMainHandle);
+    installScintillaHookFor(nppData._scintillaSecondHandle);
+    applyScintillaScrollPolicy(nppData._scintillaMainHandle);
+    applyScintillaScrollPolicy(nppData._scintillaSecondHandle);
+}
 
 void updateCursorForCurrentMode() {
     HWND hwndEdit = Utils::getCurrentScintillaHandle();
@@ -931,11 +978,19 @@ extern "C" __declspec(dllexport) void beNotified(SCNotification* notifyCode) {
     if (!notifyCode) return;
 
     if ((notifyCode->nmhdr.code == NPPN_BUFFERACTIVATED || notifyCode->nmhdr.code == NPPN_READY) && state.vimEnabled) {
+        HWND hwnd = Utils::getCurrentScintillaHandle();
+        if (hwnd && IsWindow(hwnd)) {
+            ::SendMessage(hwnd, WM_SETREDRAW, FALSE, 0);
+        }
         ensureScintillaHooks(); 
         updateCursorForCurrentMode();
         // Force update immediately
-        HWND hwnd = Utils::getCurrentScintillaHandle();
-        if (hwnd) updateRelativeLineNumbers(hwnd, true);
+        if (hwnd && IsWindow(hwnd)) {
+            applyScintillaScrollPolicy(hwnd);
+            updateRelativeLineNumbers(hwnd, true);
+            ::SendMessage(hwnd, WM_SETREDRAW, TRUE, 0);
+            ::RedrawWindow(hwnd, NULL, NULL, RDW_INVALIDATE | RDW_UPDATENOW | RDW_ALLCHILDREN);
+        }
     }
 
     if (notifyCode->nmhdr.code == NPPN_WORDSTYLESUPDATED || notifyCode->nmhdr.code == NPPN_DARKMODECHANGED) {
@@ -972,7 +1027,7 @@ extern "C" __declspec(dllexport) void beNotified(SCNotification* notifyCode) {
 
     if (notifyCode->nmhdr.code == SCN_UPDATEUI) {
         // Always update on selection/scroll/content change
-        if (notifyCode->updated & (SC_UPDATE_SELECTION | SC_UPDATE_V_SCROLL | SC_UPDATE_CONTENT | SC_UPDATE_H_SCROLL)) {
+        if (notifyCode->updated & (SC_UPDATE_SELECTION | SC_UPDATE_V_SCROLL | SC_UPDATE_CONTENT)) {
             updateRelativeLineNumbers((HWND)notifyCode->nmhdr.hwndFrom);
         }
     }

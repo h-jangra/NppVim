@@ -79,6 +79,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Release")
         COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:NppVim>" "${DIST_DIR}/NppVim.dll"
         COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_SOURCE_DIR}/LICENSE" "${DIST_DIR}/LICENSE"
         COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_SOURCE_DIR}/Readme.md" "${DIST_DIR}/Readme.md"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/docs" "${DIST_DIR}/docs"
         COMMENT "Copying files to ${DIST_DIR}"
     )
 endif()

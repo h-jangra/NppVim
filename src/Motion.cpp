@@ -38,6 +38,7 @@ void Motion::lineUp(HWND hwndEdit, int count) {
         int newPos=Utils::sci(hwndEdit, SCI_FINDCOLUMN, newLine, state.visualPreferredColumn);
         Utils::sci(hwndEdit, SCI_SETSEL, anchor, newPos);
     }
+    Utils::sci(hwndEdit, SCI_SCROLLCARET, 0, 0);
 }
 
 void Motion::lineDown(HWND hwndEdit, int count) {
@@ -58,6 +59,7 @@ void Motion::lineDown(HWND hwndEdit, int count) {
         int newPos=Utils::sci(hwndEdit, SCI_FINDCOLUMN, newLine, state.visualPreferredColumn);
         Utils::sci(hwndEdit, SCI_SETSEL, anchor, newPos);
     }
+    Utils::sci(hwndEdit, SCI_SCROLLCARET, 0, 0);
 }
 
 void Motion::wordRight(HWND hwndEdit, int count) {
@@ -298,6 +300,7 @@ void Motion::gotoLine(HWND hwndEdit, int lineNum) {
     else {
         ::SendMessage(hwndEdit, SCI_GOTOLINE, lineNum - 1, 0);
     }
+    ::SendMessage(hwndEdit, SCI_SCROLLCARET, 0, 0);
 }
 
 void Motion::documentStart(HWND hwndEdit) {

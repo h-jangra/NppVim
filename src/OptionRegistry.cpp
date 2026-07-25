@@ -14,7 +14,12 @@ void OptionRegistry::registerOption(const std::string& name, OptionType type, Op
     }
 }
 
-bool OptionRegistry::setOption(const std::string& name, const OptionValue& value) {
+bool OptionRegistry::setOption(const std::string& nameInput, const OptionValue& value) {
+    std::string name = nameInput;
+    if (name == "so") name = "scrolloff";
+    if (name == "nu") name = "number";
+    if (name == "rnu") name = "relativenumber";
+    if (name == "tw") name = "textwidth";
     auto it = options.find(name);
     if (it != options.end()) {
         it->second.value = value;
@@ -86,6 +91,7 @@ bool OptionRegistry::setOptionFromString(const std::string& line) {
                 // Handle aliases before checking prefix
                 if (potentialName == "nu") potentialName = "number";
                 if (potentialName == "rnu") potentialName = "relativenumber";
+                if (potentialName == "so") potentialName = "scrolloff";
                 if (potentialName == "tw") potentialName = "textwidth";
 
                 if (options.count(potentialName)) {
@@ -102,6 +108,7 @@ bool OptionRegistry::setOptionFromString(const std::string& line) {
         // Handle aliases (for positive case)
         if (name == "nu") name = "number";
         if (name == "rnu") name = "relativenumber";
+        if (name == "so") name = "scrolloff";
         if (name == "tw") name = "textwidth";
 
         if (!setOption(name, value)) {
@@ -112,7 +119,12 @@ bool OptionRegistry::setOptionFromString(const std::string& line) {
     return allSuccess;
 }
 
-OptionValue OptionRegistry::getOption(const std::string& name) const {
+OptionValue OptionRegistry::getOption(const std::string& nameInput) const {
+    std::string name = nameInput;
+    if (name == "so") name = "scrolloff";
+    if (name == "nu") name = "number";
+    if (name == "rnu") name = "relativenumber";
+    if (name == "tw") name = "textwidth";
     auto it = options.find(name);
     if (it != options.end()) {
         return it->second.value;

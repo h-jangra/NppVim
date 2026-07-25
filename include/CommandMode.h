@@ -6,6 +6,25 @@
 #define IND_SUB_MATCH    20
 #define IND_SUB_REPL     21
 
+struct SubstitutionParsed {
+    bool isSubstitution = false;
+    std::string rangeStr;
+    int startLine = 0;
+    int endLine = 0;
+    char delimiter = '/';
+    std::string pattern;
+    std::string replacement;
+    std::string flags;
+    bool hasSecondDelimiter = false;
+    bool hasThirdDelimiter = false;
+    bool useRegex = true;
+    bool caseInsensitive = false;
+    bool replaceAll = false;
+    bool confirmEach = false;
+    bool countOnly = false;
+    bool suppressError = false;
+};
+
 class CommandMode {
 public:
     CommandMode(VimState& state);
@@ -32,18 +51,19 @@ public:
     void handleSearchCommand(HWND hwndEdit, const std::string& searchTerm, int searchFlags = 0);
     void handleSubstitutionCommand(HWND hwndEdit, const std::string& cmd);
 
+    void previewSubstitutionFromBuffer(HWND h);
+    void clearSubstitutionPreview(HWND h);
+    bool parseSubstitutionCommand(const std::string& buf, HWND hwndEdit, SubstitutionParsed& parsed);
+
 private:
     VimState& state;
     std::string lastPreviewBuffer;
 
     void handleCommand(HWND hwndEdit);
-    void performSubstitution(HWND hwndEdit, const std::string& pattern, const std::string& replacement,
-         bool useRegex, bool caseInsensitive, bool replaceAll, bool confirmEach, bool globalReplace, int startPos, int endPos);
+    void performSubstitution(HWND hwndEdit, const SubstitutionParsed& parsed);
 
     void initSubstitutionIndicators(HWND h);
-    void clearSubstitutionPreview(HWND h);
-    void previewSubstitutionFromBuffer(HWND h);
     void showRegisters();
-    void previewSubstitution(HWND h, const std::string &pat, const std::string &rep, bool regex, bool global);
-    bool parseSubstitution(const std::string& buf,std::string& pat,std::string& rep,bool& regex,bool& global, bool& confirm);
+    void previewSubstitution(HWND h, const SubstitutionParsed& parsed);
 };
+
