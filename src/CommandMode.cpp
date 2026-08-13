@@ -13,8 +13,10 @@
 #include <sstream>
 #include <algorithm>
 #include <vector>
-
+#include <regex>
+#include <cctype>
 #include <unordered_map>
+#include <set>
 
 extern NormalMode *g_normalMode;
 extern NppData nppData;
@@ -139,6 +141,34 @@ void CommandMode::handleKey(HWND hwndEdit, wchar_t wChar) {
     return;
   }
 
+  if (wChar == 8) {
+    handleBackspace(hwndEdit);
+    return;
+  }
+
+  if (wChar == 23) { // Ctrl-W: delete word left
+    if (state.commandBuffer.size() > 1) {
+      while (state.commandBuffer.size() > 1 && state.commandBuffer.back() == ' ') {
+        state.commandBuffer.pop_back();
+      }
+      while (state.commandBuffer.size() > 1 && state.commandBuffer.back() != ' ') {
+        state.commandBuffer.pop_back();
+      }
+      updateStatus();
+      previewSubstitutionFromBuffer(hwndEdit);
+    }
+    return;
+  }
+
+  if (wChar == 21) { // Ctrl-U: clear line
+    if (state.commandBuffer.size() > 1) {
+      state.commandBuffer = state.commandBuffer.substr(0, 1);
+      updateStatus();
+      previewSubstitutionFromBuffer(hwndEdit);
+    }
+    return;
+  }
+
   if (wChar >= 32) {
     std::string utf8 = Utils::toUtf8(wChar);
     state.commandBuffer += utf8;
@@ -248,22 +278,364 @@ void CommandMode::handleSearchCommand(HWND hwndEdit, const std::string &searchTe
 #include "../include/RcParser.h"
 
 void CommandMode::handleColonCommand(HWND hwndEdit, const std::string &cmd) {
-  if (cmd.empty()) return;
+  if (cmd.empty() || !hwndEdit) return;
 
-  std::string fullCmd = cmd;
-  std::stringstream ss(fullCmd);
-  std::string baseCmd;
-  ss >> baseCmd;
+  std::string fullCmd = Utils::trim(cmd);
+  if (fullCmd.empty()) return;
 
-  // Resolve user-defined alias first
-  baseCmd = resolveUserCommand(baseCmd);
+  // Check substitution command first (supports :s/old/new/, :%s/old/new/g, :'<,'>s/old/new/g, :<>s/old/new/g, etc.)
+  SubstitutionParsed parsedSub;
+  if (parseSubstitutionCommand(fullCmd, hwndEdit, parsedSub)) {
+      handleSubstitutionCommand(hwndEdit, fullCmd);
+      return;
+  }
 
-  if (baseCmd == "set") {
-      std::string args;
-      std::getline(ss, args);
-      args = Utils::trim(args);
+  // Parse range prefix
+  ExRange range;
+  size_t cmdStart = 0;
+  bool hasRange = parseRange(fullCmd, hwndEdit, state, range, cmdStart);
+
+  std::string remaining = Utils::trim(fullCmd.substr(cmdStart));
+
+  // Jump to line if only a range was given (e.g. :10, :$, :15)
+  if (remaining.empty()) {
+      if (hasRange) {
+          int targetLine = range.endLine;
+          ::SendMessage(hwndEdit, SCI_GOTOLINE, targetLine, 0);
+          ::SendMessage(hwndEdit, SCI_SCROLLCARET, 0, 0);
+          std::wstring msg = L"Jumped to line " + std::to_wstring(targetLine + 1);
+          Utils::setStatus(msg.c_str());
+      }
+      return;
+  }
+
+  // Check external command execution (e.g. :!python %, :10,20!column -t, :'<,'>!sort, :<>!column -t)
+  if (remaining[0] == '!') {
+      std::string externalCmd = Utils::trim(remaining.substr(1));
+      executeExternal(hwndEdit, range, externalCmd);
+      return;
+  }
+
+  // Extract command word and arguments
+  // Command names are alpha characters + optional '_' + optional '!'
+  // Arguments start at the first whitespace or non-alpha character (after any '!')
+  size_t nameEnd = 0;
+  while (nameEnd < remaining.size() && (std::isalpha(static_cast<unsigned char>(remaining[nameEnd])) || remaining[nameEnd] == '_')) {
+      nameEnd++;
+  }
+  if (nameEnd < remaining.size() && remaining[nameEnd] == '!') {
+      nameEnd++;
+  }
+
+  std::string baseCmd = remaining.substr(0, nameEnd);
+  std::string args = Utils::trim(remaining.substr(nameEnd));
+
+  // Check user-defined command alias (e.g. :command W w)
+  std::string resolved = resolveUserCommand(baseCmd);
+  if (resolved != baseCmd) {
+      handleColonCommand(hwndEdit, resolved + (args.empty() ? "" : (" " + args)));
+      return;
+  }
+
+  // User command definition (:command / :com)
+  if (baseCmd == "command" || baseCmd == "com") {
+      RcParser::getInstance().executeLine(fullCmd, hwndEdit);
+      return;
+  }
+
+  // 0. Quit & Close commands
+  if (baseCmd == "q" || baseCmd == "quit" || baseCmd == "close" || baseCmd == "clo") {
+      executeQuit(hwndEdit, false, false, false);
+      return;
+  }
+  if (baseCmd == "q!" || baseCmd == "quit!" || baseCmd == "close!" || baseCmd == "clo!") {
+      executeQuit(hwndEdit, true, false, false);
+      return;
+  }
+  if (baseCmd == "qa" || baseCmd == "quitall" || baseCmd == "qall") {
+      executeQuit(hwndEdit, false, true, false);
+      return;
+  }
+  if (baseCmd == "qa!" || baseCmd == "quitall!" || baseCmd == "qall!") {
+      executeQuit(hwndEdit, true, true, false);
+      return;
+  }
+  if (baseCmd == "wq" || baseCmd == "x" || baseCmd == "exit") {
+      executeQuit(hwndEdit, false, false, true);
+      return;
+  }
+  if (baseCmd == "wq!" || baseCmd == "x!" || baseCmd == "exit!") {
+      executeQuit(hwndEdit, true, false, true);
+      return;
+  }
+  if (baseCmd == "wqa" || baseCmd == "xa" || baseCmd == "xall" || baseCmd == "wqall") {
+      executeQuit(hwndEdit, false, true, true);
+      return;
+  }
+  if (baseCmd == "wqa!" || baseCmd == "xa!" || baseCmd == "xall!" || baseCmd == "wqall!") {
+      executeQuit(hwndEdit, true, true, true);
+      return;
+  }
+  if (baseCmd == "w" || baseCmd == "write" || baseCmd == "w!" || baseCmd == "write!") {
+      if (!args.empty()) {
+          int wideLen = MultiByteToWideChar(CP_UTF8, 0, args.c_str(), -1, NULL, 0);
+          if (wideLen > 0) {
+              std::vector<wchar_t> pathWide(wideLen);
+              MultiByteToWideChar(CP_UTF8, 0, args.c_str(), -1, pathWide.data(), wideLen);
+
+              wchar_t currentFile[MAX_PATH] = {0};
+              ::SendMessageW(nppData._nppHandle, NPPM_GETFULLCURRENTPATH, MAX_PATH, (LPARAM)currentFile);
+
+              wchar_t currentDir[MAX_PATH] = {0};
+              wcscpy_s(currentDir, currentFile);
+              PathRemoveFileSpecW(currentDir);
+
+              wchar_t fullPath[MAX_PATH] = {0};
+              if (PathIsRelativeW(pathWide.data())) {
+                  PathCombineW(fullPath, currentDir, pathWide.data());
+              } else {
+                  wcscpy_s(fullPath, pathWide.data());
+              }
+
+              ::SendMessageW(nppData._nppHandle, NPPM_SAVECURRENTFILEAS, FALSE, (LPARAM)fullPath);
+              Utils::setStatus(TEXT("File saved"));
+              return;
+          }
+      }
+      ::SendMessage(nppData._nppHandle, NPPM_SAVECURRENTFILE, 0, 0);
+      Utils::setStatus(TEXT("File saved"));
+      return;
+  }
+  if (baseCmd == "wa" || baseCmd == "wall" || baseCmd == "wa!" || baseCmd == "wall!") {
+      ::SendMessage(nppData._nppHandle, NPPM_SAVEALLFILES, 0, 0);
+      Utils::setStatus(TEXT("All files saved"));
+      return;
+  }
+  if (baseCmd == "up" || baseCmd == "update" || baseCmd == "up!" || baseCmd == "update!") {
+      int modified = (int)::SendMessage(hwndEdit, SCI_GETMODIFY, 0, 0);
+      if (modified) {
+          ::SendMessage(nppData._nppHandle, NPPM_SAVECURRENTFILE, 0, 0);
+          Utils::setStatus(TEXT("File saved"));
+      } else {
+          Utils::setStatus(TEXT("No changes made"));
+      }
+      return;
+  }
+  if (baseCmd == "bd" || baseCmd == "bdelete" || baseCmd == "bw" || baseCmd == "bwipeout" || baseCmd == "bunload") {
+      executeBufferClose(hwndEdit, false);
+      return;
+  }
+  if (baseCmd == "bd!" || baseCmd == "bdelete!" || baseCmd == "bw!" || baseCmd == "bwipeout!" || baseCmd == "bunload!") {
+      executeBufferClose(hwndEdit, true);
+      return;
+  }
+  if (baseCmd == "bn" || baseCmd == "bnext") {
+      ::SendMessage(nppData._nppHandle, IDM_VIEW_TAB_NEXT, 0, 0);
+      return;
+  }
+  if (baseCmd == "bp" || baseCmd == "bprev" || baseCmd == "bprevious") {
+      ::SendMessage(nppData._nppHandle, IDM_VIEW_TAB_PREV, 0, 0);
+      return;
+  }
+  if (baseCmd == "bf" || baseCmd == "bfirst") {
+      ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_VIEW_TAB_START);
+      return;
+  }
+  if (baseCmd == "bl" || baseCmd == "blast") {
+      ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_VIEW_TAB_END);
+      return;
+  }
+  if (baseCmd == "b" || baseCmd == "buffer") {
+      executeBufferSwitch(hwndEdit, args);
+      return;
+  }
+  if (baseCmd == "buffers" || baseCmd == "ls" || baseCmd == "files") {
+      showBuffers();
+      return;
+  }
+  if (baseCmd == "tabnew" || baseCmd == "tabe" || baseCmd == "tabedit") {
       if (args.empty()) {
-          // Display all options
+          ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_FILE_NEW);
+      } else {
+          handleColonCommand(hwndEdit, "edit " + args);
+      }
+      return;
+  }
+  if (baseCmd == "tabclose" || baseCmd == "tabc") {
+      executeQuit(hwndEdit, false, false, false);
+      return;
+  }
+  if (baseCmd == "tabnext" || baseCmd == "tabn") {
+      ::SendMessage(nppData._nppHandle, IDM_VIEW_TAB_NEXT, 0, 0);
+      return;
+  }
+  if (baseCmd == "tabprev" || baseCmd == "tabp" || baseCmd == "tabprevious") {
+      ::SendMessage(nppData._nppHandle, IDM_VIEW_TAB_PREV, 0, 0);
+      return;
+  }
+  if (baseCmd == "tabfirst" || baseCmd == "tabfir") {
+      ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_VIEW_TAB_START);
+      return;
+  }
+  if (baseCmd == "tablast") {
+      ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_VIEW_TAB_END);
+      return;
+  }
+  if (baseCmd == "tabonly" || baseCmd == "tabo" || baseCmd == "only" || baseCmd == "on") {
+      ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_FILE_CLOSEALL_BUT_CURRENT);
+      Utils::setStatus(TEXT("Other tabs closed"));
+      return;
+  }
+  if (baseCmd == "h" || baseCmd == "help") {
+      openHelp();
+      return;
+  }
+  if (baseCmd == "tutor" || baseCmd == "tut") {
+      openTutor();
+      return;
+  }
+  if (baseCmd == "column" || baseCmd == "col") {
+      executeColumn(hwndEdit, range, args);
+      return;
+  }
+
+  // 1. :delete / :d
+  if (baseCmd == "delete" || baseCmd == "d" || baseCmd == "delete!" || baseCmd == "d!") {
+      executeDelete(hwndEdit, range, args);
+      return;
+  }
+
+  // 2. :yank / :y
+  if (baseCmd == "yank" || baseCmd == "y") {
+      executeYank(hwndEdit, range, args);
+      return;
+  }
+
+  // 3. :put / :pu / :p
+  if (baseCmd == "put" || baseCmd == "pu") {
+      executePut(hwndEdit, range, false, args);
+      return;
+  }
+  if (baseCmd == "put!" || baseCmd == "pu!" || baseCmd == "p!") {
+      executePut(hwndEdit, range, true, args);
+      return;
+  }
+  if (baseCmd == "p") {
+      if (!args.empty() && Utils::isValidRegister(args[0])) {
+          executePut(hwndEdit, range, false, args);
+      } else if (hasRange) {
+          executePrint(hwndEdit, range);
+      } else {
+          executePut(hwndEdit, range, false, args);
+      }
+      return;
+  }
+
+  // 4. :print
+  if (baseCmd == "print") {
+      executePrint(hwndEdit, range);
+      return;
+  }
+
+  // 5. :join / :j
+  if (baseCmd == "join" || baseCmd == "j") {
+      executeJoin(hwndEdit, range, true, args);
+      return;
+  }
+  if (baseCmd == "join!" || baseCmd == "j!") {
+      executeJoin(hwndEdit, range, false, args);
+      return;
+  }
+
+  // 6. :sort
+  if (baseCmd == "sort" || baseCmd == "sort!") {
+      bool reverse = (baseCmd == "sort!");
+      executeSort(hwndEdit, range, reverse, args);
+      return;
+  }
+
+  // 7. :retab
+  if (baseCmd == "retab" || baseCmd == "retab!") {
+      bool allSpaces = (baseCmd == "retab!");
+      executeRetab(hwndEdit, range, allSpaces, args);
+      return;
+  }
+
+  // 8. :move / :m
+  if (baseCmd == "move" || baseCmd == "m") {
+      executeMove(hwndEdit, range, args);
+      return;
+  }
+
+  // 9. :copy / :co / :t
+  if (baseCmd == "copy" || baseCmd == "co" || baseCmd == "t") {
+      executeCopy(hwndEdit, range, args);
+      return;
+  }
+
+  // 10. Marks commands
+  if (baseCmd == "marks") {
+      showMarks(hwndEdit, args);
+      return;
+  }
+  if (baseCmd == "delmarks" || baseCmd == "delmarks!" ||
+      baseCmd == "delm" || baseCmd == "delm!" ||
+      baseCmd == "dm" || baseCmd == "dm!") {
+      handleDelmarksCommand(hwndEdit, baseCmd, args);
+      return;
+  }
+  if (baseCmd == "mark" || baseCmd == "ma" || baseCmd == "k") {
+      if (args.empty()) {
+          Utils::setStatus(TEXT("E471: Argument required"));
+      } else {
+          char m = args[0];
+          if (Marks::isValidSetMark(m)) {
+              int targetLine = range.hasRange ? range.endLine : Utils::caretLine(hwndEdit);
+              Marks::setMarkAtLine(hwndEdit, m, targetLine);
+              std::wstring msg = L"Mark '" + std::wstring(1, (wchar_t)m) + L"' set at line " + std::to_wstring(targetLine + 1);
+              Utils::setStatus(msg.c_str());
+          } else {
+              Utils::setStatus(TEXT("E191: Argument must be a letter"));
+          }
+      }
+      return;
+  }
+
+  // 10b. Search highlight commands
+  if (baseCmd == "noh" || baseCmd == "nohl" || baseCmd == "nohls" || baseCmd == "nohlsearch") {
+      Utils::clearSearchHighlights(hwndEdit);
+      state.lastSearchMatchCount = -1;
+      Utils::setStatus(TEXT("Search highlight cleared"));
+      return;
+  }
+
+  // 10c. Registers commands
+  if (baseCmd == "reg" || baseCmd == "registers" || baseCmd == "display" || baseCmd == "di") {
+      showRegisters(args);
+      return;
+  }
+
+  // 10d. Split commands
+  if (baseCmd == "split" || baseCmd == "sp" || baseCmd == "vsplit" || baseCmd == "vs") {
+      toggleSplit(hwndEdit, 0);
+      return;
+  }
+
+  // 10e. Undo / Redo commands
+  if (baseCmd == "undo" || baseCmd == "u") {
+      ::SendMessage(hwndEdit, SCI_UNDO, 0, 0);
+      Utils::setStatus(TEXT("1 change undone"));
+      return;
+  }
+  if (baseCmd == "redo" || baseCmd == "red") {
+      ::SendMessage(hwndEdit, SCI_REDO, 0, 0);
+      Utils::setStatus(TEXT("1 change redone"));
+      return;
+  }
+
+  // 11. Settings and Options
+  if (baseCmd == "set") {
+      if (args.empty()) {
           std::string help = "Options:\n========\n";
           auto options = OptionRegistry::getInstance().getAllOptions();
           for (const auto& opt : options) {
@@ -273,8 +645,7 @@ void CommandMode::handleColonCommand(HWND hwndEdit, const std::string &cmd) {
               else help += std::get<std::string>(opt.value);
               help += "\n";
           }
-          // Show in a new buffer or status
-          Utils::setStatus(TEXT("Options listed in Help (use :h for now)")); // Temporary
+          Utils::setStatus(TEXT("Options listed in Help (use :h for now)"));
       } else {
           if (!OptionRegistry::getInstance().setOptionFromString(args)) {
               Utils::setStatus(TEXT("E518: Unknown option"));
@@ -283,23 +654,35 @@ void CommandMode::handleColonCommand(HWND hwndEdit, const std::string &cmd) {
       return;
   }
 
-  if (baseCmd == "map" || baseCmd == "nmap" || baseCmd == "imap" || baseCmd == "vmap" ||
-      baseCmd == "noremap" || baseCmd == "nnoremap" || baseCmd == "inoremap" || baseCmd == "vnoremap") {
-      std::string args;
-      std::getline(ss, args);
-      args = Utils::trim(args);
-      if (args.empty()) {
-          // List mappings
-          Utils::setStatus(TEXT("Use :map with args for now"));
+  // 12. Mappings & Unmappings
+  if (baseCmd == "map" || baseCmd == "nmap" || baseCmd == "imap" || baseCmd == "vmap" || baseCmd == "cmap" ||
+      baseCmd == "noremap" || baseCmd == "nnoremap" || baseCmd == "inoremap" || baseCmd == "vnoremap" || baseCmd == "cnoremap" ||
+      baseCmd == "unmap" || baseCmd == "nunmap" || baseCmd == "iunmap" || baseCmd == "vunmap" || baseCmd == "cunmap") {
+      if (args.empty() && baseCmd.find("un") == std::string::npos) {
+          MappingMode m = MappingMode::All;
+          if (baseCmd[0] == 'n') m = MappingMode::Normal;
+          else if (baseCmd[0] == 'i') m = MappingMode::Insert;
+          else if (baseCmd[0] == 'v') m = MappingMode::Visual;
+          else if (baseCmd[0] == 'c') m = MappingMode::Command;
+
+          auto list = MappingManager::getInstance().getMappings(m);
+          std::string out = "--- Mappings ---\n";
+          for (auto& mapping : list) {
+              out += (mapping.recursive ? "map " : "noremap ") + mapping.from + " -> " + mapping.to + "\n";
+          }
+          if (list.empty()) out += "No mappings defined.\n";
+          showOutputBuffer("Mappings", out, 0);
       } else {
           RcParser::getInstance().executeLine(fullCmd, hwndEdit);
       }
       return;
   }
 
+  // 13. Sourcing
   if (baseCmd == "source" || baseCmd == "so") {
       std::string path;
-      ss >> path;
+      std::stringstream pss(args);
+      pss >> path;
       if (!RcParser::getInstance().parseFile(path, hwndEdit)) {
           Utils::setStatus(TEXT("E484: Cannot open file"));
       } else {
@@ -308,12 +691,14 @@ void CommandMode::handleColonCommand(HWND hwndEdit, const std::string &cmd) {
       return;
   }
 
-  if (baseCmd == "NppVimReload") {
+  // 14. Reloading
+  if (baseCmd == "NppVimReload" || baseCmd == "reload") {
       loadConfig();
       Utils::setStatus(TEXT("NppVim reloaded"));
       return;
   }
 
+  // 15. Version
   if (baseCmd == "version" || baseCmd == "ver") {
       WCHAR path[MAX_PATH];
       GetModuleFileNameW((HMODULE)g_hInstance, path, MAX_PATH);
@@ -336,12 +721,10 @@ void CommandMode::handleColonCommand(HWND hwndEdit, const std::string &cmd) {
       return;
   }
 
-  if (baseCmd == "edit" || baseCmd == "e") {
-      std::string path;
-      std::getline(ss, path);
-      path = Utils::trim(path);
+  // 16. Edit commands
+  if (baseCmd == "edit" || baseCmd == "e" || baseCmd == "edit!" || baseCmd == "e!") {
+      std::string path = args;
       if (path.empty()) {
-          // Preserve current behavior: reload current file
           ::SendMessage(nppData._nppHandle, IDM_FILE_RELOAD, 0, 0);
           Utils::setStatus(TEXT("File reloaded"));
       } else if (path == "rc" || path == "nppvim.rc" || path == ".nppvimrc") {
@@ -349,7 +732,6 @@ void CommandMode::handleColonCommand(HWND hwndEdit, const std::string &cmd) {
       } else if (path == "ini" || path == "config.ini") {
           ConfigManager::getInstance().editIni();
       } else {
-          // Support :edit <filename>
           int wideLen = MultiByteToWideChar(CP_UTF8, 0, path.c_str(), -1, NULL, 0);
           if (wideLen > 0) {
               std::vector<wchar_t> pathWide(wideLen);
@@ -370,7 +752,6 @@ void CommandMode::handleColonCommand(HWND hwndEdit, const std::string &cmd) {
               }
 
               if (!PathFileExistsW(fullPath)) {
-                  // Create the file
                   HANDLE hFile = CreateFileW(fullPath, GENERIC_WRITE, 0, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
                   if (hFile != INVALID_HANDLE_VALUE) {
                       CloseHandle(hFile);
@@ -392,116 +773,139 @@ void CommandMode::handleColonCommand(HWND hwndEdit, const std::string &cmd) {
       return;
   }
 
-  bool isNumber = true;
-  for (char ch : cmd) {
-    if (!std::isdigit(static_cast<unsigned char>(ch))) {
-      isNumber = false;
-      break;
-    }
+  // 17. Working directory commands
+  if (baseCmd == "pwd") {
+      wchar_t cur[MAX_PATH] = {0};
+      ::SendMessageW(nppData._nppHandle, NPPM_GETFULLCURRENTPATH, MAX_PATH, (LPARAM)cur);
+      PathRemoveFileSpecW(cur);
+      Utils::setStatus(cur[0] ? cur : TEXT("No active file directory"));
+      return;
   }
-
-  if (isNumber) {
-    int lineNum = std::stoi(cmd);
-    if (lineNum > 0) {
-      int lineCount = (int)::SendMessage(hwndEdit, SCI_GETLINECOUNT, 0, 0);
-      if (lineNum <= lineCount) {
-        ::SendMessage(hwndEdit, SCI_GOTOLINE, lineNum - 1, 0);
-        ::SendMessage(hwndEdit, SCI_SCROLLCARET, 0, 0);
-        std::wstring msg = L"Jumped to line " + std::to_wstring(lineNum);
-        Utils::setStatus(msg.c_str());
+  if (baseCmd == "cd" || baseCmd == "chdir") {
+      if (args.empty()) {
+          wchar_t cur[MAX_PATH] = {0};
+          ::SendMessageW(nppData._nppHandle, NPPM_GETFULLCURRENTPATH, MAX_PATH, (LPARAM)cur);
+          PathRemoveFileSpecW(cur);
+          if (cur[0]) {
+              SetCurrentDirectoryW(cur);
+              Utils::setStatus((std::wstring(L"Directory: ") + cur).c_str());
+          }
       } else {
-        Utils::setStatus(TEXT("Line number out of range"));
+          int wLen = MultiByteToWideChar(CP_UTF8, 0, args.c_str(), -1, NULL, 0);
+          if (wLen > 0) {
+              std::vector<wchar_t> wPath(wLen);
+              MultiByteToWideChar(CP_UTF8, 0, args.c_str(), -1, wPath.data(), wLen);
+              if (SetCurrentDirectoryW(wPath.data())) {
+                  wchar_t buf[MAX_PATH] = {0};
+                  GetCurrentDirectoryW(MAX_PATH, buf);
+                  Utils::setStatus((std::wstring(L"Directory: ") + buf).c_str());
+              } else {
+                  Utils::setStatus(TEXT("E344: Can't find directory"));
+              }
+          }
       }
-    }
-    return;
-  }
-
-   if (cmd.find("sort") == 0) {
-        if (cmd == "sort") {
-            ::SendMessage(nppData._nppHandle, WM_COMMAND, IDM_EDIT_SORTLINES_LEXICOGRAPHIC_ASCENDING, 0);
-            Utils::setStatus(TEXT("Lines sorted"));
-        } else if (cmd == "sort!") {
-            ::SendMessage(nppData._nppHandle, WM_COMMAND, IDM_EDIT_SORTLINES_LEXICOGRAPHIC_DESCENDING, 0);
-            Utils::setStatus(TEXT("Lines sorted (descending)"));
-        } else if (cmd == "sort n") {
-            ::SendMessage(nppData._nppHandle, WM_COMMAND, IDM_EDIT_SORTLINES_INTEGER_ASCENDING, 0);
-            Utils::setStatus(TEXT("Lines sorted (numeric)"));
-        } else if (cmd == "sort n!") {
-            ::SendMessage(nppData._nppHandle, WM_COMMAND, IDM_EDIT_SORTLINES_INTEGER_DESCENDING, 0);
-            Utils::setStatus(TEXT("Lines sorted (numeric descending)"));
-        } else {
-            Utils::setStatus(TEXT("Use: sort, sort!, sort n, sort n!"));
-        }
-        return;
-    }
-
-  SubstitutionParsed parsedCmd;
-  if (parseSubstitutionCommand(cmd, hwndEdit, parsedCmd))
-  {
-    handleSubstitutionCommand(hwndEdit, cmd);
-    return;
-  }
-
-  if (cmd == "wrap" || cmd == "wrapmode" || cmd == "wrap on") {
-    ::SendMessage(hwndEdit, SCI_SETWRAPMODE, SC_WRAP_WORD, 0);
-    Utils::setStatus(TEXT("Word wrap enabled"));
-    return;
-  }
-  if (cmd == "nowrap" || cmd == "wrap off") {
-      ::SendMessage(hwndEdit, SCI_SETWRAPMODE, SC_WRAP_NONE, 0);
-      Utils::setStatus(TEXT("Word wrap disabled"));
-      return;
-  }
-  if (cmd == "wrap char") {
-      ::SendMessage(hwndEdit, SCI_SETWRAPMODE, SC_WRAP_CHAR, 0);
-      Utils::setStatus(TEXT("Character wrap enabled"));
-      return;
-  }
-  if (cmd == "wrap whitespace") {
-      ::SendMessage(hwndEdit, SCI_SETWRAPMODE, SC_WRAP_WHITESPACE, 0);
-      Utils::setStatus(TEXT("Whitespace wrap enabled"));
       return;
   }
 
-  if (cmd.rfind("set tw=", 0) == 0) {
-    try {
-        int width = std::stoi(cmd.substr(7));
-        ::SendMessage(hwndEdit, SCI_SETEDGECOLUMN, width, 0);
-        ::SendMessage(hwndEdit, SCI_SETEDGEMODE, EDGE_LINE, 0);
-        Utils::setStatus(TEXT("Text width set"));
-    } catch (...) {
-        Utils::setStatus(TEXT("Invalid text width"));
-    }
-    return;
+  // 18. Echo & Misc commands
+  if (baseCmd == "echo" || baseCmd == "echom") {
+      std::string echoStr = args;
+      if (echoStr.size() >= 2 && ((echoStr.front() == '"' && echoStr.back() == '"') || (echoStr.front() == '\'' && echoStr.back() == '\''))) {
+          echoStr = echoStr.substr(1, echoStr.size() - 2);
+      }
+      std::wstring wEcho(echoStr.begin(), echoStr.end());
+      Utils::setStatus(wEcho.c_str());
+      return;
+  }
+  if (baseCmd == "about") {
+      about();
+      return;
+  }
+  if (baseCmd == "config") {
+      showConfigDialog();
+      return;
+  }
+  if (baseCmd == "paypal" || baseCmd == "donate") {
+      ShellExecuteW(NULL, L"open", L"https://paypal.me/h8imansh8u", NULL, NULL, SW_SHOWNORMAL);
+      return;
+  }
+  if (baseCmd == "gh" || baseCmd == "github") {
+      ShellExecuteW(NULL, L"open", L"https://github.com/h-jangra/nppvim", NULL, NULL, SW_SHOWNORMAL);
+      return;
   }
 
-  for (char c : cmd) {
-    if (!g_commandKeymap->handleKey(hwndEdit, c)) {
-        break;
-    }
+  // 19. Keymap fallback
+  bool matched = false;
+  if (g_commandKeymap) {
+      g_commandKeymap->reset();
+      for (char c : fullCmd) {
+          if (!g_commandKeymap->handleKey(hwndEdit, c)) {
+              break;
+          }
+      }
+      matched = !g_commandKeymap->hasPending();
+      g_commandKeymap->reset();
   }
-  return;
 
+  if (!matched && !baseCmd.empty()) {
+      std::wstring wCmd(baseCmd.begin(), baseCmd.end());
+      Utils::setStatus((L"E492: Not an editor command: " + wCmd).c_str());
+  }
 }
 
-auto tutorHandler = [](HWND, int) {
-    ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_FILE_NEW);
+void CommandMode::openTutor() {
+    int openCount = (int)::SendMessage(nppData._nppHandle, NPPM_GETNBOPENFILES, 0, ALL_OPEN_FILES);
+    HWND curH = Utils::getCurrentScintillaHandle();
+    bool isSingleEmptyDoc = false;
+    if (openCount <= 1 && curH) {
+        int len = (int)::SendMessage(curH, SCI_GETTEXTLENGTH, 0, 0);
+        int mod = (int)::SendMessage(curH, SCI_GETMODIFY, 0, 0);
+        wchar_t path[MAX_PATH] = {0};
+        ::SendMessageW(nppData._nppHandle, NPPM_GETFULLCURRENTPATH, MAX_PATH, (LPARAM)path);
+        if (len == 0 && mod == 0 && (path[0] == L'\0' || !PathFileExistsW(path))) {
+            isSingleEmptyDoc = true;
+        }
+    }
+
+    if (!isSingleEmptyDoc) {
+        ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_FILE_NEW);
+    }
 
     HWND h = Utils::getCurrentScintillaHandle();
+    if (!h) return;
+
     std::string tutor = Utils::buildTutorText();
 
     ::SendMessage(h, SCI_SETREADONLY, FALSE, 0);
     ::SendMessage(h, SCI_SETTEXT, 0, (LPARAM)tutor.c_str());
     ::SendMessage(h, SCI_SETSAVEPOINT, 0, 0);
     ::SendMessage(h, SCI_SETREADONLY, FALSE, 0);
+    ::SendMessage(h, SCI_GOTOPOS, 0, 0);
 
-    Utils::setStatus(TEXT("-- TUTOR --"));
-};
+    Utils::setStatus(TEXT("-- TUTOR -- (Type :q to close)"));
+}
 
-auto helpHandler = [](HWND, int) {
-    ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_FILE_NEW);
+void CommandMode::openHelp() {
+    int openCount = (int)::SendMessage(nppData._nppHandle, NPPM_GETNBOPENFILES, 0, ALL_OPEN_FILES);
+    HWND curH = Utils::getCurrentScintillaHandle();
+    bool isSingleEmptyDoc = false;
+    if (openCount <= 1 && curH) {
+        int len = (int)::SendMessage(curH, SCI_GETTEXTLENGTH, 0, 0);
+        int mod = (int)::SendMessage(curH, SCI_GETMODIFY, 0, 0);
+        wchar_t path[MAX_PATH] = {0};
+        ::SendMessageW(nppData._nppHandle, NPPM_GETFULLCURRENTPATH, MAX_PATH, (LPARAM)path);
+        if (len == 0 && mod == 0 && (path[0] == L'\0' || !PathFileExistsW(path))) {
+            isSingleEmptyDoc = true;
+        }
+    }
+
+    if (!isSingleEmptyDoc) {
+        ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_FILE_NEW);
+    }
 
     HWND h = Utils::getCurrentScintillaHandle();
+    if (!h) return;
+
     std::string help = Utils::readPluginFile("docs\\help.txt");
     if (help.empty()) {
         help = Utils::readPluginFile("docs\\help.md");
@@ -543,9 +947,77 @@ auto helpHandler = [](HWND, int) {
     ::SendMessage(h, SCI_SETTEXT, 0, (LPARAM)help.c_str());
     ::SendMessage(h, SCI_SETSAVEPOINT, 0, 0);
     ::SendMessage(h, SCI_SETREADONLY, TRUE, 0);
+    ::SendMessage(h, SCI_GOTOPOS, 0, 0);
 
-    Utils::setStatus(TEXT("-- HELP --"));
-};
+    Utils::setStatus(TEXT("-- HELP -- (Type :q to close)"));
+}
+
+void CommandMode::executeQuit(HWND hwndEdit, bool force, bool all, bool save) {
+    if (!hwndEdit) hwndEdit = Utils::getCurrentScintillaHandle();
+
+    // 1. If save requested (:wq, :x, :wqa, :xa, ZZ)
+    if (save) {
+        if (all) {
+            ::SendMessage(nppData._nppHandle, NPPM_SAVEALLFILES, 0, 0);
+        } else {
+            ::SendMessage(nppData._nppHandle, NPPM_SAVECURRENTFILE, 0, 0);
+        }
+    }
+
+    int isReadOnly = hwndEdit ? (int)::SendMessage(hwndEdit, SCI_GETREADONLY, 0, 0) : 0;
+    int isModified = hwndEdit ? (int)::SendMessage(hwndEdit, SCI_GETMODIFY, 0, 0) : 0;
+
+    // 2. If not saving and not forcing, check if current buffer is modified
+    if (!save && !force && isModified != 0 && isReadOnly == 0) {
+        Utils::setStatus(TEXT("E37: No write since last change (add ! to override)"));
+        return;
+    }
+
+    // 3. Clear read-only and set savepoint so Scintilla / Notepad++ allows closing without dirty prompt
+    if (hwndEdit && (isReadOnly != 0 || force || isModified == 0)) {
+        ::SendMessage(hwndEdit, SCI_SETREADONLY, FALSE, 0);
+        ::SendMessage(hwndEdit, SCI_SETSAVEPOINT, 0, 0);
+    }
+
+    int openCount = (int)::SendMessage(nppData._nppHandle, NPPM_GETNBOPENFILES, 0, ALL_OPEN_FILES);
+
+    if (all || openCount <= 1) {
+        // When closing all or when closing the only open tab/buffer, exit Notepad++
+        ::SendMessage(nppData._nppHandle, WM_COMMAND, IDM_FILE_EXIT, 0);
+    } else {
+        // Multiple tabs open: close current tab
+        ::SendMessage(nppData._nppHandle, WM_COMMAND, IDM_FILE_CLOSE, 0);
+    }
+}
+
+void CommandMode::executeBufferClose(HWND hwndEdit, bool force) {
+    if (!hwndEdit) hwndEdit = Utils::getCurrentScintillaHandle();
+
+    int isReadOnly = hwndEdit ? (int)::SendMessage(hwndEdit, SCI_GETREADONLY, 0, 0) : 0;
+    int isModified = hwndEdit ? (int)::SendMessage(hwndEdit, SCI_GETMODIFY, 0, 0) : 0;
+
+    if (!force && isModified != 0 && isReadOnly == 0) {
+        Utils::setStatus(TEXT("E89: No write since last change for buffer (add ! to override)"));
+        return;
+    }
+
+    if (hwndEdit && (isReadOnly != 0 || force || isModified == 0)) {
+        ::SendMessage(hwndEdit, SCI_SETREADONLY, FALSE, 0);
+        ::SendMessage(hwndEdit, SCI_SETSAVEPOINT, 0, 0);
+    }
+
+    int openCount = (int)::SendMessage(nppData._nppHandle, NPPM_GETNBOPENFILES, 0, ALL_OPEN_FILES);
+    if (openCount <= 1) {
+        if (hwndEdit) {
+            ::SendMessage(hwndEdit, SCI_SETREADONLY, FALSE, 0);
+            ::SendMessage(hwndEdit, SCI_CLEARALL, 0, 0);
+            ::SendMessage(hwndEdit, SCI_SETSAVEPOINT, 0, 0);
+        }
+        Utils::setStatus(TEXT("Buffer closed"));
+    } else {
+        ::SendMessage(nppData._nppHandle, WM_COMMAND, IDM_FILE_CLOSE, 0);
+    }
+}
 
 CommandMode::CommandMode(VimState &state) : state(state)
 {
@@ -560,19 +1032,17 @@ CommandMode::CommandMode(VimState &state) : state(state)
     .set("e", "Reload current file", [](HWND, int) {
         ::SendMessage(nppData._nppHandle, IDM_FILE_RELOAD, 0, 0);
     })
-    .set("q", "Close current file", [](HWND, int) {
-        ::SendMessage(nppData._nppHandle, WM_COMMAND, IDM_FILE_CLOSE, 0);
+    .set("q", "Close current file", [](HWND h, int) {
+        executeQuit(h, false, false, false);
     })
-    .set("qa", "Close all files", [](HWND, int) {
-        ::SendMessage(nppData._nppHandle, WM_COMMAND, IDM_FILE_CLOSEALL, 0);
+    .set("qa", "Close all files", [](HWND h, int) {
+        executeQuit(h, false, true, false);
     })
-    .set("wq", "Save and close file", [](HWND, int) {
-        ::SendMessage(nppData._nppHandle, NPPM_SAVECURRENTFILE, 0, 0);
-        ::SendMessage(nppData._nppHandle, IDM_FILE_CLOSE, 0, 0);
+    .set("wq", "Save and close file", [](HWND h, int) {
+        executeQuit(h, false, false, true);
     })
-    .set("wqa", "Save all and close all files", [](HWND, int) {
-        ::SendMessage(nppData._nppHandle, NPPM_SAVEALLFILES, 0, 0);
-        ::SendMessage(nppData._nppHandle, IDM_FILE_CLOSEALL, 0, 0);
+    .set("wqa", "Save all and close all files", [](HWND h, int) {
+        executeQuit(h, false, true, true);
     })
     .set("bn", "Next tab", [](HWND, int) {
         ::SendMessage(nppData._nppHandle, IDM_VIEW_TAB_NEXT, 0, 0);
@@ -580,8 +1050,8 @@ CommandMode::CommandMode(VimState &state) : state(state)
     .set("bp", "Previous tab", [](HWND, int) {
         ::SendMessage(nppData._nppHandle, IDM_VIEW_TAB_PREV, 0, 0);
     })
-    .set("bd", "Close current tab", [](HWND, int) {
-        ::SendMessage(nppData._nppHandle, WM_COMMAND, IDM_FILE_CLOSE, 0);
+    .set("bd", "Close current tab", [](HWND h, int) {
+        executeBufferClose(h, false);
     })
     .set("vsplit", "Toggle split", toggleSplit)
     .set("vs", "Toggle split", toggleSplit)
@@ -646,23 +1116,6 @@ CommandMode::CommandMode(VimState &state) : state(state)
         OptionRegistry::getInstance().setOption("relativenumber", false);
         Utils::setStatus(TEXT("Relative numbers disabled"));
     })
-    .set("m", "Move line to specific line number", [](HWND h, int c) {
-        int currentLine = ::SendMessage(h, SCI_LINEFROMPOSITION, Utils::caretPos(h), 0);
-        int targetLine = c > 0 ? c - 1 : 0;
-        if (targetLine >= 0 && targetLine != currentLine) {
-            ::SendMessage(h, SCI_MOVESELECTEDLINESUP, currentLine < targetLine ? 0 : 1, 0);
-            if (currentLine < targetLine) {
-                for (int i = currentLine; i < targetLine; ++i) {
-                    ::SendMessage(h, SCI_MOVESELECTEDLINESDOWN, 0, 0);
-                }
-            } else {
-                for (int i = currentLine; i > targetLine; --i) {
-                    ::SendMessage(h, SCI_MOVESELECTEDLINESUP, 0, 0);
-                }
-            }
-            ::SendMessage(h, SCI_GOTOLINE, targetLine, 0);
-        }
-    })
     .set("reg", "Show registers", [this](HWND, int) {
         showRegisters();
     })
@@ -675,11 +1128,10 @@ CommandMode::CommandMode(VimState &state) : state(state)
     .set("display", "Show registers", [this](HWND, int) {
         showRegisters();
     })
-    .set("h",    "Open command help", helpHandler)
-    .set("help", "Open command help", helpHandler)
-    .set("tutor", "Open tutor", tutorHandler)
-    .set("tut",   "Open tutor", tutorHandler)
-    .set("t",     "Open tutor", tutorHandler);
+    .set("h",    "Open command help", [](HWND, int) { openHelp(); })
+    .set("help", "Open command help", [](HWND, int) { openHelp(); })
+    .set("tutor", "Open tutor", [](HWND, int) { openTutor(); })
+    .set("tut",   "Open tutor", [](HWND, int) { openTutor(); });
 }
 
 static void appendNonKeymapHelp(std::string& help) {
@@ -691,6 +1143,17 @@ static void appendNonKeymapHelp(std::string& help) {
     help += ":wq, :x            - Save and close\n";
     help += ":qa, :quitall      - Close all\n";
     help += ":wqa               - Save and close all\n";
+    help += ":d, :delete [reg]  - Delete lines in range (e.g. :10,20d, :'<,'>d, :%d)\n";
+    help += ":y, :yank [reg]    - Yank lines in range (e.g. :10,20y, :'<,'>y, :%y)\n";
+    help += ":pu, :put [!] [reg]- Put register text after/before line\n";
+    help += ":j, :join [!]      - Join lines in range (e.g. :10,20j, :'<,'>j)\n";
+    help += ":sort [!][flags]   - Sort lines in range or file (flags: i, u, n, x, o, b, f, /pat/)\n";
+    help += ":column [-t][-s][-o]- Format tabular data into aligned columns\n";
+    help += ":retab [!] [tab]   - Retabulate spaces/tabs in range or file\n";
+    help += ":m, :move {addr}   - Move lines in range to address\n";
+    help += ":co, :t {addr}     - Copy lines in range to address\n";
+    help += ":!cmd              - Execute external Windows command (e.g. :!python %, :!npm test)\n";
+    help += ":[range]!cmd       - Filter lines through external program (e.g. :'<,'>!sort, :<>!column -t)\n";
     help += ":reload            - Reload nppvim.rc\n";
     help += ":config            - Open settings dialog\n";
     help += ":tutor             - Open interactive tutor\n";
@@ -704,6 +1167,9 @@ static void appendNonKeymapHelp(std::string& help) {
     help += "\nExamples:\n";
     help += "  :set number\n";
     help += "  :set tabstop=4\n";
+    help += "  :10,20sort n\n";
+    help += "  :'<,'>!column -t\n";
+    help += "  :!python %\n";
     help += "  :map K 5j\n";
     help += "  :nmap <C-S> :w<CR>\n";
 }
@@ -1108,71 +1574,176 @@ void CommandMode::searchPrevious(HWND hwndEdit)
     }
 }
 
-void CommandMode::handleMarksCommand(HWND hwndEdit, const std::string &commandLine)
+void CommandMode::showMarks(HWND hwndEdit, const std::string& args)
 {
-  if (commandLine == "marks" || commandLine == "m")
-  {
-    std::string marksList = Marks::listMarks(hwndEdit);
+    std::string marksList = Marks::listMarks(hwndEdit, args);
+    showOutputBuffer("Marks", marksList, 0);
+    Utils::setStatus(TEXT("-- Marks list --"));
+}
 
-#ifdef UNICODE
-    int len = MultiByteToWideChar(CP_UTF8, 0, marksList.c_str(), -1, NULL, 0);
-    if (len > 0)
+void CommandMode::handleDelmarksCommand(HWND hwndEdit, const std::string &baseCmd, const std::string &args)
+{
+    bool force = (baseCmd.find('!') != std::string::npos || args == "!");
+    if (force)
     {
-      std::wstring wideList;
-      wideList.resize(len);
-      MultiByteToWideChar(CP_UTF8, 0, marksList.c_str(), -1, &wideList[0], len);
-      ::MessageBox(nppData._nppHandle, wideList.c_str(), TEXT("Marks"), MB_OK | MB_ICONINFORMATION);
-    }
-#else
-    ::MessageBox(nppData._nppHandle, marksList.c_str(), TEXT("Marks"), MB_OK | MB_ICONINFORMATION);
-#endif
-
-    Utils::setStatus(TEXT("-- Marks list shown --"));
-    return;
-  }
-
-  if (commandLine.find("delm") == 0 || commandLine.find("dm") == 0)
-  {
-    size_t startPos = (commandLine.length() > 4 && commandLine[4] == ' ') ? 5 : 4;
-
-    if (commandLine.find("!") != std::string::npos || commandLine.find("a") != std::string::npos)
-    {
-      Marks::clearAllMarks(hwndEdit);
-      Utils::setStatus(TEXT("-- All marks deleted --"));
-      return;
+        Marks::clearLocalMarks(hwndEdit);
+        Utils::setStatus(TEXT("-- Buffer marks deleted --"));
+        return;
     }
 
-    if (startPos < commandLine.length())
+    std::string marksArgs = args;
+    if (marksArgs.empty())
     {
-      std::string marks = commandLine.substr(startPos);
-      int deletedCount = 0;
+        Utils::setStatus(TEXT("E471: Argument required"));
+        return;
+    }
 
-      for (char ch : marks)
-      {
-        if (ch != ' ' && Marks::isValidMark(ch))
-        {
-          Marks::deleteMark(hwndEdit, ch);
-          deletedCount++;
-        }
-      }
-
-      if (deletedCount > 0)
-      {
-        Utils::setStatus(TEXT("-- Marks deleted --"));
-      }
-      else
-      {
-        Utils::setStatus(TEXT("-- No valid marks specified --"));
-      }
+    int count = Marks::deleteMarks(hwndEdit, marksArgs);
+    if (count > 0)
+    {
+        std::wstring msg = std::to_wstring(count) + L" mark" + (count > 1 ? L"s" : L"") + L" deleted";
+        Utils::setStatus(msg.c_str());
     }
     else
     {
-      Utils::setStatus(TEXT("-- Specify marks to delete --"));
+        Utils::setStatus(TEXT("E283: No marks matching"));
     }
-    return;
-  }
+}
 
-  Utils::setStatus(TEXT("-- Unknown marks command --"));
+void CommandMode::showBuffers()
+{
+    int count = (int)::SendMessage(nppData._nppHandle, NPPM_GETNBOPENFILES, 0, ALL_OPEN_FILES);
+    if (count <= 0)
+    {
+        showOutputBuffer("Buffers", "No open buffers\n", 0);
+        return;
+    }
+
+    std::vector<std::vector<TCHAR>> paths(count, std::vector<TCHAR>(MAX_PATH, 0));
+    std::vector<TCHAR*> names(count);
+    for (int i = 0; i < count; i++)
+    {
+        names[i] = paths[i].data();
+    }
+    ::SendMessage(nppData._nppHandle, NPPM_GETOPENFILENAMES, (WPARAM)names.data(), count);
+
+    int currentDocIdx = (int)::SendMessage(nppData._nppHandle, NPPM_GETCURRENTDOCINDEX, 0, MAIN_VIEW);
+
+    std::string out;
+    out += "  # Type Buffer Filename                                  Path\n";
+    out += "─── ──── ────── ───────────────────────────────────────── ─────\n";
+
+    for (int i = 0; i < count; i++)
+    {
+        std::string fullPath;
+#ifdef UNICODE
+        fullPath = Utils::toUtf8(paths[i].data());
+#else
+        fullPath = paths[i].data();
+#endif
+        std::string filename = fullPath;
+        size_t lastSlash = filename.find_last_of("\\/");
+        if (lastSlash != std::string::npos)
+        {
+            filename = filename.substr(lastSlash + 1);
+        }
+        if (filename.empty()) filename = "[No Name]";
+
+        char ind[4] = "   ";
+        if (i == currentDocIdx)
+        {
+            ind[0] = '%';
+            ind[1] = 'a'; // active
+        }
+        else if (i == currentDocIdx - 1 || (currentDocIdx == 0 && i == 1))
+        {
+            ind[0] = '#';
+            ind[1] = 'h'; // alternate
+        }
+
+        char lineBuf[512];
+        sprintf_s(lineBuf, "%3d %s  \"%-35s\" %s\n",
+                  i + 1, ind, filename.c_str(), fullPath.c_str());
+        out += lineBuf;
+    }
+
+    showOutputBuffer("Buffers", out, 0);
+    Utils::setStatus(TEXT("-- Buffers list --"));
+}
+
+void CommandMode::executeBufferSwitch(HWND hwndEdit, const std::string &arg)
+{
+    std::string target = Utils::trim(arg);
+    if (target.empty())
+    {
+        showBuffers();
+        return;
+    }
+
+    int count = (int)::SendMessage(nppData._nppHandle, NPPM_GETNBOPENFILES, 0, ALL_OPEN_FILES);
+    if (count <= 0) return;
+
+    // Check if target is an integer (1-based buffer number)
+    bool isNum = true;
+    for (char c : target)
+    {
+        if (!std::isdigit(static_cast<unsigned char>(c)))
+        {
+            isNum = false;
+            break;
+        }
+    }
+
+    if (isNum)
+    {
+        try
+        {
+            int num = std::stoi(target);
+            if (num >= 1 && num <= count)
+            {
+                ::SendMessage(nppData._nppHandle, NPPM_ACTIVATEDOC, MAIN_VIEW, num - 1);
+                return;
+            }
+            else
+            {
+                Utils::setStatus(TEXT("E86: Buffer number out of range"));
+                return;
+            }
+        }
+        catch (...) {}
+    }
+
+    // Match by substring on filename
+    std::vector<std::vector<TCHAR>> paths(count, std::vector<TCHAR>(MAX_PATH, 0));
+    std::vector<TCHAR*> names(count);
+    for (int i = 0; i < count; i++)
+    {
+        names[i] = paths[i].data();
+    }
+    ::SendMessage(nppData._nppHandle, NPPM_GETOPENFILENAMES, (WPARAM)names.data(), count);
+
+    std::string targetLower = target;
+    std::transform(targetLower.begin(), targetLower.end(), targetLower.begin(), ::tolower);
+
+    for (int i = 0; i < count; i++)
+    {
+        std::string fullPath;
+#ifdef UNICODE
+        fullPath = Utils::toUtf8(paths[i].data());
+#else
+        fullPath = paths[i].data();
+#endif
+        std::string lowerPath = fullPath;
+        std::transform(lowerPath.begin(), lowerPath.end(), lowerPath.begin(), ::tolower);
+
+        if (lowerPath.find(targetLower) != std::string::npos)
+        {
+            ::SendMessage(nppData._nppHandle, NPPM_ACTIVATEDOC, MAIN_VIEW, i);
+            return;
+        }
+    }
+
+    Utils::setStatus(TEXT("E94: No matching buffer"));
 }
 
 void CommandMode::initSubstitutionIndicators(HWND h) {
@@ -1208,112 +1779,76 @@ bool CommandMode::parseSubstitutionCommand(
     res = SubstitutionParsed();
     if (buf.empty() || !hwndEdit) return false;
 
-    std::string str = buf;
-    if (!str.empty() && str[0] == ':') str = str.substr(1);
+    std::string str = Utils::trim(buf);
+    if (!str.empty() && str[0] == ':') str = Utils::trim(str.substr(1));
     if (str.empty()) return false;
 
-    size_t sPos = std::string::npos;
+    // Use parseRange to extract any range prefix (%, '<,'>, 1,10, etc.)
+    ExRange exRange;
+    size_t cmdStartPos = 0;
+    bool hasRange = parseRange(str, hwndEdit, state, exRange, cmdStartPos);
+
+    std::string cmdRem = str.substr(cmdStartPos);
+    if (cmdRem.empty()) return false;
+
+    // Now cmdRem must start with "substitute" or 's'
     size_t cmdLen = 0;
-
-    // Check for "substitute"
-    size_t subKeywordPos = str.find("substitute");
-    if (subKeywordPos != std::string::npos) {
-        bool validBefore = (subKeywordPos == 0 || str[subKeywordPos - 1] == '%' || str[subKeywordPos - 1] == '\'' ||
-                            str[subKeywordPos - 1] == '>' || str[subKeywordPos - 1] == ',' ||
-                            std::isdigit((unsigned char)str[subKeywordPos - 1]) || str[subKeywordPos - 1] == '.' || str[subKeywordPos - 1] == '$');
-        if (validBefore) {
-            sPos = subKeywordPos;
-            cmdLen = 10;
+    if (cmdRem.rfind("substitute", 0) == 0) {
+        cmdLen = 10;
+        // Next char after "substitute" cannot be alphanumeric or underscore
+        if (cmdRem.size() > 10 && (std::isalnum(static_cast<unsigned char>(cmdRem[10])) || cmdRem[10] == '_')) {
+            return false;
         }
+    } else if (cmdRem[0] == 's') {
+        cmdLen = 1;
+        // Next char after 's' cannot be alphanumeric or underscore (e.g. "sp", "sort", "set", "source", "so", "split")
+        if (cmdRem.size() > 1 && (std::isalnum(static_cast<unsigned char>(cmdRem[1])) || cmdRem[1] == '_')) {
+            return false;
+        }
+    } else {
+        return false;
     }
 
-    if (sPos == std::string::npos) {
-        // Find 's'
-        for (size_t i = 0; i < str.size(); i++) {
-            if (str[i] == 's') {
-                if (i + 1 < str.size() && !std::isalnum((unsigned char)str[i + 1])) {
-                    sPos = i;
-                    cmdLen = 1;
-                    break;
-                } else if (i + 1 == str.size()) {
-                    sPos = i;
-                    cmdLen = 1;
-                    break;
-                }
-            }
-        }
-    }
-
-    if (sPos == std::string::npos) return false;
-
+    // It is indeed a substitution command!
     res.isSubstitution = true;
-    res.rangeStr = str.substr(0, sPos);
+    res.rangeStr = str.substr(0, cmdStartPos);
 
     int totalLines = (int)::SendMessage(hwndEdit, SCI_GETLINECOUNT, 0, 0);
     int currentPos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
     int currentLine = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, currentPos, 0);
 
-    if (res.rangeStr == "%") {
-        res.startLine = 0;
-        res.endLine = (totalLines > 0) ? totalLines - 1 : 0;
-    } else if (res.rangeStr == "'<,'>" || (res.rangeStr.empty() && state.mode == VISUAL)) {
-        int selStart = (int)::SendMessage(hwndEdit, SCI_GETSELECTIONSTART, 0, 0);
-        int selEnd = (int)::SendMessage(hwndEdit, SCI_GETSELECTIONEND, 0, 0);
-        res.startLine = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, selStart, 0);
-        res.endLine = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, selEnd, 0);
-        if (res.startLine > res.endLine) std::swap(res.startLine, res.endLine);
-    } else if (res.rangeStr.empty() || res.rangeStr == ".") {
+    if (hasRange) {
+        res.startLine = exRange.startLine;
+        res.endLine = exRange.endLine;
+    } else {
         res.startLine = currentLine;
         res.endLine = currentLine;
-    } else if (res.rangeStr.find(',') != std::string::npos) {
-        size_t comma = res.rangeStr.find(',');
-        std::string startPart = res.rangeStr.substr(0, comma);
-        std::string endPart = res.rangeStr.substr(comma + 1);
-
-        auto parseLineStr = [&](const std::string& p) -> int {
-            if (p.empty() || p == ".") return currentLine;
-            if (p == "$") return totalLines - 1;
-            if (p == "'<") {
-                int s = (int)::SendMessage(hwndEdit, SCI_GETSELECTIONSTART, 0, 0);
-                return (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, s, 0);
-            }
-            if (p == "'>") {
-                int e = (int)::SendMessage(hwndEdit, SCI_GETSELECTIONEND, 0, 0);
-                return (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, e, 0);
-            }
-            try {
-                if (p[0] == '.' && p.size() > 1) return currentLine + std::stoi(p.substr(1));
-                if (p[0] == '$' && p.size() > 1) return (totalLines - 1) + std::stoi(p.substr(1));
-                return std::stoi(p) - 1;
-            } catch (...) {
-                return currentLine;
-            }
-        };
-
-        res.startLine = parseLineStr(startPart);
-        res.endLine = parseLineStr(endPart);
-    } else {
-        try {
-            if (res.rangeStr == "$") res.startLine = res.endLine = totalLines - 1;
-            else res.startLine = res.endLine = std::stoi(res.rangeStr) - 1;
-        } catch (...) {
-            res.startLine = res.endLine = currentLine;
-        }
     }
 
     if (res.startLine < 0) res.startLine = 0;
     if (res.endLine >= totalLines) res.endLine = (totalLines > 0) ? totalLines - 1 : 0;
     if (res.startLine > res.endLine) std::swap(res.startLine, res.endLine);
 
-    size_t parseIdx = sPos + cmdLen;
-    if (parseIdx >= str.size()) return true;
+    size_t parseIdx = cmdLen;
+    // Skip optional spaces before delimiter
+    while (parseIdx < cmdRem.size() && (cmdRem[parseIdx] == ' ' || cmdRem[parseIdx] == '\t')) {
+        parseIdx++;
+    }
 
-    res.delimiter = str[parseIdx++];
+    if (parseIdx >= cmdRem.size()) {
+        // Just ":s" or ":%s" alone
+        if (!state.lastSearchTerm.empty()) {
+            res.pattern = state.lastSearchTerm;
+        }
+        return true;
+    }
+
+    res.delimiter = cmdRem[parseIdx++];
 
     // Extract pattern
     bool escaped = false;
-    while (parseIdx < str.size()) {
-        char ch = str[parseIdx++];
+    while (parseIdx < cmdRem.size()) {
+        char ch = cmdRem[parseIdx++];
         if (escaped) {
             res.pattern += ch;
             escaped = false;
@@ -1336,8 +1871,8 @@ bool CommandMode::parseSubstitutionCommand(
 
     // Extract replacement
     escaped = false;
-    while (parseIdx < str.size()) {
-        char ch = str[parseIdx++];
+    while (parseIdx < cmdRem.size()) {
+        char ch = cmdRem[parseIdx++];
         if (escaped) {
             res.replacement += ch;
             escaped = false;
@@ -1358,8 +1893,8 @@ bool CommandMode::parseSubstitutionCommand(
     if (!res.hasThirdDelimiter) return true;
 
     // Flags
-    while (parseIdx < str.size()) {
-        res.flags += str[parseIdx++];
+    while (parseIdx < cmdRem.size()) {
+        res.flags += cmdRem[parseIdx++];
     }
 
     for (char f : res.flags) {
@@ -1442,7 +1977,7 @@ void CommandMode::previewSubstitution(HWND h, const SubstitutionParsed& parsed) 
     if (totalMatches > 0) {
         display += L"  [" + std::to_wstring(totalMatches) + L" match" + (totalMatches > 1 ? L"es" : L"") +
                    L" on " + std::to_wstring(matchingLinesCount) + L" line" + (matchingLinesCount > 1 ? L"s" : L"") + L"]";
-    } else {
+    } else if (!parsed.pattern.empty()) {
         display += L"  [Pattern not found]";
     }
     Utils::setStatus(display.c_str());
@@ -1462,16 +1997,25 @@ void CommandMode::previewSubstitutionFromBuffer(HWND h) {
     previewSubstitution(h, parsed);
 }
 
-void CommandMode::showRegisters() {
+void CommandMode::showRegisters(const std::string& filterArgs) {
     HWND h = Utils::getCurrentScintillaHandle();
     if (!h) return;
-    
-    ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_FILE_NEW);
-    
-    std::string registersText;
-    registersText += "NppVim Registers\n";
-    registersText += "════════════════\n\n";
-    
+
+    std::set<char> filterSet;
+    std::string trimmed = Utils::trim(filterArgs);
+    if (!trimmed.empty()) {
+        for (char c : trimmed) {
+            if (c != ' ' && c != '\t') {
+                filterSet.insert(c);
+            }
+        }
+    }
+
+    auto shouldInclude = [&](char r) -> bool {
+        if (filterSet.empty()) return true;
+        return filterSet.find(r) != filterSet.end();
+    };
+
     auto getPreview = [](const std::string& content, int maxLength = 40) -> std::string {
         if (content.empty()) return "";
         
@@ -1533,107 +2077,1733 @@ void CommandMode::showRegisters() {
         }
         return lines + (content.empty() ? 0 : 1);
     };
-    
-    // Named registers table
-    registersText += "Named registers:\n";
+
+    std::string registersText;
+    registersText += "--- Registers ---\n";
     registersText += "Type Name  Preview                              Lines\n";
     registersText += "──── ───── ──────────────────────────────────── ─────\n";
-    
-    for (char reg = 'a'; reg <= 'z'; reg++) {
-        std::string content = Utils::getRegisterContent(reg);
-        if (!content.empty()) {
+
+    // Unnamed register "
+    if (shouldInclude('"')) {
+        std::string content = Utils::getRegisterContent('"');
+        if (!content.empty() || !filterSet.empty()) {
             std::string preview = getPreview(content, 35);
             int lines = countLines(content);
-            
-            char line[80];
-            sprintf_s(line, "char  \"%c   %-35s %4d\n", 
-                     reg, preview.c_str(), lines);
+            char line[128];
+            sprintf_s(line, "char  \"\"   %-35s %4d\n", preview.c_str(), lines);
             registersText += line;
         }
     }
-    
-    registersText += "\n";
-    
-    // Numbered registers table
-    registersText += "Numbered registers:\n";
-    registersText += "Type Name  Preview                              Lines\n";
-    registersText += "──── ───── ──────────────────────────────────── ─────\n";
-    
+
+    // Numbered registers 0-9
     for (char reg = '0'; reg <= '9'; reg++) {
-        std::string content = Utils::getRegisterContent(reg);
-        if (!content.empty()) {
+        if (shouldInclude(reg)) {
+            std::string content = Utils::getRegisterContent(reg);
+            if (!content.empty() || !filterSet.empty()) {
+                std::string preview = getPreview(content, 35);
+                int lines = countLines(content);
+                char line[128];
+                sprintf_s(line, "char  \"%c   %-35s %4d\n", reg, preview.c_str(), lines);
+                registersText += line;
+            }
+        }
+    }
+
+    // Named registers a-z
+    for (char reg = 'a'; reg <= 'z'; reg++) {
+        if (shouldInclude(reg)) {
+            std::string content = Utils::getRegisterContent(reg);
+            if (!content.empty() || !filterSet.empty()) {
+                std::string preview = getPreview(content, 35);
+                int lines = countLines(content);
+                char line[128];
+                sprintf_s(line, "char  \"%c   %-35s %4d\n", reg, preview.c_str(), lines);
+                registersText += line;
+            }
+        }
+    }
+
+    // Small delete register -
+    if (shouldInclude('-')) {
+        std::string content = Utils::getRegisterContent('-');
+        if (!content.empty() || !filterSet.empty()) {
             std::string preview = getPreview(content, 35);
             int lines = countLines(content);
-            
-            char line[80];
-            sprintf_s(line, "char  \"%c   %-35s %4d\n", 
-                     reg, preview.c_str(), lines);
+            char line[128];
+            sprintf_s(line, "char  \"-   %-35s %4d\n", preview.c_str(), lines);
             registersText += line;
         }
     }
-    
-    registersText += "\n";
-    
-    // Special registers
-    registersText += "Special registers:\n";
-    registersText += "Type Name  Description                         Content\n";
-    registersText += "──── ───── ─────────────────────────────────── ───────\n";
-    
+
     // System clipboard
-    std::string clipboardPreview;
-    if (IsClipboardFormatAvailable(CF_TEXT)) {
-        if (OpenClipboard(NULL)) {
-            HANDLE hData = GetClipboardData(CF_TEXT);
-            if (hData) {
-                char* pszText = (char*)GlobalLock(hData);
-                if (pszText) {
-                    clipboardPreview = getPreview(pszText, 30);
-                    GlobalUnlock(hData);
+    if (shouldInclude('+') || shouldInclude('*')) {
+        std::string clipboardPreview = getPreview(Utils::getClipboardText(), 30);
+        char line[128];
+        sprintf_s(line, "sys   \"+   System clipboard               %s\n", 
+                 clipboardPreview.empty() ? "(empty)" : clipboardPreview.c_str());
+        registersText += line;
+        sprintf_s(line, "sys   \"*   System clipboard (selection)   %s\n", 
+                 clipboardPreview.empty() ? "(empty)" : clipboardPreview.c_str());
+        registersText += line;
+    }
+
+    // Last search /
+    if (shouldInclude('/')) {
+        char line[128];
+        if (!state.lastSearchTerm.empty()) {
+            sprintf_s(line, "spec  \"/   Last search pattern           \"%s\"\n", 
+                     getPreview(state.lastSearchTerm, 30).c_str());
+        } else {
+            sprintf_s(line, "spec  \"/   Last search pattern           (none)\n");
+        }
+        registersText += line;
+    }
+
+    // Black hole _
+    if (shouldInclude('_')) {
+        std::string blackhole = Utils::getRegisterContent('_');
+        char line[128];
+        sprintf_s(line, "spec  \"_   Black hole register           %s\n", 
+                 blackhole.empty() ? "(empty)" : getPreview(blackhole, 30).c_str());
+        registersText += line;
+    }
+
+    showOutputBuffer("Registers", registersText, 0);
+    Utils::setStatus(TEXT("-- REGISTERS --"));
+}
+
+bool CommandMode::parseRange(const std::string& input, HWND hwndEdit, const VimState& state, ExRange& range, size_t& cmdStartPos) {
+    range = ExRange();
+    cmdStartPos = 0;
+    if (input.empty() || !hwndEdit) return false;
+
+    size_t offset = 0;
+    while (offset < input.size() && (input[offset] == ' ' || input[offset] == '\t')) offset++;
+    if (offset < input.size() && input[offset] == ':') {
+        offset++;
+        while (offset < input.size() && (input[offset] == ' ' || input[offset] == '\t')) offset++;
+    }
+    if (offset >= input.size()) return false;
+
+    std::string str = input.substr(offset);
+
+    int totalLines = (int)::SendMessage(hwndEdit, SCI_GETLINECOUNT, 0, 0);
+    int currentPos = (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0);
+    int currentLine = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, currentPos, 0);
+
+    int selStart = (int)::SendMessage(hwndEdit, SCI_GETSELECTIONSTART, 0, 0);
+    int selEnd = (int)::SendMessage(hwndEdit, SCI_GETSELECTIONEND, 0, 0);
+    int sL = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, (std::min)(selStart, selEnd), 0);
+    int eL = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, (std::max)(selStart, selEnd), 0);
+    if (selEnd > selStart && eL > sL) {
+        int eLStart = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, eL, 0);
+        if (eLStart == (std::max)(selStart, selEnd)) {
+            eL--;
+        }
+    }
+
+    // % -> whole file (1,$)
+    if (str[0] == '%') {
+        range.hasRange = true;
+        range.startLine = 0;
+        range.endLine = totalLines > 0 ? totalLines - 1 : 0;
+        cmdStartPos = offset + 1;
+        while (cmdStartPos < input.size() && (input[cmdStartPos] == ' ' || input[cmdStartPos] == '\t')) cmdStartPos++;
+        range.rawRange = "%";
+        return true;
+    }
+
+    // '<,'> or <,> or <> or '\<,'\>
+    if (str.rfind("'<,'>", 0) == 0) {
+        range.hasRange = true;
+        range.startLine = sL;
+        range.endLine = eL;
+        cmdStartPos = offset + 5;
+        while (cmdStartPos < input.size() && (input[cmdStartPos] == ' ' || input[cmdStartPos] == '\t')) cmdStartPos++;
+        range.rawRange = "'<,'>";
+        return true;
+    }
+
+    if (str.rfind("<,>", 0) == 0) {
+        range.hasRange = true;
+        range.startLine = sL;
+        range.endLine = eL;
+        cmdStartPos = offset + 3;
+        while (cmdStartPos < input.size() && (input[cmdStartPos] == ' ' || input[cmdStartPos] == '\t')) cmdStartPos++;
+        range.rawRange = "<,>";
+        return true;
+    }
+
+    if (str.rfind("<>", 0) == 0) {
+        range.hasRange = true;
+        range.startLine = sL;
+        range.endLine = eL;
+        cmdStartPos = offset + 2;
+        while (cmdStartPos < input.size() && (input[cmdStartPos] == ' ' || input[cmdStartPos] == '\t')) cmdStartPos++;
+        range.rawRange = "<>";
+        return true;
+    }
+
+    if (str.rfind("'\\<,'\\>", 0) == 0) {
+        range.hasRange = true;
+        range.startLine = sL;
+        range.endLine = eL;
+        cmdStartPos = offset + 7;
+        while (cmdStartPos < input.size() && (input[cmdStartPos] == ' ' || input[cmdStartPos] == '\t')) cmdStartPos++;
+        range.rawRange = "'\\<,'\\>";
+        return true;
+    }
+
+    auto parseLineAddress = [&](const std::string& s, size_t& pos, int& outLine) -> bool {
+        while (pos < s.size() && (s[pos] == ' ' || s[pos] == '\t')) pos++;
+        if (pos >= s.size()) return false;
+
+        int baseLine = -1;
+        char c = s[pos];
+
+        if (c == '.') {
+            baseLine = currentLine;
+            pos++;
+        } else if (c == '$') {
+            baseLine = totalLines > 0 ? totalLines - 1 : 0;
+            pos++;
+        } else if (c == '\'' && pos + 1 < s.size()) {
+            char m = s[pos + 1];
+            if (m == '<') {
+                baseLine = sL;
+                pos += 2;
+            } else if (m == '>') {
+                baseLine = eL;
+                pos += 2;
+            } else if (m == '\\' && pos + 2 < s.size() && (s[pos + 2] == '<' || s[pos + 2] == '>')) {
+                baseLine = (s[pos + 2] == '<') ? sL : eL;
+                pos += 3;
+            } else {
+                int mLine = Marks::getMarkLine(m);
+                baseLine = (mLine >= 0) ? mLine : currentLine;
+                pos += 2;
+            }
+        } else if (std::isdigit(static_cast<unsigned char>(c))) {
+            int num = 0;
+            while (pos < s.size() && std::isdigit(static_cast<unsigned char>(s[pos]))) {
+                num = num * 10 + (s[pos] - '0');
+                pos++;
+            }
+            baseLine = num - 1;
+        } else if (c == '+' || c == '-') {
+            baseLine = currentLine;
+        } else {
+            return false;
+        }
+
+        // Parse optional offsets +N, -N
+        while (pos < s.size()) {
+            while (pos < s.size() && (s[pos] == ' ' || s[pos] == '\t')) pos++;
+            if (pos >= s.size()) break;
+            if (s[pos] == '+') {
+                pos++;
+                while (pos < s.size() && (s[pos] == ' ' || s[pos] == '\t')) pos++;
+                int off = 0;
+                if (pos < s.size() && std::isdigit(static_cast<unsigned char>(s[pos]))) {
+                    while (pos < s.size() && std::isdigit(static_cast<unsigned char>(s[pos]))) {
+                        off = off * 10 + (s[pos] - '0');
+                        pos++;
+                    }
+                } else {
+                    off = 1;
+                }
+                baseLine += off;
+            } else if (s[pos] == '-') {
+                pos++;
+                while (pos < s.size() && (s[pos] == ' ' || s[pos] == '\t')) pos++;
+                int off = 0;
+                if (pos < s.size() && std::isdigit(static_cast<unsigned char>(s[pos]))) {
+                    while (pos < s.size() && std::isdigit(static_cast<unsigned char>(s[pos]))) {
+                        off = off * 10 + (s[pos] - '0');
+                        pos++;
+                    }
+                } else {
+                    off = 1;
+                }
+                baseLine -= off;
+            } else {
+                break;
+            }
+        }
+
+        outLine = baseLine;
+        return true;
+    };
+
+    size_t pos = 0;
+    int line1 = 0;
+    if (parseLineAddress(str, pos, line1)) {
+        range.hasRange = true;
+        range.startLine = line1;
+        range.endLine = line1;
+
+        size_t sepPos = pos;
+        while (sepPos < str.size() && (str[sepPos] == ' ' || str[sepPos] == '\t')) sepPos++;
+
+        if (sepPos < str.size() && (str[sepPos] == ',' || str[sepPos] == ';')) {
+            sepPos++;
+            int line2 = 0;
+            if (parseLineAddress(str, sepPos, line2)) {
+                range.endLine = line2;
+                pos = sepPos;
+            }
+        }
+
+        cmdStartPos = offset + pos;
+        while (cmdStartPos < input.size() && (input[cmdStartPos] == ' ' || input[cmdStartPos] == '\t')) cmdStartPos++;
+
+        if (range.startLine < 0) range.startLine = 0;
+        if (range.endLine < 0) range.endLine = 0;
+        if (range.startLine >= totalLines) range.startLine = (totalLines > 0 ? totalLines - 1 : 0);
+        if (range.endLine >= totalLines) range.endLine = (totalLines > 0 ? totalLines - 1 : 0);
+        if (range.startLine > range.endLine) std::swap(range.startLine, range.endLine);
+
+        range.rawRange = input.substr(offset, cmdStartPos - offset);
+        return true;
+    }
+
+    if (state.mode == VISUAL) {
+        range.hasRange = true;
+        range.startLine = sL;
+        range.endLine = eL;
+        range.rawRange = "'<,'>";
+        cmdStartPos = offset;
+        return true;
+    }
+
+    return false;
+}
+
+std::string CommandMode::expandVimPathVariables(const std::string& cmdStr) {
+    wchar_t fullPathW[MAX_PATH] = {0};
+    ::SendMessageW(nppData._nppHandle, NPPM_GETFULLCURRENTPATH, MAX_PATH, (LPARAM)fullPathW);
+
+    std::string fullPath;
+    int len = WideCharToMultiByte(CP_UTF8, 0, fullPathW, -1, NULL, 0, NULL, NULL);
+    if (len > 0) {
+        fullPath.resize(len);
+        WideCharToMultiByte(CP_UTF8, 0, fullPathW, -1, &fullPath[0], len, NULL, NULL);
+        while (!fullPath.empty() && fullPath.back() == '\0') fullPath.pop_back();
+    }
+
+    if (fullPath.empty()) {
+        return cmdStr;
+    }
+
+    std::string p = fullPath;
+    std::string h, t, r, e;
+
+    size_t lastSlash = fullPath.find_last_of("\\/");
+    if (lastSlash != std::string::npos) {
+        h = fullPath.substr(0, lastSlash);
+        t = fullPath.substr(lastSlash + 1);
+    } else {
+        h = ".";
+        t = fullPath;
+    }
+
+    size_t lastDot = fullPath.find_last_of('.');
+    if (lastDot != std::string::npos && (lastSlash == std::string::npos || lastDot > lastSlash)) {
+        r = fullPath.substr(0, lastDot);
+        e = fullPath.substr(lastDot + 1);
+    } else {
+        r = fullPath;
+        e = "";
+    }
+
+    std::string tr;
+    size_t tLastDot = t.find_last_of('.');
+    if (tLastDot != std::string::npos) {
+        tr = t.substr(0, tLastDot);
+    } else {
+        tr = t;
+    }
+
+    auto quoteIfSpaces = [](const std::string& s) -> std::string {
+        if (s.find(' ') != std::string::npos && !s.empty() && s.front() != '"' && s.front() != '\'') {
+            return "\"" + s + "\"";
+        }
+        return s;
+    };
+
+    std::string q_p = quoteIfSpaces(p);
+    std::string q_h = quoteIfSpaces(h);
+    std::string q_t = quoteIfSpaces(t);
+    std::string q_r = quoteIfSpaces(r);
+    std::string q_tr = quoteIfSpaces(tr);
+
+    std::vector<std::pair<std::string, std::string>> replacements = {
+        {"%:p:h", q_h},
+        {"%:p:r", q_r},
+        {"%:t:r", q_tr},
+        {"%:p", q_p},
+        {"%:t", q_t},
+        {"%:h", q_h},
+        {"%:r", q_r},
+        {"%:e", e},
+        {"%", q_p}
+    };
+
+    std::string result;
+    for (size_t i = 0; i < cmdStr.size(); ) {
+        if (cmdStr[i] == '\\' && i + 1 < cmdStr.size() && cmdStr[i + 1] == '%') {
+            result += '%';
+            i += 2;
+            continue;
+        }
+
+        bool matched = false;
+        for (const auto& rep : replacements) {
+            if (cmdStr.compare(i, rep.first.size(), rep.first) == 0) {
+                result += rep.second;
+                i += rep.first.size();
+                matched = true;
+                break;
+            }
+        }
+
+        if (!matched) {
+            result += cmdStr[i];
+            i++;
+        }
+    }
+
+    return result;
+}
+
+void CommandMode::executeDelete(HWND hwndEdit, const ExRange& range, const std::string& args) {
+    if (!hwndEdit) return;
+
+    int totalLines = (int)::SendMessage(hwndEdit, SCI_GETLINECOUNT, 0, 0);
+    int currentLine = Utils::caretLine(hwndEdit);
+    int startLine = range.hasRange ? range.startLine : currentLine;
+    int endLine = range.hasRange ? range.endLine : currentLine;
+
+    char reg = '"';
+    std::string regArg = Utils::trim(args);
+    if (!regArg.empty() && !std::isdigit(static_cast<unsigned char>(regArg[0]))) {
+        if (Utils::isValidRegister(regArg[0])) {
+            reg = regArg[0];
+            regArg = Utils::trim(regArg.substr(1));
+        }
+    } else {
+        reg = Utils::getCurrentRegister();
+    }
+
+    if (!range.hasRange && !regArg.empty() && std::isdigit(static_cast<unsigned char>(regArg[0]))) {
+        try {
+            int count = std::stoi(regArg);
+            if (count > 1) {
+                endLine = (std::min)(totalLines - 1, currentLine + count - 1);
+            }
+        } catch (...) {}
+    }
+
+    if (totalLines <= 0 || startLine > endLine || startLine >= totalLines) return;
+    if (endLine >= totalLines) endLine = totalLines - 1;
+
+    int posStart = Utils::lineStart(hwndEdit, startLine);
+    auto endRange = Utils::lineRange(hwndEdit, endLine, true);
+    int posEnd = endRange.second;
+
+    std::string deletedText = Utils::getTextRange(hwndEdit, posStart, posEnd);
+
+    if (reg != '_') {
+        Utils::storeRegister(reg, deletedText, g_config.dStoreClipboard);
+        if (g_config.dStoreClipboard) {
+            Utils::setClipboardText(deletedText);
+        }
+    }
+    state.lastYankLinewise = true;
+
+    Utils::beginUndo(hwndEdit);
+    Utils::select(hwndEdit, posStart, posEnd);
+    ::SendMessage(hwndEdit, SCI_REPLACESEL, 0, (LPARAM)"");
+    int newPos = Utils::lineStart(hwndEdit, startLine);
+    if (newPos == -1) newPos = (int)::SendMessage(hwndEdit, SCI_GETLENGTH, 0, 0);
+    ::SendMessage(hwndEdit, SCI_GOTOPOS, newPos, 0);
+    Utils::endUndo(hwndEdit);
+
+    if (state.mode == VISUAL && g_normalMode) {
+        g_normalMode->enter();
+    }
+
+    int lineCount = endLine - startLine + 1;
+    if (lineCount == 1) {
+        Utils::setStatus(TEXT("1 line deleted"));
+    } else {
+        Utils::setStatus((std::to_wstring(lineCount) + L" fewer lines").c_str());
+    }
+}
+
+void CommandMode::executeYank(HWND hwndEdit, const ExRange& range, const std::string& args) {
+    if (!hwndEdit) return;
+
+    int totalLines = (int)::SendMessage(hwndEdit, SCI_GETLINECOUNT, 0, 0);
+    int currentLine = Utils::caretLine(hwndEdit);
+    int startLine = range.hasRange ? range.startLine : currentLine;
+    int endLine = range.hasRange ? range.endLine : currentLine;
+
+    char reg = '"';
+    std::string regArg = Utils::trim(args);
+    if (!regArg.empty() && !std::isdigit(static_cast<unsigned char>(regArg[0]))) {
+        if (Utils::isValidRegister(regArg[0])) {
+            reg = regArg[0];
+            regArg = Utils::trim(regArg.substr(1));
+        }
+    } else {
+        reg = Utils::getCurrentRegister();
+    }
+
+    if (!range.hasRange && !regArg.empty() && std::isdigit(static_cast<unsigned char>(regArg[0]))) {
+        try {
+            int count = std::stoi(regArg);
+            if (count > 1) {
+                endLine = (std::min)(totalLines - 1, currentLine + count - 1);
+            }
+        } catch (...) {}
+    }
+
+    if (totalLines <= 0 || startLine > endLine || startLine >= totalLines) return;
+    if (endLine >= totalLines) endLine = totalLines - 1;
+
+    int posStart = Utils::lineStart(hwndEdit, startLine);
+    auto endRange = Utils::lineRange(hwndEdit, endLine, true);
+    int posEnd = endRange.second;
+
+    std::string yankedText = Utils::getTextRange(hwndEdit, posStart, posEnd);
+
+    Utils::storeRegister(reg, yankedText, true);
+    if (reg == '"' || reg == '+' || reg == '*') {
+        Utils::setClipboardText(yankedText);
+    }
+    state.lastYankLinewise = true;
+
+    if (state.mode == VISUAL && g_normalMode) {
+        g_normalMode->enter();
+    }
+
+    int lineCount = endLine - startLine + 1;
+    if (lineCount == 1) {
+        Utils::setStatus(TEXT("1 line yanked"));
+    } else {
+        Utils::setStatus((std::to_wstring(lineCount) + L" lines yanked").c_str());
+    }
+}
+
+void CommandMode::executePut(HWND hwndEdit, const ExRange& range, bool before, const std::string& args) {
+    if (!hwndEdit) return;
+
+    char reg = '"';
+    std::string regArg = Utils::trim(args);
+    if (!regArg.empty() && Utils::isValidRegister(regArg[0])) {
+        reg = regArg[0];
+    } else {
+        reg = Utils::getCurrentRegister();
+    }
+
+    std::string text = Utils::getRegisterContent(reg);
+    if (text.empty() && (reg == '"' || reg == '+' || reg == '*')) {
+        text = Utils::getClipboardText();
+    }
+
+    if (text.empty()) {
+        Utils::setStatus(TEXT("E353: Nothing in register"));
+        return;
+    }
+
+    int eolMode = (int)::SendMessage(hwndEdit, SCI_GETEOLMODE, 0, 0);
+    std::string eolStr = (eolMode == SC_EOL_LF) ? "\n" : (eolMode == SC_EOL_CR ? "\r" : "\r\n");
+
+    if (text.back() != '\n' && text.back() != '\r') {
+        text += eolStr;
+    }
+
+    int totalLines = (int)::SendMessage(hwndEdit, SCI_GETLINECOUNT, 0, 0);
+    int targetLine = range.hasRange ? range.endLine : Utils::caretLine(hwndEdit);
+    if (targetLine < 0) targetLine = 0;
+    if (targetLine >= totalLines) targetLine = (totalLines > 0 ? totalLines - 1 : 0);
+
+    int insertPos = 0;
+    int newLineNum = 0;
+
+    if (before) {
+        insertPos = Utils::lineStart(hwndEdit, targetLine);
+        if (insertPos < 0) insertPos = 0;
+        newLineNum = targetLine;
+    } else {
+        if (targetLine >= totalLines - 1) {
+            insertPos = (int)::SendMessage(hwndEdit, SCI_GETLENGTH, 0, 0);
+            if (insertPos > 0) {
+                char lastCh = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, insertPos - 1, 0);
+                if (lastCh != '\n' && lastCh != '\r') {
+                    text = eolStr + text;
                 }
             }
-            CloseClipboard();
+            newLineNum = totalLines;
+        } else {
+            insertPos = Utils::lineStart(hwndEdit, targetLine + 1);
+            newLineNum = targetLine + 1;
         }
     }
-    
-    char line[80];
-    sprintf_s(line, "sys   \"+   System clipboard               %s\n", 
-             clipboardPreview.empty() ? "(empty)" : clipboardPreview.c_str());
-    registersText += line;
-    
-    sprintf_s(line, "sys   \"*   System clipboard (selection)   %s\n", 
-             clipboardPreview.empty() ? "(empty)" : clipboardPreview.c_str());
-    registersText += line;
-    
-    // Last search
-    if (!state.lastSearchTerm.empty()) {
-        sprintf_s(line, "spec  \"/   Last search pattern           \"%s\"\n", 
-                 getPreview(state.lastSearchTerm, 30).c_str());
-        registersText += line;
-    } else {
-        registersText += "spec  \"/   Last search pattern           (none)\n";
+
+    Utils::beginUndo(hwndEdit);
+    ::SendMessage(hwndEdit, SCI_SETSEL, insertPos, insertPos);
+    ::SendMessage(hwndEdit, SCI_REPLACESEL, 0, (LPARAM)text.c_str());
+
+    int ls = Utils::lineStart(hwndEdit, newLineNum);
+    int le = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, newLineNum, 0);
+    int cp = ls;
+    while (cp < le) {
+        char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, cp, 0);
+        if (ch != ' ' && ch != '\t') break;
+        cp++;
     }
-    
-    // Black hole
-    std::string blackhole = Utils::getRegisterContent('_');
-    if (!blackhole.empty()) {
-        sprintf_s(line, "spec  \"_   Black hole register           %s\n", 
-                 getPreview(blackhole, 30).c_str());
-        registersText += line;
-    } else {
-        registersText += "spec  \"_   Black hole register           (empty)\n";
+    ::SendMessage(hwndEdit, SCI_GOTOPOS, cp, 0);
+    Utils::endUndo(hwndEdit);
+
+    if (state.mode == VISUAL && g_normalMode) {
+        g_normalMode->enter();
     }
-    
-    // Set the text in the new buffer
+
+    int insertedLines = 0;
+    for (char ch : text) if (ch == '\n') insertedLines++;
+    if (insertedLines <= 0) insertedLines = 1;
+    if (insertedLines == 1) Utils::setStatus(TEXT("1 line inserted"));
+    else Utils::setStatus((std::to_wstring(insertedLines) + L" more lines").c_str());
+}
+
+void CommandMode::executeJoin(HWND hwndEdit, const ExRange& range, bool withSpace, const std::string& args) {
+    if (!hwndEdit) return;
+
+    int totalLines = (int)::SendMessage(hwndEdit, SCI_GETLINECOUNT, 0, 0);
+    int currentLine = Utils::caretLine(hwndEdit);
+    int startLine = range.hasRange ? range.startLine : currentLine;
+    int endLine = range.hasRange ? range.endLine : (currentLine + 1);
+
+    if (!range.hasRange && !args.empty()) {
+        try {
+            int count = std::stoi(args);
+            if (count > 1) {
+                endLine = (std::min)(totalLines - 1, currentLine + count - 1);
+            }
+        } catch (...) {}
+    }
+
+    if (startLine == endLine && startLine + 1 < totalLines) {
+        endLine = startLine + 1;
+    }
+
+    if (startLine >= endLine || startLine >= totalLines) {
+        return;
+    }
+    if (endLine >= totalLines) endLine = totalLines - 1;
+
+    Utils::beginUndo(hwndEdit);
+    for (int line = endLine; line > startLine; line--) {
+        int prevEnd = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, line - 1, 0);
+        int prevStart = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, line - 1, 0);
+        int nextStart = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, line, 0);
+        int nextEnd = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, line, 0);
+
+        int nextNonSpace = nextStart;
+        if (withSpace) {
+            while (nextNonSpace < nextEnd) {
+                char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, nextNonSpace, 0);
+                if (ch != ' ' && ch != '\t') break;
+                nextNonSpace++;
+            }
+        }
+
+        std::string rep = "";
+        if (withSpace) {
+            bool needsSpace = true;
+            if (prevEnd == prevStart) {
+                needsSpace = false;
+            } else if (prevEnd > 0) {
+                char lastCh = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, prevEnd - 1, 0);
+                if (lastCh == ' ' || lastCh == '\t') needsSpace = false;
+            }
+            if (nextNonSpace == nextEnd) needsSpace = false;
+            if (needsSpace) rep = " ";
+        }
+
+        Utils::select(hwndEdit, prevEnd, withSpace ? nextNonSpace : nextStart);
+        ::SendMessage(hwndEdit, SCI_REPLACESEL, 0, (LPARAM)rep.c_str());
+    }
+    Utils::endUndo(hwndEdit);
+
+    if (state.mode == VISUAL && g_normalMode) {
+        g_normalMode->enter();
+    }
+
+    int joinedCount = endLine - startLine + 1;
+    Utils::setStatus((std::to_wstring(joinedCount) + L" lines joined").c_str());
+}
+
+void CommandMode::executeSort(HWND hwndEdit, const ExRange& range, bool reverse, const std::string& args) {
+    if (!hwndEdit) return;
+
+    int totalLines = (int)::SendMessage(hwndEdit, SCI_GETLINECOUNT, 0, 0);
+    int startLine = range.hasRange ? range.startLine : 0;
+    int endLine = range.hasRange ? range.endLine : (totalLines > 0 ? totalLines - 1 : 0);
+
+    if (totalLines <= 0 || startLine > endLine || startLine >= totalLines) return;
+    if (endLine >= totalLines) endLine = totalLines - 1;
+
+    bool optReverse = reverse;
+    bool optIgnoreCase = false;
+    bool optUnique = false;
+    enum NumType { None, Decimal, Hex, Octal, Binary, Float } numType = None;
+    bool optSortOnPattern = false;
+    std::string pattern;
+    bool hasPattern = false;
+
+    std::string argStr = args;
+    size_t patStart = argStr.find('/');
+    if (patStart != std::string::npos) {
+        size_t patEnd = argStr.find('/', patStart + 1);
+        if (patEnd != std::string::npos) {
+            pattern = argStr.substr(patStart + 1, patEnd - patStart - 1);
+            hasPattern = true;
+            argStr.erase(patStart, patEnd - patStart + 1);
+        }
+    }
+
+    for (char c : argStr) {
+        switch (c) {
+            case '!': optReverse = true; break;
+            case 'i': optIgnoreCase = true; break;
+            case 'u': optUnique = true; break;
+            case 'n': numType = Decimal; break;
+            case 'x': numType = Hex; break;
+            case 'o': numType = Octal; break;
+            case 'b': numType = Binary; break;
+            case 'f': numType = Float; break;
+            case 'r': optSortOnPattern = true; break;
+            default: break;
+        }
+    }
+
+    std::regex reg;
+    if (hasPattern && !pattern.empty()) {
+        try {
+            std::regex_constants::syntax_option_type flags = std::regex_constants::ECMAScript;
+            if (optIgnoreCase) flags |= std::regex_constants::icase;
+            reg = std::regex(pattern, flags);
+        } catch (...) {
+            hasPattern = false;
+        }
+    }
+
+    struct LineRecord {
+        std::string originalText;
+        std::string compareStr;
+        long long numInt = 0;
+        double numFloat = 0.0;
+        int origIndex = 0;
+    };
+
+    std::vector<LineRecord> items;
+    items.reserve(endLine - startLine + 1);
+
+    for (int line = startLine; line <= endLine; line++) {
+        int ls = Utils::lineStart(hwndEdit, line);
+        int le = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, line, 0);
+        std::string lineContent = Utils::getTextRange(hwndEdit, ls, le);
+
+        LineRecord rec;
+        rec.originalText = lineContent;
+        rec.origIndex = line - startLine;
+
+        std::string key = lineContent;
+        if (hasPattern) {
+            std::smatch m;
+            if (std::regex_search(lineContent, m, reg)) {
+                if (optSortOnPattern) {
+                    key = m.str();
+                } else {
+                    key = lineContent.substr(m.position() + m.length());
+                }
+            }
+        }
+
+        if (numType == Decimal) {
+            size_t idx = 0;
+            while (idx < key.size() && !std::isdigit(static_cast<unsigned char>(key[idx])) && key[idx] != '-' && key[idx] != '+') idx++;
+            if (idx < key.size()) {
+                try {
+                    rec.numInt = std::stoll(key.substr(idx));
+                } catch (...) {
+                    rec.numInt = 0;
+                }
+            }
+        } else if (numType == Hex) {
+            size_t idx = 0;
+            while (idx < key.size() && !std::isxdigit(static_cast<unsigned char>(key[idx]))) idx++;
+            if (idx >= 2 && (key[idx-1] == 'x' || key[idx-1] == 'X') && key[idx-2] == '0') idx -= 2;
+            if (idx < key.size()) {
+                try {
+                    rec.numInt = std::stoll(key.substr(idx), nullptr, 16);
+                } catch (...) {
+                    rec.numInt = 0;
+                }
+            }
+        } else if (numType == Octal) {
+            size_t idx = 0;
+            while (idx < key.size() && (key[idx] < '0' || key[idx] > '7')) idx++;
+            if (idx < key.size()) {
+                try {
+                    rec.numInt = std::stoll(key.substr(idx), nullptr, 8);
+                } catch (...) {
+                    rec.numInt = 0;
+                }
+            }
+        } else if (numType == Binary) {
+            size_t idx = 0;
+            while (idx < key.size() && key[idx] != '0' && key[idx] != '1') idx++;
+            if (idx < key.size()) {
+                try {
+                    rec.numInt = std::stoll(key.substr(idx), nullptr, 2);
+                } catch (...) {
+                    rec.numInt = 0;
+                }
+            }
+        } else if (numType == Float) {
+            size_t idx = 0;
+            while (idx < key.size() && !std::isdigit(static_cast<unsigned char>(key[idx])) && key[idx] != '-' && key[idx] != '+' && key[idx] != '.') idx++;
+            if (idx < key.size()) {
+                try {
+                    rec.numFloat = std::stod(key.substr(idx));
+                } catch (...) {
+                    rec.numFloat = 0.0;
+                }
+            }
+        }
+
+        if (optIgnoreCase) {
+            std::string lower = key;
+            std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c){ return (char)std::tolower(c); });
+            rec.compareStr = lower;
+        } else {
+            rec.compareStr = key;
+        }
+
+        items.push_back(rec);
+    }
+
+    std::stable_sort(items.begin(), items.end(), [&](const LineRecord& a, const LineRecord& b) -> bool {
+        if (numType == Decimal || numType == Hex || numType == Octal || numType == Binary) {
+            if (a.numInt != b.numInt) {
+                return optReverse ? (a.numInt > b.numInt) : (a.numInt < b.numInt);
+            }
+        } else if (numType == Float) {
+            if (a.numFloat != b.numFloat) {
+                return optReverse ? (a.numFloat > b.numFloat) : (a.numFloat < b.numFloat);
+            }
+        }
+        if (a.compareStr != b.compareStr) {
+            return optReverse ? (a.compareStr > b.compareStr) : (a.compareStr < b.compareStr);
+        }
+        return false;
+    });
+
+    int originalCount = (int)items.size();
+    if (optUnique) {
+        auto it = std::unique(items.begin(), items.end(), [&](const LineRecord& a, const LineRecord& b) {
+            if (numType == Decimal || numType == Hex || numType == Octal || numType == Binary) {
+                return a.numInt == b.numInt && a.compareStr == b.compareStr;
+            }
+            if (numType == Float) {
+                return a.numFloat == b.numFloat && a.compareStr == b.compareStr;
+            }
+            return a.compareStr == b.compareStr;
+        });
+        items.erase(it, items.end());
+    }
+    int duplicatesRemoved = originalCount - (int)items.size();
+
+    int posStart = Utils::lineStart(hwndEdit, startLine);
+    auto endRange = Utils::lineRange(hwndEdit, endLine, true);
+    int posEnd = endRange.second;
+
+    int eolMode = (int)::SendMessage(hwndEdit, SCI_GETEOLMODE, 0, 0);
+    std::string eolStr = (eolMode == SC_EOL_LF) ? "\n" : (eolMode == SC_EOL_CR ? "\r" : "\r\n");
+
+    std::string sortedBlock;
+    for (size_t i = 0; i < items.size(); i++) {
+        sortedBlock += items[i].originalText;
+        if (i + 1 < items.size() || (endLine < totalLines - 1)) {
+            sortedBlock += eolStr;
+        }
+    }
+
+    Utils::beginUndo(hwndEdit);
+    Utils::select(hwndEdit, posStart, posEnd);
+    ::SendMessage(hwndEdit, SCI_REPLACESEL, 0, (LPARAM)sortedBlock.c_str());
+    Utils::endUndo(hwndEdit);
+
+    if (state.mode == VISUAL && g_normalMode) {
+        g_normalMode->enter();
+    }
+
+    std::wstring status = std::to_wstring(items.size()) + L" lines sorted";
+    if (optUnique && duplicatesRemoved > 0) {
+        status += L", " + std::to_wstring(duplicatesRemoved) + L" duplicates removed";
+    }
+    Utils::setStatus(status.c_str());
+}
+
+void CommandMode::executeRetab(HWND hwndEdit, const ExRange& range, bool allSpaces, const std::string& args) {
+    if (!hwndEdit) return;
+
+    int totalLines = (int)::SendMessage(hwndEdit, SCI_GETLINECOUNT, 0, 0);
+    int startLine = range.hasRange ? range.startLine : 0;
+    int endLine = range.hasRange ? range.endLine : (totalLines > 0 ? totalLines - 1 : 0);
+
+    if (totalLines <= 0 || startLine > endLine || startLine >= totalLines) return;
+    if (endLine >= totalLines) endLine = totalLines - 1;
+
+    int tabstop = (int)::SendMessage(hwndEdit, SCI_GETTABWIDTH, 0, 0);
+    if (!args.empty()) {
+        try {
+            int t = std::stoi(args);
+            if (t > 0) tabstop = t;
+        } catch (...) {}
+    }
+    if (tabstop <= 0) tabstop = 4;
+
+    bool expandTab = false;
+    try {
+        OptionValue val = OptionRegistry::getInstance().getOption("expandtab");
+        if (std::holds_alternative<bool>(val)) {
+            expandTab = std::get<bool>(val);
+        } else {
+            expandTab = (::SendMessage(hwndEdit, SCI_GETUSETABS, 0, 0) == 0);
+        }
+    } catch (...) {
+        expandTab = (::SendMessage(hwndEdit, SCI_GETUSETABS, 0, 0) == 0);
+    }
+
+    int posStart = Utils::lineStart(hwndEdit, startLine);
+    auto endRange = Utils::lineRange(hwndEdit, endLine, true);
+    int posEnd = endRange.second;
+
+    int eolMode = (int)::SendMessage(hwndEdit, SCI_GETEOLMODE, 0, 0);
+    std::string eolStr = (eolMode == SC_EOL_LF) ? "\n" : (eolMode == SC_EOL_CR ? "\r" : "\r\n");
+
+    std::vector<std::string> newLines;
+    for (int line = startLine; line <= endLine; line++) {
+        int ls = Utils::lineStart(hwndEdit, line);
+        int le = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, line, 0);
+        std::string lineStr = Utils::getTextRange(hwndEdit, ls, le);
+
+        std::string converted;
+        if (expandTab) {
+            int col = 0;
+            bool leadingOnly = !allSpaces;
+            bool seenNonSpace = false;
+            for (char ch : lineStr) {
+                if (ch == '\t' && (!leadingOnly || !seenNonSpace)) {
+                    int spacesToAdd = tabstop - (col % tabstop);
+                    converted.append(spacesToAdd, ' ');
+                    col += spacesToAdd;
+                } else {
+                    if (ch != ' ' && ch != '\t') seenNonSpace = true;
+                    converted.push_back(ch);
+                    col++;
+                }
+            }
+        } else {
+            int col = 0;
+            bool leadingOnly = !allSpaces;
+            bool seenNonSpace = false;
+            int pendingSpaces = 0;
+
+            for (size_t i = 0; i < lineStr.size(); i++) {
+                char ch = lineStr[i];
+                if (ch == ' ' && (!leadingOnly || !seenNonSpace)) {
+                    pendingSpaces++;
+                    col++;
+                    if (col % tabstop == 0) {
+                        converted.push_back('\t');
+                        pendingSpaces = 0;
+                    }
+                } else {
+                    if (pendingSpaces > 0) {
+                        converted.append(pendingSpaces, ' ');
+                        pendingSpaces = 0;
+                    }
+                    if (ch == '\t') {
+                        converted.push_back('\t');
+                        col += tabstop - (col % tabstop);
+                    } else {
+                        if (ch != ' ' && ch != '\t') seenNonSpace = true;
+                        converted.push_back(ch);
+                        col++;
+                    }
+                }
+            }
+            if (pendingSpaces > 0) {
+                converted.append(pendingSpaces, ' ');
+            }
+        }
+        newLines.push_back(converted);
+    }
+
+    std::string fullNewText;
+    for (size_t i = 0; i < newLines.size(); i++) {
+        fullNewText += newLines[i];
+        if (i + 1 < newLines.size() || (endLine < totalLines - 1)) {
+            fullNewText += eolStr;
+        }
+    }
+
+    Utils::beginUndo(hwndEdit);
+    Utils::select(hwndEdit, posStart, posEnd);
+    ::SendMessage(hwndEdit, SCI_REPLACESEL, 0, (LPARAM)fullNewText.c_str());
+    Utils::endUndo(hwndEdit);
+
+    if (state.mode == VISUAL && g_normalMode) {
+        g_normalMode->enter();
+    }
+
+    int affected = endLine - startLine + 1;
+    Utils::setStatus((L"Retabbed " + std::to_wstring(affected) + L" line" + (affected > 1 ? L"s" : L"") + L" (tabstop " + std::to_wstring(tabstop) + L")").c_str());
+}
+
+void CommandMode::executeColumn(HWND hwndEdit, const ExRange& range, const std::string& args) {
+    if (!hwndEdit) return;
+
+    int totalLines = (int)::SendMessage(hwndEdit, SCI_GETLINECOUNT, 0, 0);
+    if (totalLines <= 0) return;
+
+    int startLine = 0;
+    int endLine = totalLines - 1;
+
+    if (range.hasRange) {
+        startLine = range.startLine;
+        endLine = range.endLine;
+    } else {
+        int selStart = (int)::SendMessage(hwndEdit, SCI_GETSELECTIONSTART, 0, 0);
+        int selEnd = (int)::SendMessage(hwndEdit, SCI_GETSELECTIONEND, 0, 0);
+        if (selEnd > selStart) {
+            startLine = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, (std::min)(selStart, selEnd), 0);
+            endLine = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, (std::max)(selStart, selEnd), 0);
+            int eLStart = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, endLine, 0);
+            if (eLStart == (std::max)(selStart, selEnd) && endLine > startLine) {
+                endLine--;
+            }
+        }
+    }
+
+    if (startLine > endLine || startLine >= totalLines) return;
+    if (startLine < 0) startLine = 0;
+    if (endLine >= totalLines) endLine = totalLines - 1;
+
+    // Parse arguments
+    std::string inputDelims = "";
+    std::string outputDelim = "  "; // default 2 spaces for standard column -t
+    std::set<int> rightAlignCols;
+
+    auto unescapeStr = [](const std::string& str) -> std::string {
+        std::string s = str;
+        if (s.size() >= 2 && ((s.front() == '"' && s.back() == '"') || (s.front() == '\'' && s.back() == '\''))) {
+            s = s.substr(1, s.size() - 2);
+        }
+        std::string res;
+        for (size_t i = 0; i < s.size(); ++i) {
+            if (s[i] == '\\' && i + 1 < s.size()) {
+                char next = s[i + 1];
+                if (next == 't') { res += '\t'; i++; }
+                else if (next == 'n') { res += '\n'; i++; }
+                else if (next == 'r') { res += '\r'; i++; }
+                else if (next == 's') { res += ' '; i++; }
+                else if (next == '\\') { res += '\\'; i++; }
+                else if (next == '"') { res += '"'; i++; }
+                else if (next == '\'') { res += '\''; i++; }
+                else { res += s[i]; }
+            } else {
+                res += s[i];
+            }
+        }
+        return res;
+    };
+
+    auto parseColList = [](const std::string& str, std::set<int>& cols) {
+        std::stringstream ss(str);
+        std::string item;
+        while (std::getline(ss, item, ',')) {
+            item = Utils::trim(item);
+            if (!item.empty()) {
+                try {
+                    int c = std::stoi(item);
+                    if (c > 0) cols.insert(c);
+                } catch (...) {}
+            }
+        }
+    };
+
+    // Tokenize args preserving quotes
+    std::vector<std::string> tokens;
+    std::string curToken;
+    bool inQuotes = false;
+    char quoteChar = '\0';
+    for (size_t i = 0; i < args.size(); ++i) {
+        char ch = args[i];
+        if ((ch == '"' || ch == '\'') && (!inQuotes || ch == quoteChar)) {
+            inQuotes = !inQuotes;
+            if (inQuotes) quoteChar = ch;
+            else quoteChar = '\0';
+        } else if (std::isspace(static_cast<unsigned char>(ch)) && !inQuotes) {
+            if (!curToken.empty()) {
+                tokens.push_back(curToken);
+                curToken.clear();
+            }
+        } else {
+            curToken += ch;
+        }
+    }
+    if (!curToken.empty()) {
+        tokens.push_back(curToken);
+    }
+
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        const std::string& tok = tokens[i];
+        if (tok == "-t") {
+            // Table mode
+        } else if (tok == "-s" && i + 1 < tokens.size()) {
+            i++;
+            inputDelims = unescapeStr(tokens[i]);
+        } else if (tok.rfind("-s", 0) == 0 && tok.size() > 2) {
+            inputDelims = unescapeStr(tok.substr(2));
+        } else if (tok == "-o" && i + 1 < tokens.size()) {
+            i++;
+            outputDelim = unescapeStr(tokens[i]);
+        } else if (tok.rfind("-o", 0) == 0 && tok.size() > 2) {
+            outputDelim = unescapeStr(tok.substr(2));
+        } else if (tok == "-R" && i + 1 < tokens.size()) {
+            i++;
+            parseColList(tokens[i], rightAlignCols);
+        } else if (tok.rfind("-R", 0) == 0 && tok.size() > 2) {
+            parseColList(tok.substr(2), rightAlignCols);
+        }
+    }
+
+    // Read and split lines
+    std::vector<std::vector<std::string>> rows;
+    std::vector<bool> isOriginalEmpty;
+    size_t maxCols = 0;
+
+    for (int line = startLine; line <= endLine; ++line) {
+        auto rng = Utils::lineRange(hwndEdit, line, false);
+        std::string lineStr = (rng.second > rng.first) ? Utils::getTextRange(hwndEdit, rng.first, rng.second) : "";
+
+        // Remove trailing \r and \n
+        while (!lineStr.empty() && (lineStr.back() == '\r' || lineStr.back() == '\n')) {
+            lineStr.pop_back();
+        }
+
+        bool emptyLine = lineStr.empty() || lineStr.find_first_not_of(" \t") == std::string::npos;
+        isOriginalEmpty.push_back(emptyLine);
+
+        std::vector<std::string> cells;
+        if (emptyLine && inputDelims.empty()) {
+            // Keep empty
+        } else if (inputDelims.empty()) {
+            // Whitespace delimited
+            size_t idx = 0;
+            while (idx < lineStr.size()) {
+                while (idx < lineStr.size() && (lineStr[idx] == ' ' || lineStr[idx] == '\t')) idx++;
+                if (idx >= lineStr.size()) break;
+                size_t cellStart = idx;
+                while (idx < lineStr.size() && lineStr[idx] != ' ' && lineStr[idx] != '\t') idx++;
+                cells.push_back(lineStr.substr(cellStart, idx - cellStart));
+            }
+        } else {
+            // Custom delimiters
+            size_t start = 0;
+            while (start <= lineStr.size()) {
+                size_t delimPos = lineStr.find_first_of(inputDelims, start);
+                if (delimPos == std::string::npos) {
+                    std::string cell = lineStr.substr(start);
+                    cells.push_back(Utils::trim(cell));
+                    break;
+                } else {
+                    std::string cell = lineStr.substr(start, delimPos - start);
+                    cells.push_back(Utils::trim(cell));
+                    start = delimPos + 1;
+                }
+            }
+        }
+
+        maxCols = (std::max)(maxCols, cells.size());
+        rows.push_back(cells);
+    }
+
+    if (maxCols == 0) return;
+
+    auto getDisplayWidth = [](const std::string& str) -> size_t {
+        int wlen = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), (int)str.size(), NULL, 0);
+        if (wlen <= 0) return str.size();
+        std::vector<wchar_t> wstr(wlen);
+        MultiByteToWideChar(CP_UTF8, 0, str.c_str(), (int)str.size(), wstr.data(), wlen);
+        return wstr.size();
+    };
+
+    std::vector<size_t> colWidths(maxCols, 0);
+    for (const auto& row : rows) {
+        for (size_t c = 0; c < row.size(); ++c) {
+            colWidths[c] = (std::max)(colWidths[c], getDisplayWidth(row[c]));
+        }
+    }
+
+    int eolMode = (int)::SendMessage(hwndEdit, SCI_GETEOLMODE, 0, 0);
+    std::string eolStr = (eolMode == SC_EOL_LF) ? "\n" : (eolMode == SC_EOL_CR ? "\r" : "\r\n");
+
+    std::vector<std::string> formattedLines;
+    for (size_t r = 0; r < rows.size(); ++r) {
+        const auto& row = rows[r];
+        if (isOriginalEmpty[r] && row.empty()) {
+            formattedLines.push_back("");
+        } else {
+            std::string lineOut;
+            for (size_t c = 0; c < row.size(); ++c) {
+                if (c > 0) {
+                    lineOut += outputDelim;
+                }
+                const std::string& cell = row[c];
+                size_t w = getDisplayWidth(cell);
+                size_t targetW = colWidths[c];
+                bool rightAlign = (rightAlignCols.count((int)(c + 1)) > 0);
+
+                if (c == row.size() - 1) {
+                    if (rightAlign && w < targetW) {
+                        lineOut.append(targetW - w, ' ');
+                    }
+                    lineOut += cell;
+                } else {
+                    if (rightAlign) {
+                        if (w < targetW) lineOut.append(targetW - w, ' ');
+                        lineOut += cell;
+                    } else {
+                        lineOut += cell;
+                        if (w < targetW) lineOut.append(targetW - w, ' ');
+                    }
+                }
+            }
+            formattedLines.push_back(lineOut);
+        }
+    }
+
+    int posStart = Utils::lineStart(hwndEdit, startLine);
+    auto endRange = Utils::lineRange(hwndEdit, endLine, true);
+    int posEnd = endRange.second;
+
+    std::string formattedBlock;
+    for (size_t i = 0; i < formattedLines.size(); i++) {
+        formattedBlock += formattedLines[i];
+        if (i + 1 < formattedLines.size() || (endLine < totalLines - 1)) {
+            formattedBlock += eolStr;
+        }
+    }
+
+    Utils::beginUndo(hwndEdit);
+    Utils::select(hwndEdit, posStart, posEnd);
+    ::SendMessage(hwndEdit, SCI_REPLACESEL, 0, (LPARAM)formattedBlock.c_str());
+    Utils::endUndo(hwndEdit);
+
+    if (g_normalMode) {
+        g_normalMode->enter();
+    }
+
+    int affectedLines = endLine - startLine + 1;
+    std::wstring msg = L"Formatted " + std::to_wstring(affectedLines) + L" line" + (affectedLines > 1 ? L"s" : L"") + L" (" + std::to_wstring(maxCols) + L" columns)";
+    Utils::setStatus(msg.c_str());
+}
+
+void CommandMode::executeExternal(HWND hwndEdit, const ExRange& range, const std::string& cmdStr) {
+    if (cmdStr.empty()) {
+        Utils::setStatus(TEXT("No external command specified"));
+        return;
+    }
+
+    std::string trimmedCmd = Utils::trim(cmdStr);
+    std::string firstWord;
+    size_t sp = trimmedCmd.find_first_of(" \t");
+    if (sp != std::string::npos) {
+        firstWord = trimmedCmd.substr(0, sp);
+    } else {
+        firstWord = trimmedCmd;
+    }
+
+    if (firstWord == "column" || firstWord == "column.exe" || firstWord == "col") {
+        std::string colArgs = (sp != std::string::npos) ? Utils::trim(trimmedCmd.substr(sp)) : "";
+        executeColumn(hwndEdit, range, colArgs);
+        return;
+    }
+
+    std::string expandedCmd = expandVimPathVariables(cmdStr);
+
+    wchar_t currentFile[MAX_PATH] = {0};
+    ::SendMessageW(nppData._nppHandle, NPPM_GETFULLCURRENTPATH, MAX_PATH, (LPARAM)currentFile);
+    wchar_t currentDir[MAX_PATH] = {0};
+    if (currentFile[0] != L'\0') {
+        wcscpy_s(currentDir, currentFile);
+        PathRemoveFileSpecW(currentDir);
+    }
+
+    LPCWSTR pWorkDir = (currentDir[0] != L'\0') ? currentDir : NULL;
+
+    bool isFilter = range.hasRange;
+    std::string inputData;
+
+    if (isFilter) {
+        int posStart = Utils::lineStart(hwndEdit, range.startLine);
+        auto endRange = Utils::lineRange(hwndEdit, range.endLine, true);
+        int posEnd = endRange.second;
+        inputData = Utils::getTextRange(hwndEdit, posStart, posEnd);
+    }
+
+    SECURITY_ATTRIBUTES sa;
+    sa.nLength = sizeof(SECURITY_ATTRIBUTES);
+    sa.bInheritHandle = TRUE;
+    sa.lpSecurityDescriptor = NULL;
+
+    HANDLE hStdInRead = NULL, hStdInWrite = NULL;
+    HANDLE hStdOutRead = NULL, hStdOutWrite = NULL;
+    HANDLE hStdErrRead = NULL, hStdErrWrite = NULL;
+
+    if (!CreatePipe(&hStdInRead, &hStdInWrite, &sa, 0) ||
+        !CreatePipe(&hStdOutRead, &hStdOutWrite, &sa, 0) ||
+        !CreatePipe(&hStdErrRead, &hStdErrWrite, &sa, 0)) {
+        Utils::setStatus(TEXT("Failed to create process pipes"));
+        if (hStdInRead) CloseHandle(hStdInRead);
+        if (hStdInWrite) CloseHandle(hStdInWrite);
+        if (hStdOutRead) CloseHandle(hStdOutRead);
+        if (hStdOutWrite) CloseHandle(hStdOutWrite);
+        if (hStdErrRead) CloseHandle(hStdErrRead);
+        if (hStdErrWrite) CloseHandle(hStdErrWrite);
+        return;
+    }
+
+    SetHandleInformation(hStdInWrite, HANDLE_FLAG_INHERIT, 0);
+    SetHandleInformation(hStdOutRead, HANDLE_FLAG_INHERIT, 0);
+    SetHandleInformation(hStdErrRead, HANDLE_FLAG_INHERIT, 0);
+
+    STARTUPINFOW si;
+    ZeroMemory(&si, sizeof(si));
+    si.cb = sizeof(si);
+    si.dwFlags |= STARTF_USESTDHANDLES;
+    si.hStdInput = hStdInRead;
+    si.hStdOutput = hStdOutWrite;
+    si.hStdError = hStdErrWrite;
+
+    PROCESS_INFORMATION pi;
+    ZeroMemory(&pi, sizeof(pi));
+
+    std::wstring cmdLineW = L"cmd.exe /c " + std::wstring(expandedCmd.begin(), expandedCmd.end());
+    std::vector<wchar_t> cmdLineBuf(cmdLineW.begin(), cmdLineW.end());
+    cmdLineBuf.push_back(L'\0');
+
+    BOOL created = CreateProcessW(
+        NULL,
+        cmdLineBuf.data(),
+        NULL,
+        NULL,
+        TRUE,
+        CREATE_NO_WINDOW,
+        NULL,
+        pWorkDir,
+        &si,
+        &pi
+    );
+
+    CloseHandle(hStdInRead);
+    CloseHandle(hStdOutWrite);
+    CloseHandle(hStdErrWrite);
+
+    if (!created) {
+        CloseHandle(hStdInWrite);
+        CloseHandle(hStdOutRead);
+        CloseHandle(hStdErrRead);
+        std::wstring err = L"Failed to execute: " + std::wstring(expandedCmd.begin(), expandedCmd.end());
+        Utils::setStatus(err.c_str());
+        return;
+    }
+
+    if (isFilter && !inputData.empty()) {
+        DWORD bytesWritten = 0;
+        WriteFile(hStdInWrite, inputData.c_str(), (DWORD)inputData.length(), &bytesWritten, NULL);
+    }
+    CloseHandle(hStdInWrite);
+
+    std::string stdOutStr;
+    char buffer[4096];
+    DWORD bytesRead = 0;
+    while (ReadFile(hStdOutRead, buffer, sizeof(buffer) - 1, &bytesRead, NULL) && bytesRead > 0) {
+        buffer[bytesRead] = '\0';
+        stdOutStr.append(buffer, bytesRead);
+    }
+    CloseHandle(hStdOutRead);
+
+    std::string stdErrStr;
+    while (ReadFile(hStdErrRead, buffer, sizeof(buffer) - 1, &bytesRead, NULL) && bytesRead > 0) {
+        buffer[bytesRead] = '\0';
+        stdErrStr.append(buffer, bytesRead);
+    }
+    CloseHandle(hStdErrRead);
+
+    WaitForSingleObject(pi.hProcess, 30000);
+
+    DWORD exitCode = 0;
+    GetExitCodeProcess(pi.hProcess, &exitCode);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+
+    if (isFilter) {
+        if (exitCode == 0 || !stdOutStr.empty()) {
+            int posStart = Utils::lineStart(hwndEdit, range.startLine);
+            auto endRange = Utils::lineRange(hwndEdit, range.endLine, true);
+            int posEnd = endRange.second;
+
+            int eolMode = (int)::SendMessage(hwndEdit, SCI_GETEOLMODE, 0, 0);
+            std::string eolStr = (eolMode == SC_EOL_LF) ? "\n" : (eolMode == SC_EOL_CR ? "\r" : "\r\n");
+
+            std::string normalized;
+            for (size_t i = 0; i < stdOutStr.size(); i++) {
+                if (stdOutStr[i] == '\r') {
+                    if (i + 1 < stdOutStr.size() && stdOutStr[i + 1] == '\n') {
+                        i++;
+                    }
+                    normalized += eolStr;
+                } else if (stdOutStr[i] == '\n') {
+                    normalized += eolStr;
+                } else {
+                    normalized += stdOutStr[i];
+                }
+            }
+
+            Utils::beginUndo(hwndEdit);
+            Utils::select(hwndEdit, posStart, posEnd);
+            ::SendMessage(hwndEdit, SCI_REPLACESEL, 0, (LPARAM)normalized.c_str());
+            Utils::endUndo(hwndEdit);
+
+            if (state.mode == VISUAL && g_normalMode) {
+                g_normalMode->enter();
+            }
+
+            int outLines = 0;
+            for (char ch : normalized) if (ch == '\n') outLines++;
+            if (outLines <= 0) outLines = 1;
+
+            std::wstring statusMsg = std::to_wstring(outLines) + L" lines filtered (Exit " + std::to_wstring(exitCode) + L")";
+            Utils::setStatus(statusMsg.c_str());
+        } else {
+            std::string errMsg = "Shell returned " + std::to_string(exitCode);
+            if (!stdErrStr.empty()) errMsg += ": " + Utils::trim(stdErrStr);
+            Utils::setStatus(std::wstring(errMsg.begin(), errMsg.end()).c_str());
+        }
+    } else {
+        std::string allOutput = stdOutStr;
+        if (!stdErrStr.empty()) {
+            if (!allOutput.empty()) allOutput += "\n[stderr]\n";
+            allOutput += stdErrStr;
+        }
+
+        allOutput = Utils::trim(allOutput);
+
+        if (allOutput.empty()) {
+            std::wstring statusMsg = L"[Exit " + std::to_wstring(exitCode) + L"] Command executed: " + std::wstring(expandedCmd.begin(), expandedCmd.end());
+            Utils::setStatus(statusMsg.c_str());
+        } else {
+            int lineCount = 1;
+            for (char ch : allOutput) if (ch == '\n') lineCount++;
+
+            if (lineCount <= 2 && allOutput.length() < 120) {
+                std::wstring statusMsg = L"[Exit " + std::to_wstring(exitCode) + L"] " + std::wstring(allOutput.begin(), allOutput.end());
+                Utils::setStatus(statusMsg.c_str());
+            } else {
+                showOutputBuffer(expandedCmd, allOutput, exitCode);
+                std::wstring statusMsg = L"[Exit " + std::to_wstring(exitCode) + L"] " + std::to_wstring(lineCount) + L" lines of output";
+                Utils::setStatus(statusMsg.c_str());
+            }
+        }
+    }
+}
+
+void CommandMode::executeMove(HWND hwndEdit, const ExRange& range, const std::string& args) {
+    if (!hwndEdit) return;
+
+    int totalLines = (int)::SendMessage(hwndEdit, SCI_GETLINECOUNT, 0, 0);
+    if (totalLines <= 0) return;
+
+    int currentLine = Utils::caretLine(hwndEdit);
+    int startLine = range.hasRange ? range.startLine : currentLine;
+    int endLine = range.hasRange ? range.endLine : currentLine;
+
+    if (startLine < 0) startLine = 0;
+    if (endLine < 0) endLine = 0;
+    if (startLine >= totalLines) startLine = totalLines - 1;
+    if (endLine >= totalLines) endLine = totalLines - 1;
+    if (startLine > endLine) std::swap(startLine, endLine);
+
+    std::string targetStr = Utils::trim(args);
+    if (targetStr.empty()) {
+        Utils::setStatus(TEXT("E471: Argument required"));
+        return;
+    }
+
+    int targetLine = 0; // 0-based target line index
+
+    if (targetStr == "0" || targetStr == "1") {
+        targetLine = 0;
+    } else if (targetStr == "$") {
+        targetLine = totalLines - 1;
+    } else if (targetStr == ".") {
+        targetLine = currentLine;
+    } else if (targetStr[0] == '+' || targetStr[0] == '-') {
+        int off = 1;
+        if (targetStr.size() > 1) {
+            try { off = std::stoi(targetStr.substr(1)); } catch (...) { off = 1; }
+        }
+        if (targetStr[0] == '+') targetLine = currentLine + off;
+        else targetLine = currentLine - off;
+    } else if (targetStr[0] == '\'') {
+        if (targetStr.size() > 1) {
+            int mLine = Marks::getMarkLine(targetStr[1]);
+            if (mLine >= 0) targetLine = mLine;
+            else targetLine = currentLine;
+        }
+    } else {
+        try {
+            int num = std::stoi(targetStr);
+            if (num <= 1) {
+                targetLine = 0;
+            } else {
+                targetLine = num - 1;
+            }
+        } catch (...) {
+            Utils::setStatus(TEXT("E14: Invalid address"));
+            return;
+        }
+    }
+
+    if (targetLine < 0) targetLine = 0;
+    if (targetLine >= totalLines) targetLine = totalLines - 1;
+
+    if (targetLine >= startLine && targetLine <= endLine) {
+        Utils::setStatus(TEXT("Lines already at target"));
+        return;
+    }
+
+    int posStart = Utils::lineStart(hwndEdit, startLine);
+    auto endRange = Utils::lineRange(hwndEdit, endLine, true);
+    int posEnd = endRange.second;
+    std::string text = Utils::getTextRange(hwndEdit, posStart, posEnd);
+
+    int eolMode = (int)::SendMessage(hwndEdit, SCI_GETEOLMODE, 0, 0);
+    std::string eolStr = (eolMode == SC_EOL_LF) ? "\n" : (eolMode == SC_EOL_CR ? "\r" : "\r\n");
+    if (text.empty() || (text.back() != '\n' && text.back() != '\r')) {
+        text += eolStr;
+    }
+
+    int lineCount = endLine - startLine + 1;
+
+    Utils::beginUndo(hwndEdit);
+
+    // Delete the source range
+    Utils::select(hwndEdit, posStart, posEnd);
+    ::SendMessage(hwndEdit, SCI_REPLACESEL, 0, (LPARAM)"");
+
+    int newTotal = (int)::SendMessage(hwndEdit, SCI_GETLINECOUNT, 0, 0);
+    int insertPos = 0;
+    int destLine = 0;
+
+    if (startLine > targetLine) {
+        // Moving UPWARDS (e.g. from line 5 to line 2):
+        // Lines above startLine did not move, so targetLine in new document is targetLine
+        destLine = targetLine;
+        insertPos = Utils::lineStart(hwndEdit, destLine);
+    } else {
+        // Moving DOWNWARDS (e.g. from line 1 to line 3):
+        // Lines between startLine and targetLine shifted UP by lineCount
+        int insertIdx = targetLine - lineCount + 1;
+        if (insertIdx >= newTotal) {
+            insertPos = (int)::SendMessage(hwndEdit, SCI_GETLENGTH, 0, 0);
+            if (insertPos > 0) {
+                char lastCh = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, insertPos - 1, 0);
+                if (lastCh != '\n' && lastCh != '\r') {
+                    text = eolStr + text;
+                }
+            }
+            destLine = (std::max)(0, newTotal);
+        } else {
+            destLine = insertIdx;
+            insertPos = Utils::lineStart(hwndEdit, destLine);
+        }
+    }
+
+    ::SendMessage(hwndEdit, SCI_SETSEL, insertPos, insertPos);
+    ::SendMessage(hwndEdit, SCI_REPLACESEL, 0, (LPARAM)text.c_str());
+
+    // Move caret to start of moved block
+    int newCaret = Utils::lineStart(hwndEdit, destLine);
+    if (newCaret >= 0) {
+        ::SendMessage(hwndEdit, SCI_GOTOPOS, newCaret, 0);
+        ::SendMessage(hwndEdit, SCI_SCROLLCARET, 0, 0);
+    }
+
+    Utils::endUndo(hwndEdit);
+
+    if (state.mode == VISUAL && g_normalMode) {
+        g_normalMode->enter();
+    }
+
+    Utils::setStatus((std::to_wstring(lineCount) + L" line" + (lineCount > 1 ? L"s" : L"") + L" moved").c_str());
+}
+
+void CommandMode::executeCopy(HWND hwndEdit, const ExRange& range, const std::string& args) {
+    if (!hwndEdit) return;
+
+    int totalLines = (int)::SendMessage(hwndEdit, SCI_GETLINECOUNT, 0, 0);
+    if (totalLines <= 0) return;
+
+    int currentLine = Utils::caretLine(hwndEdit);
+    int startLine = range.hasRange ? range.startLine : currentLine;
+    int endLine = range.hasRange ? range.endLine : currentLine;
+
+    if (startLine < 0) startLine = 0;
+    if (endLine < 0) endLine = 0;
+    if (startLine >= totalLines) startLine = totalLines - 1;
+    if (endLine >= totalLines) endLine = totalLines - 1;
+    if (startLine > endLine) std::swap(startLine, endLine);
+
+    std::string targetStr = Utils::trim(args);
+    if (targetStr.empty()) {
+        targetStr = ".";
+    }
+
+    int targetLine = 0;
+
+    if (targetStr == "0" || targetStr == "1") {
+        targetLine = 0;
+    } else if (targetStr == "$") {
+        targetLine = totalLines - 1;
+    } else if (targetStr == ".") {
+        targetLine = currentLine;
+    } else if (targetStr[0] == '+' || targetStr[0] == '-') {
+        int off = 1;
+        if (targetStr.size() > 1) {
+            try { off = std::stoi(targetStr.substr(1)); } catch (...) { off = 1; }
+        }
+        if (targetStr[0] == '+') targetLine = currentLine + off;
+        else targetLine = currentLine - off;
+    } else if (targetStr[0] == '\'') {
+        if (targetStr.size() > 1) {
+            int mLine = Marks::getMarkLine(targetStr[1]);
+            if (mLine >= 0) targetLine = mLine;
+            else targetLine = currentLine;
+        }
+    } else {
+        try {
+            int num = std::stoi(targetStr);
+            if (num <= 1) {
+                targetLine = 0;
+            } else {
+                targetLine = num - 1;
+            }
+        } catch (...) {
+            Utils::setStatus(TEXT("E14: Invalid address"));
+            return;
+        }
+    }
+
+    if (targetLine < 0) targetLine = 0;
+    if (targetLine >= totalLines) targetLine = totalLines - 1;
+
+    int posStart = Utils::lineStart(hwndEdit, startLine);
+    auto endRange = Utils::lineRange(hwndEdit, endLine, true);
+    int posEnd = endRange.second;
+    std::string text = Utils::getTextRange(hwndEdit, posStart, posEnd);
+
+    int eolMode = (int)::SendMessage(hwndEdit, SCI_GETEOLMODE, 0, 0);
+    std::string eolStr = (eolMode == SC_EOL_LF) ? "\n" : (eolMode == SC_EOL_CR ? "\r" : "\r\n");
+    if (text.empty() || (text.back() != '\n' && text.back() != '\r')) {
+        text += eolStr;
+    }
+
+    int lineCount = endLine - startLine + 1;
+    int insertPos = 0;
+    int destLine = 0;
+
+    if (targetStr == "$" || targetLine >= totalLines - 1) {
+        insertPos = (int)::SendMessage(hwndEdit, SCI_GETLENGTH, 0, 0);
+        if (insertPos > 0) {
+            char lastCh = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, insertPos - 1, 0);
+            if (lastCh != '\n' && lastCh != '\r') {
+                text = eolStr + text;
+            }
+        }
+        destLine = totalLines;
+    } else {
+        destLine = targetLine;
+        insertPos = Utils::lineStart(hwndEdit, destLine);
+    }
+
+    Utils::beginUndo(hwndEdit);
+    ::SendMessage(hwndEdit, SCI_SETSEL, insertPos, insertPos);
+    ::SendMessage(hwndEdit, SCI_REPLACESEL, 0, (LPARAM)text.c_str());
+
+    int newCaret = Utils::lineStart(hwndEdit, destLine);
+    if (newCaret >= 0) {
+        ::SendMessage(hwndEdit, SCI_GOTOPOS, newCaret, 0);
+        ::SendMessage(hwndEdit, SCI_SCROLLCARET, 0, 0);
+    }
+    Utils::endUndo(hwndEdit);
+
+    if (state.mode == VISUAL && g_normalMode) {
+        g_normalMode->enter();
+    }
+
+    Utils::setStatus((std::to_wstring(lineCount) + L" line" + (lineCount > 1 ? L"s" : L"") + L" copied").c_str());
+}
+
+void CommandMode::executePrint(HWND hwndEdit, const ExRange& range) {
+    if (!hwndEdit) return;
+    int startLine = range.hasRange ? range.startLine : Utils::caretLine(hwndEdit);
+    int endLine = range.hasRange ? range.endLine : startLine;
+
+    int posStart = Utils::lineStart(hwndEdit, startLine);
+    int posEnd = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, endLine, 0);
+    std::string text = Utils::getTextRange(hwndEdit, posStart, posEnd);
+
+    if (startLine == endLine) {
+        std::wstring lineMsg = std::to_wstring(startLine + 1) + L": " + std::wstring(text.begin(), text.end());
+        Utils::setStatus(lineMsg.c_str());
+    } else {
+        std::wstring lineMsg = L"Lines " + std::to_wstring(startLine + 1) + L"-" + std::to_wstring(endLine + 1) + L": " + std::to_wstring(endLine - startLine + 1) + L" lines";
+        Utils::setStatus(lineMsg.c_str());
+    }
+}
+
+void CommandMode::showOutputBuffer(const std::string& title, const std::string& output, int exitCode) {
+    ::SendMessage(nppData._nppHandle, NPPM_MENUCOMMAND, 0, IDM_FILE_NEW);
+    HWND h = Utils::getCurrentScintillaHandle();
+    if (!h) return;
+
+    std::string text = "# Command: " + title + "\n# Exit Code: " + std::to_string(exitCode) + "\n\n" + output;
+
     ::SendMessage(h, SCI_SETREADONLY, FALSE, 0);
-    ::SendMessage(h, SCI_SETTEXT, 0, (LPARAM)registersText.c_str());
+    ::SendMessage(h, SCI_SETTEXT, 0, (LPARAM)text.c_str());
     ::SendMessage(h, SCI_SETSAVEPOINT, 0, 0);
     ::SendMessage(h, SCI_SETREADONLY, TRUE, 0);
-    
-    // Use monospace font for table alignment
     ::SendMessage(h, SCI_STYLESETFONT, STYLE_DEFAULT, (LPARAM)"Consolas");
     ::SendMessage(h, SCI_STYLESETSIZE, STYLE_DEFAULT, 10);
-    
     ::SendMessage(h, SCI_SETFIRSTVISIBLELINE, 0, 0);
-    
-    Utils::setStatus(TEXT("-- REGISTERS --"));
 }

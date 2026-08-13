@@ -97,6 +97,47 @@ The `:edit` (or `:e`) command is fully compatible with Vim:
 * `:edit` / `:e`: Reloads the current buffer file from disk.
 * `:edit <filename>` / `:e <filename>`: Opens the specified file. If the file does not exist, it will be created automatically. Supports both relative and absolute paths.
 
+#### Ex Commands and Ranges
+
+NppVim supports standard Vim ranges (`:10,20...`, `:'<,'>...`, `:<,>...`, `:<>...`, `:%...`, `:.+5...`, `:$...`) with powerful Ex commands:
+
+* **`:delete` / `:d [register] [count]`**: Delete lines in range (e.g. `:10,20d`, `:'<,'>d`, `:%d`, `:d a`).
+* **`:yank` / `:y [register] [count]`**: Yank lines in range (e.g. `:10,20y`, `:'<,'>y`, `:%y`, `:y a`).
+* **`:put` / `:pu [!] [register]`**: Put register content after (or before with `!`) the target line.
+* **`:join` / `:j [!] [count]`**: Join lines in range (with whitespace or without whitespace with `!`).
+* **`:sort [!][i][u][n][x][o][b][f] [/pattern/]`**: Sort lines in range or entire file:
+  * `!` : Reverse sort (descending)
+  * `i` : Ignore case
+  * `u` : Unique (filter duplicate lines)
+  * `n` : Numeric sort (decimal)
+  * `x` : Hexadecimal sort
+  * `o` : Octal sort
+  * `b` : Binary sort
+  * `f` : Float sort
+  * `/pattern/` : Sort based on text matching/after regex pattern
+  * Examples: `:'<,'>sort`, `:10,20sort! n`, `:%sort u`, `:<>sort`
+* **`:column` / `:col [-t] [-s <delims>] [-o <out_sep>] [-R <cols>]`**: Format lines in range or file into aligned tabular columns.
+  * `-t` : Table mode
+  * `-s <delims>` : Delimiter characters (e.g. `-s,` or `-s "\t"`)
+  * `-o <out_sep>` : Output column separator (default 2 spaces)
+  * `-R <cols>` : Right-align specified columns (e.g. `-R 2,3`)
+  * Examples: `:column -t`, `:'<,'>column -t -s,`, `:%column -t -o " | "`
+* **`:retab [!] [new_tabstop]`**: Replace spaces/tabs according to `tabstop` and `expandtab`.
+* **`:move` / `:m {address}`**: Move lines in range to target line address (e.g. `:'<,'>m $`, `:10,20m 0`).
+* **`:copy` / `:co` / `:t {address}`**: Copy lines in range to target line address (e.g. `:'<,'>co .`, `:10,20t $`).
+* **`:!cmd`**: Execute external command in Windows shell with `%` path variable expansion (e.g. `:!python %`, `:!g++ % -o %:r`, `:!npm test`).
+* **`:[range]!cmd`**: Filter lines in range through external command via standard input and standard output (e.g. `:'<,'>!sort`, `:<>!column -t`, `:%!clang-format`).
+* **Visual `!` shortcut**: In Visual mode, pressing `!` immediately enters command mode with `:'<,'>!` filter prompt.
+
+Path Wildcards for `:!`:
+* `%` : Current file full path
+* `%:p` : Full path
+* `%:t` : Tail / filename (`file.cpp`)
+* `%:r` : Root path without extension (`C:\path\file`)
+* `%:e` : Extension (`cpp`)
+* `%:h` : Head / directory (`C:\path`)
+* `%:t:r` : Filename without extension (`file`)
+
 ### config.ini (UI & Shortcut Overrides)
 
 This file stores settings managed via the **Configuration Dialog** (`Plugins -> NppVim -> Configuration Dialog`). These settings control how NppVim interacts with Notepad++ itself.

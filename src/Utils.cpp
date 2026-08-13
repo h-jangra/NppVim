@@ -484,6 +484,21 @@ void Utils::setClipboardText(const std::string& text) {
     CloseClipboard();
 }
 
+std::string Utils::getClipboardText() {
+    std::string result;
+    if (!OpenClipboard(nullptr)) return result;
+    HANDLE hData = GetClipboardData(CF_TEXT);
+    if (hData) {
+        char* pszText = (char*)GlobalLock(hData);
+        if (pszText) {
+            result = pszText;
+            GlobalUnlock(hData);
+        }
+    }
+    CloseClipboard();
+    return result;
+}
+
 static void appendSection(std::string& out, const std::string& title, const Keymap& km) {
     out += "\n";
     out += title;
@@ -617,8 +632,15 @@ int Utils::getCharBlocking() {
 }
 
 std::string Utils::getRegisterContent(char reg) {
+    if (reg == '+' || reg == '*') {
+        return getClipboardText();
+    }
     if (state.registers.find(reg) != state.registers.end()) {
         return state.registers[reg];
+    }
+    if (reg == '"') {
+        std::string clip = getClipboardText();
+        if (!clip.empty()) return clip;
     }
     return "";
 }

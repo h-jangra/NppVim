@@ -128,6 +128,53 @@ The ":edit" (or ":e") command is fully compatible with Vim:
         Opens the specified file. If the file does not exist, it will be
         created automatically. Supports both relative and absolute paths.
 
+Ex Commands and Ranges                                        *nppvim-ex-cmds*
+----------------------
+NppVim supports standard Vim ranges (:10,20..., :'<,'>..., :<,>..., :<>...,
+:%, :.+5, :$) with powerful Ex commands:
+
+  :d, :delete [reg] [count]
+        Delete lines in range (e.g., :10,20d, :'<,'>d, :%d, :d a).
+  :y, :yank [reg] [count]
+        Yank lines in range to register (e.g., :10,20y, :'<,'>y, :%y, :y a).
+  :pu, :put [!] [reg]
+        Put register content after (or before with !) target line.
+  :j, :join [!] [count]
+        Join lines in range (with space, or without space using !).
+  :sort [!][i][u][n][x][o][b][f] [/pattern/]
+        Sort lines in range or entire file.
+        Flags: ! (reverse), i (ignorecase), u (unique), n (numeric),
+               x (hex), o (octal), b (binary), f (float), /pat/ (regex).
+        Examples: :sort, :sort!, :10,20sort n, :'<,'>sort, :%sort u
+  :column [!] [-t] [-s <delims>] [-o <out_sep>] [-R <cols>]
+        Format lines in range or file into aligned tabular columns.
+        Flags: -t (table mode), -s (input delimiters, e.g. -s, or -s "\t"),
+               -o (output delimiter, default 2 spaces), -R (right-align cols).
+        Examples: :column -t, :'<,'>column -t -s,, :%column -t -o " | "
+  :retab [!] [tabstop]
+        Retabulate spaces and tabs in range or file according to 'tabstop'.
+  :m, :move {address}
+        Move lines in range to target address (e.g., :'<,'>m $, :10,20m 0).
+  :co, :t {address}
+        Copy lines in range to target address (e.g., :'<,'>co ., :10,20t $).
+  :!cmd
+        Execute external Windows command with % wildcard expansion
+        (e.g., :!python %, :!g++ % -o %:r, :!npm test).
+  :[range]!cmd
+        Filter lines in range through external command via stdin/stdout
+        (e.g., :'<,'>!sort, :<>!column -t, :%!clang-format).
+
+  In Visual mode, pressing '!' automatically opens command prompt with :'<,'>!
+
+Path wildcards for :!:
+  %       Current file path
+  %:p     Full path
+  %:t     Tail / filename
+  %:r     Root without extension
+  %:e     Extension
+  %:h     Head / directory
+  %:t:r   Filename without extension
+
 ------------------------------------------------------------------------------
 2.2 config.ini (UI & Shortcut Overrides)                     *nppvim-config-ini*
 

@@ -19,10 +19,14 @@ using KeyHandler = std::function<void(HWND, int)>;
 
 class KeymapNode {
 public:
-    KeyHandler handler;
-    std::unordered_map<char, std::shared_ptr<KeymapNode>> children;
+    KeyHandler handler = nullptr;
     bool isLeaf = false;
     char motionChar = 0;  // For automatic motion tracking
+
+    KeyHandler userHandler = nullptr;
+    bool isUserLeaf = false;
+
+    std::unordered_map<char, std::shared_ptr<KeymapNode>> children;
 };
 
 struct KeyBinding {
@@ -51,8 +55,13 @@ public:
     void removeMapping(const std::string& from);
     void clearDynamicMappings();
 
+    void setIgnoreUserMappings(bool ignore) { ignoreUserMappings = ignore; }
+    bool getIgnoreUserMappings() const { return ignoreUserMappings; }
+
     std::string getPendingSequence() const { return pendingKeys; }
     bool hasPending() const { return !pendingKeys.empty(); }
+
+    static void feedKey(HWND hwnd, char c);
 
 private:
     VimState& state;
@@ -61,8 +70,10 @@ private:
     std::string pendingKeys;
 
     bool allowCount = true;
+    bool ignoreUserMappings = false;
     std::vector<KeyBinding> bindings;
     
     void insertKeySequence(const std::string& keys, KeyHandler handler, char motionChar = 0);
+    void insertUserKeySequence(const std::string& keys, KeyHandler handler);
     bool processKey(HWND hwnd, char key, int count);
 };

@@ -53,10 +53,10 @@ bool RcParser::executeLine(const std::string& line, HWND hwndEdit) {
 
     if (cmd == "set") {
         handleSet(args);
-    } else if (cmd == "map" || cmd == "nmap" || cmd == "imap" || cmd == "vmap" ||
-               cmd == "noremap" || cmd == "nnoremap" || cmd == "inoremap" || cmd == "vnoremap") {
+    } else if (cmd == "map" || cmd == "nmap" || cmd == "imap" || cmd == "vmap" || cmd == "cmap" ||
+               cmd == "noremap" || cmd == "nnoremap" || cmd == "inoremap" || cmd == "vnoremap" || cmd == "cnoremap") {
         handleMapping(cmd, args);
-    } else if (cmd == "unmap" || cmd == "nunmap" || cmd == "iunmap" || cmd == "vunmap") {
+    } else if (cmd == "unmap" || cmd == "nunmap" || cmd == "iunmap" || cmd == "vunmap" || cmd == "cunmap") {
         handleUnmapping(cmd, args);
     } else if (cmd == "source" || cmd == "so") {
         handleSource(args, hwndEdit);
@@ -112,12 +112,15 @@ void RcParser::handleMapping(const std::string& cmd, const std::string& args) {
         if (g_normalKeymap) g_normalKeymap->addMapping(transFrom, transTo, recursive);
         if (g_visualKeymap) g_visualKeymap->addMapping(transFrom, transTo, recursive);
         if (g_insertKeymap) g_insertKeymap->addMapping(transFrom, transTo, recursive);
+        if (g_commandKeymap) g_commandKeymap->addMapping(transFrom, transTo, recursive);
     } else if (cmd == "nmap" || cmd == "nnoremap") {
         if (g_normalKeymap) g_normalKeymap->addMapping(transFrom, transTo, recursive);
     } else if (cmd == "imap" || cmd == "inoremap") {
         if (g_insertKeymap) g_insertKeymap->addMapping(transFrom, transTo, recursive);
     } else if (cmd == "vmap" || cmd == "vnoremap") {
         if (g_visualKeymap) g_visualKeymap->addMapping(transFrom, transTo, recursive);
+    } else if (cmd == "cmap" || cmd == "cnoremap") {
+        if (g_commandKeymap) g_commandKeymap->addMapping(transFrom, transTo, recursive);
     }
     
     // Also store in MappingManager for listing
@@ -125,6 +128,7 @@ void RcParser::handleMapping(const std::string& cmd, const std::string& args) {
     if (cmd[0] == 'n') mode = MappingMode::Normal;
     else if (cmd[0] == 'i') mode = MappingMode::Insert;
     else if (cmd[0] == 'v') mode = MappingMode::Visual;
+    else if (cmd[0] == 'c') mode = MappingMode::Command;
     MappingManager::getInstance().addMapping(mode, from, to, recursive);
 }
 
@@ -138,18 +142,22 @@ void RcParser::handleUnmapping(const std::string& cmd, const std::string& args) 
         if (g_normalKeymap) g_normalKeymap->removeMapping(transFrom);
         if (g_visualKeymap) g_visualKeymap->removeMapping(transFrom);
         if (g_insertKeymap) g_insertKeymap->removeMapping(transFrom);
+        if (g_commandKeymap) g_commandKeymap->removeMapping(transFrom);
     } else if (cmd == "nunmap") {
         if (g_normalKeymap) g_normalKeymap->removeMapping(transFrom);
     } else if (cmd == "iunmap") {
         if (g_insertKeymap) g_insertKeymap->removeMapping(transFrom);
     } else if (cmd == "vunmap") {
         if (g_visualKeymap) g_visualKeymap->removeMapping(transFrom);
+    } else if (cmd == "cunmap") {
+        if (g_commandKeymap) g_commandKeymap->removeMapping(transFrom);
     }
     
     MappingMode mode = MappingMode::All;
     if (cmd[0] == 'n') mode = MappingMode::Normal;
     else if (cmd[0] == 'i') mode = MappingMode::Insert;
     else if (cmd[0] == 'v') mode = MappingMode::Visual;
+    else if (cmd[0] == 'c') mode = MappingMode::Command;
     MappingManager::getInstance().removeMapping(mode, from);
 }
 

@@ -1144,6 +1144,12 @@ void NormalMode::setupKeyMaps() {
              line - (::SendMessage(h, SCI_LINESONSCREEN, 0, 0) / 2), 0);
          state.recordLastOp(OP_MOTION, c, 'z');
      })
+    .set("ZZ", "Save and quit", [](HWND h, int) {
+        CommandMode::executeQuit(h, false, false, true);
+    })
+    .set("ZQ", "Quit without saving", [](HWND h, int) {
+        CommandMode::executeQuit(h, true, false, false);
+    })
     .set("zt", "Cursor to top", [this](HWND h, int c) {
         int pos = Utils::caretPos(h);
         int line = Utils::caretLine(h);
@@ -1235,53 +1241,17 @@ void NormalMode::setupKeyMaps() {
          state.awaitingMarkSet = true;
          Utils::setStatus(TEXT("-- Set mark --"));
      })
-    .set("``", "Jump back", [this](HWND h, int c) {
-        if (state.jumpList.size() < 2) return;
-        int last = state.jumpList.size() - 1;
-        std::swap(state.jumpList[last], state.jumpList[last - 1]);
-        auto jump = state.jumpList[last];
-        if (jump.position != -1) {
-            long pos = Utils::caretPos(h);
-            int line = Utils::caretLine(h);
-            state.recordJump(pos, line);
-            ::SendMessage(h, SCI_GOTOPOS, jump.position, 0);
-            ::SendMessage(h, SCI_SETSEL, jump.position, jump.position);
-            ::SendMessage(h, SCI_SCROLLCARET, 0, 0);
-        }
-    })
-     .set("'", "Jump to mark", [this](HWND h, int c) {
-         if (c > 1) {
-             if (state.jumpList.size() >= 2) {
-                 int last = state.jumpList.size() - 1;
-                 std::swap(state.jumpList[last], state.jumpList[last - 1]);
-                 auto jump = state.jumpList[last];
-                 if (jump.lineNumber != -1) {
-                     int target = ::SendMessage(h, SCI_GETLINEINDENTPOSITION, jump.lineNumber, 0);
-
-                     ::SendMessage(h, SCI_GOTOPOS, target, 0);
-                     ::SendMessage(h, SCI_SETSEL, target, target);
-                     ::SendMessage(h, SCI_SCROLLCARET, 0, 0);
-                     Utils::setStatus(TEXT("-- Jumped to last line --"));
-                 }
-             }
-             return;
-         }
+     .set("`", "Jump to mark (exact pos)", [this](HWND h, int c) {
+         state.awaitingMarkJump = true;
+         state.isBacktickJump = true;
+         state.pendingJumpCount = c;
+         Utils::setStatus(TEXT("-- Jump to mark (exact pos) --"));
+     })
+     .set("'", "Jump to mark (line start)", [this](HWND h, int c) {
          state.awaitingMarkJump = true;
          state.isBacktickJump = false;
          state.pendingJumpCount = c;
          Utils::setStatus(TEXT("-- Jump to mark (line start) --"));
-     })
-     .set("''", "Jump to last line", [this](HWND h, int c) {
-         if (state.jumpList.size() < 2) return;
-         int last = state.jumpList.size() - 1;
-         std::swap(state.jumpList[last], state.jumpList[last - 1]);
-         auto jump = state.jumpList[last];
-         if (jump.lineNumber != -1) {
-             int target = ::SendMessage(h, SCI_GETLINEINDENTPOSITION, jump.lineNumber, 0);
-             ::SendMessage(h, SCI_GOTOPOS, target, 0);
-             ::SendMessage(h, SCI_SETSEL, target, target);
-             ::SendMessage(h, SCI_SCROLLCARET, 0, 0);
-         }
      });
 
     k.set(">", "Indent", [this](HWND h, int c) {
@@ -1480,6 +1450,8 @@ void NormalMode::enter() {
         }
         state.lastVisualWasLine  = state.isLineVisual;
         state.lastVisualWasBlock = state.isBlockVisual;
+    } else if (state.mode == INSERT) {
+        Marks::recordLastInsert(hwnd);
     }
 
     if (g_config.enableKeyboardLayoutSwitching) {
@@ -1768,9 +1740,8 @@ void NormalMode::handleCharSearchInput(HWND hwnd, char searchChar, char searchTy
 
 void NormalMode::handleMarkSetInput(HWND hwnd, char mark) {
     state.awaitingMarkSet = false;
-    if (Marks::isValidMark(mark)) {
+    if (Marks::isValidSetMark(mark)) {
         Marks::setMark(hwnd, mark);
-        Utils::setStatus(TEXT("-- Mark set --"));
     } else {
         Utils::setStatus(TEXT("-- Invalid mark --"));
     }
@@ -1780,17 +1751,53 @@ void NormalMode::handleMarkJumpInput(HWND hwnd, char mark, bool exactPosition) {
     state.awaitingMarkJump = false;
 
     if (Marks::isValidMark(mark)) {
-        long pos = Utils::caretPos(hwnd);
-        int line = ::SendMessage(hwnd, SCI_LINEFROMPOSITION, pos, 0);
-        state.recordJump(pos, line);
+        if (state.opPending) {
+            char op = state.opPending;
+            state.opPending = 0;
+            int startPos = Utils::caretPos(hwnd);
+            int startLine = Utils::caretLine(hwnd);
 
-        if (Marks::jumpToMark(hwnd, mark, exactPosition)) {
-            long newPos = Utils::caretPos(hwnd);
-            int newLine = ::SendMessage(hwnd, SCI_LINEFROMPOSITION, newPos, 0);
-            state.recordJump(newPos, newLine);
-            Utils::setStatus(TEXT("-- Jumped to mark --"));
+            if (Marks::jumpToMark(hwnd, mark, exactPosition)) {
+                int endPos = Utils::caretPos(hwnd);
+                int endLine = Utils::caretLine(hwnd);
+
+                int selStart = (std::min)(startPos, endPos);
+                int selEnd = (std::max)(startPos, endPos);
+
+                if (!exactPosition) {
+                    int l1 = (std::min)(startLine, endLine);
+                    int l2 = (std::max)(startLine, endLine);
+                    selStart = Utils::lineStart(hwnd, l1);
+                    auto range = Utils::lineRange(hwnd, l2, true);
+                    selEnd = range.second;
+                    state.lastYankLinewise = true;
+                } else {
+                    state.lastYankLinewise = false;
+                }
+
+                std::string text = Utils::getTextRange(hwnd, selStart, selEnd);
+                char reg = Utils::getCurrentRegister();
+
+                if (op == 'y') {
+                    Utils::storeRegister(reg, text, true);
+                    ::SendMessage(hwnd, SCI_GOTOPOS, (exactPosition ? selStart : Utils::lineStart(hwnd, (std::min)(startLine, endLine))), 0);
+                    Utils::setStatus(TEXT("-- Yanked --"));
+                } else if (op == 'd' || op == 'c') {
+                    Utils::storeRegister(reg, text, (op == 'd' ? g_config.dStoreClipboard : g_config.cStoreClipboard));
+                    Utils::beginUndo(hwnd);
+                    Utils::select(hwnd, selStart, selEnd);
+                    ::SendMessage(hwnd, SCI_REPLACESEL, 0, (LPARAM)"");
+                    ::SendMessage(hwnd, SCI_GOTOPOS, selStart, 0);
+                    Utils::endUndo(hwnd);
+                    if (op == 'c') {
+                        enterInsertMode();
+                    } else {
+                        Utils::setStatus(TEXT("-- Deleted --"));
+                    }
+                }
+            }
         } else {
-            Utils::setStatus(TEXT("-- Mark not set --"));
+            Marks::jumpToMark(hwnd, mark, exactPosition);
         }
     } else {
         Utils::setStatus(TEXT("-- Invalid mark --"));

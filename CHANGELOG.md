@@ -1,3 +1,31 @@
+# 1.15.0.0
+
+## Added
+
+### Ex Commands and Unified Range Engine
+- **Range Support**: Added full support for line ranges (`:10,20...`, `:'<,'>...`, `:<,>...`, `:<>...`, `:%...`, `:.+5...`, `:$...`, `:'a,'b...`) across Ex commands.
+- **`:delete` / `:d`**: Delete lines in range into registers (e.g. `:10,20d`, `:'<,'>d`, `:%d`, `:d a`).
+- **`:yank` / `:y`**: Yank lines in range into registers (e.g. `:10,20y`, `:'<,'>y`, `:%y`, `:y a`).
+- **`:put` / `:pu` / `:p`**: Put register text after/before target line.
+- **`:join` / `:j`**: Join lines in range with optional whitespace or exact join (`:join!`).
+- **`:sort`**: Advanced in-memory line sorting with full flag support:
+  - `!` (descending / reverse)
+  - `i` (case-insensitive)
+  - `u` (unique, deduplicates lines)
+  - `n` (decimal numeric sort)
+  - `x` (hexadecimal), `o` (octal), `b` (binary), `f` (float)
+  - `/pattern/` (sort on match / after regex pattern)
+  - Supports ranges like `:'<,'>sort`, `:<>sort`, `:10,20sort! n`, `:%sort u`.
+- **`:retab`**: Retabulate indentation and spaces across ranges or entire files according to `tabstop` and `expandtab`.
+- **`:move` / `:m` & `:copy` / `:co` / `:t`**: Move and copy lines in range to target address line.
+- **`:column` / `:col`**: Native in-memory table alignment formatter (e.g. `:column -t`, `:'<,'>column -t -s,`, `:%column -t -o " | "`), with automatic fallback for `:[range]!column -t` when external `column` command is invoked.
+- **Buffer & Window Close Fixes**: Fixed `:q`, `:quit`, `:close`, `:bd`, `:bdelete`, `ZZ`, and `ZQ` when `:help`, `:tutor`, or an untitled buffer is the only open tab.
+- **`:help` and `:tutor` Improvements**: Cleanly reuses the single empty document on startup rather than spawning redundant blank tabs, and cleanly exits or closes when instructed.
+- **Normal Mode `ZZ` and `ZQ`**: Added `ZZ` (save and quit) and `ZQ` (force quit without saving) key bindings.
+- **External Command Execution (`:!cmd`)**: Execute Windows shell commands with `%` path wildcard expansion (e.g. `:!python %`, `:!g++ % -o %:r`, `:!npm test`), displaying short output in the status bar and multi-line results in a dedicated output buffer tab.
+- **External Filter (`:[range]!cmd`)**: Filter selected lines or line ranges through external programs via standard input and standard output (e.g. `:'<,'>!sort`, `:<>!column -t`, `:%!clang-format`).
+- **Visual `!` Shortcut**: Pressing `!` in Visual Mode immediately enters command mode with `:'<,'>!` filter prompt.
+
 # 1.14.0.0
 
 ## Added

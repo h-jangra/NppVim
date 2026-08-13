@@ -25,6 +25,7 @@
 #include "../include/OptionRegistry.h"
 #include "../include/MappingManager.h"
 #include "../include/RcParser.h"
+#include "../include/Marks.h"
 #include <algorithm>
 
 HINSTANCE g_hInstance = nullptr;
@@ -775,7 +776,12 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
         static DWORD lastInsertKeyTime = 0;
         DWORD currentTime = GetTickCount();
         if (g_insertKeymap && g_insertKeymap->hasPending() && currentTime - lastInsertKeyTime > g_config.escapeTimeout) {
+            std::string pending = g_insertKeymap->getPendingSequence();
             g_insertKeymap->reset();
+            for (char pc : pending) {
+                char str[2] = { pc, '\0' };
+                ::SendMessage(hwnd, SCI_ADDTEXT, 1, (LPARAM)str);
+            }
         }
 
         if (msg == WM_KEYDOWN) {
@@ -843,11 +849,9 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
             wchar_t wChar = (wchar_t)wParam;
             char c = (char)wChar;
 
-            if (g_insertKeymap) {
-                if (g_insertKeymap->hasPending() || g_insertKeymap->handleKey(hwnd, c)) {
-                    lastInsertKeyTime = currentTime;
-                    return 0;
-                }
+            if (g_insertKeymap && g_insertKeymap->handleKey(hwnd, c)) {
+                lastInsertKeyTime = currentTime;
+                return 0;
             }
 
             if (state.recordingInsertMacro && wChar != VK_ESCAPE) {
@@ -1029,6 +1033,12 @@ extern "C" __declspec(dllexport) void beNotified(SCNotification* notifyCode) {
         // Always update on selection/scroll/content change
         if (notifyCode->updated & (SC_UPDATE_SELECTION | SC_UPDATE_V_SCROLL | SC_UPDATE_CONTENT)) {
             updateRelativeLineNumbers((HWND)notifyCode->nmhdr.hwndFrom);
+        }
+    }
+
+    if (notifyCode->nmhdr.code == SCN_MODIFIED) {
+        if (notifyCode->modificationType & (SC_MOD_INSERTTEXT | SC_MOD_DELETETEXT)) {
+            Marks::recordLastChange((HWND)notifyCode->nmhdr.hwndFrom);
         }
     }
 }

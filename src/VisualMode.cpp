@@ -1176,6 +1176,13 @@ void VisualMode::setupKeyMaps() {
              g_commandMode->previewSubstitutionFromBuffer(h);
          }
      })
+     .set("!", [this](HWND h, int c) {
+         if (g_commandMode) {
+             g_commandMode->enter(':');
+             state.commandBuffer = ":'<,'>!";
+             g_commandMode->updateStatus();
+         }
+     })
      .set("/", [this](HWND h, int c) {
          if (g_commandMode) {
              state.visualSearchAnchor = state.visualAnchor;

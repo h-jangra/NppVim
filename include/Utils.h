@@ -74,6 +74,7 @@ public:
     static void charSearch(HWND hwnd, VimState& state, char type, char ch, int count);
 
     static void setClipboardText(const std::string& text);
+    static std::string getClipboardText();
 
     static std::string buildTutorText();
     static std::string getPluginPath();

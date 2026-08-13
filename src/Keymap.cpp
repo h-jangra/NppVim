@@ -1,11 +1,21 @@
 #include "../include/Keymap.h"
 #include "../include/NppVim.h"
 #include "../include/Utils.h"
+#include "../include/NormalMode.h"
+#include "../include/VisualMode.h"
+#include "../include/CommandMode.h"
+#include "../include/Motion.h"
+#include "../plugin/Scintilla.h"
+#include <cctype>
 
 std::unique_ptr<Keymap> g_normalKeymap;
 std::unique_ptr<Keymap> g_visualKeymap;
 std::unique_ptr<Keymap> g_commandKeymap;
 std::unique_ptr<Keymap> g_insertKeymap;
+
+extern NormalMode* g_normalMode;
+extern VisualMode* g_visualMode;
+extern CommandMode* g_commandMode;
 
 Keymap::Keymap(VimState& state) 
     : state(state), root(std::make_shared<KeymapNode>()), currentNode(root) {}
@@ -53,12 +63,24 @@ void Keymap::insertKeySequence(const std::string& keys, KeyHandler handler, char
     node->isLeaf = true;
 }
 
+void Keymap::insertUserKeySequence(const std::string& keys, KeyHandler handler) {
+    auto node = root;
+    for (char key : keys) {
+        if (node->children.find(key) == node->children.end()) {
+            node->children[key] = std::make_shared<KeymapNode>();
+        }
+        node = node->children[key];
+    }
+    node->userHandler = handler;
+    node->isUserLeaf = true;
+}
+
 bool Keymap::handleKey(HWND hwnd, char key) {
     if (allowCount && std::isdigit(static_cast<unsigned char>(key))) {
         int digit = key - '0';
         if (key == '0' && state.repeatCount == 0 && pendingKeys.empty()) {
             auto it = currentNode->children.find(key);
-            if (it != currentNode->children.end() && it->second->isLeaf) {
+            if (it != currentNode->children.end() && (it->second->isLeaf || (!ignoreUserMappings && it->second->isUserLeaf))) {
                 return processKey(hwnd, key, 1);
             }
         }
@@ -75,7 +97,14 @@ bool Keymap::processKey(HWND hwnd, char key, int count) {
 
     if (it == currentNode->children.end()) {
         if (currentNode != root) {
+            std::string oldPending = pendingKeys;
             reset();
+            if (this == g_insertKeymap.get()) {
+                for (char pc : oldPending) {
+                    char str[2] = { pc, '\0' };
+                    ::SendMessage(hwnd, SCI_ADDTEXT, 1, (LPARAM)str);
+                }
+            }
             return processKey(hwnd, key, count); // retry from root
         }
 
@@ -85,38 +114,33 @@ bool Keymap::processKey(HWND hwnd, char key, int count) {
         pendingKeys += key;
     }
 
-    if (currentNode->isLeaf && currentNode->handler) {
-        if (this == g_insertKeymap.get()) {
-            int charsToDelete = 0;
-            for (size_t i = 0; i < pendingKeys.length() - 1; ++i) {
-                unsigned char c = (unsigned char)pendingKeys[i];
-                if (c < 0x80) {
-                    charsToDelete++;
-                }
-            }
-            if (charsToDelete > 0) {
-                int pos = Utils::caretPos(hwnd);
-                Utils::beginUndo(hwnd);
-                ::SendMessage(hwnd, SCI_SETSEL, pos - charsToDelete, pos);
-                ::SendMessage(hwnd, SCI_REPLACESEL, 0, (LPARAM)"");
-                Utils::endUndo(hwnd);
-            }
-        }
-
-        currentNode->handler(hwnd, count);
-
-        if (currentNode->motionChar) {
-            state.recordLastOp(OP_MOTION, count, currentNode->motionChar);
-        }
-
+    // Check user mapping first (if not ignoring user mappings)
+    if (!ignoreUserMappings && currentNode->isUserLeaf && currentNode->userHandler) {
+        auto handler = currentNode->userHandler;
         reset();
+        handler(hwnd, count);
         return true;
     }
 
-    std::wstring status = L"-- ";
-    for (char c : pendingKeys) status += (wchar_t)c;
-    status += L" --";
-    Utils::setStatus(status.c_str());
+    // Check builtin leaf
+    if (currentNode->isLeaf && currentNode->handler) {
+        auto handler = currentNode->handler;
+        char motion = currentNode->motionChar;
+        reset();
+        handler(hwnd, count);
+
+        if (motion) {
+            state.recordLastOp(OP_MOTION, count, motion);
+        }
+        return true;
+    }
+
+    if (this != g_insertKeymap.get()) {
+        std::wstring status = L"-- ";
+        for (char c : pendingKeys) status += (wchar_t)c;
+        status += L" --";
+        Utils::setStatus(status.c_str());
+    }
 
     return true;
 }
@@ -127,45 +151,135 @@ void Keymap::reset() {
     state.repeatCount = 0;
 }
 
+void Keymap::feedKey(HWND hwnd, char c) {
+    if (::state.commandMode) {
+        if (c == '\r' || c == '\n') {
+            if (g_commandMode) g_commandMode->handleEnter(hwnd);
+            return;
+        }
+        if (c == 27) {
+            Utils::clearSearchHighlights(hwnd);
+            ::state.lastSearchMatchCount = -1;
+            if (g_commandMode) g_commandMode->exit();
+            return;
+        }
+        if (c == 8) {
+            if (g_commandMode) g_commandMode->handleBackspace(hwnd);
+            return;
+        }
+        if (g_commandMode) g_commandMode->handleKey(hwnd, (wchar_t)(unsigned char)c);
+        return;
+    }
+
+    if (::state.mode == INSERT) {
+        if (c == 27) { // ESC
+            ::SendMessage(hwnd, SCI_SETOVERTYPE, false, 0);
+            if (::state.recordingInsertMacro && !::state.insertMacroBuffers.empty()) {
+                ::state.insertMacroBuffers.back().push_back('\x1B');
+                ::state.recordingInsertMacro = false;
+            }
+            if (g_normalMode) g_normalMode->enter();
+            return;
+        }
+
+        if (g_insertKeymap && (g_insertKeymap->hasPending() || g_insertKeymap->handleKey(hwnd, c))) {
+            return;
+        }
+
+        if (::state.recordingInsertMacro && !::state.insertMacroBuffers.empty()) {
+            ::state.insertMacroBuffers.back().push_back(c);
+        }
+
+        char str[2] = { c, '\0' };
+        ::SendMessage(hwnd, SCI_ADDTEXT, 1, (LPARAM)str);
+        return;
+    }
+
+    if (c == 27) {
+        if (g_normalMode) g_normalMode->enter();
+        return;
+    }
+
+    // Handle Ctrl key characters in Normal mode
+    if (::state.mode == NORMAL && (unsigned char)c >= 1 && (unsigned char)c <= 26) {
+        if (c == 4 && g_config.overrideCtrlD) { Motion::pageDown(hwnd); ::state.repeatCount = 0; return; }
+        if (c == 21 && g_config.overrideCtrlU) { Motion::pageUp(hwnd); ::state.repeatCount = 0; return; }
+        if (c == 18 && g_config.overrideCtrlR) { ::SendMessage(hwnd, SCI_REDO, 0, 0); return; }
+        if (c == 6 && g_config.overrideCtrlF) { Motion::pageDown(hwnd); ::state.repeatCount = 0; return; }
+        if (c == 2 && g_config.overrideCtrlB) { Motion::pageUp(hwnd); ::state.repeatCount = 0; return; }
+        if (c == 15 && g_config.overrideCtrlO) { if (g_normalMode) g_normalMode->jumpBackward(hwnd); return; }
+        if (c == 9 && g_config.overrideCtrlI) { if (g_normalMode) g_normalMode->jumpForward(hwnd); return; }
+        if (c == 1 && g_config.overrideCtrlA) { if (g_normalMode) g_normalMode->incrementNumber(hwnd, 1); return; }
+        if (c == 24 && g_config.overrideCtrlX) { if (g_normalMode) g_normalMode->decrementNumber(hwnd, 1); return; }
+    }
+
+    if (::state.mode == NORMAL) {
+        if (g_normalMode) g_normalMode->handleKey(hwnd, c);
+        return;
+    } else if (::state.mode == VISUAL) {
+        if (g_visualMode) g_visualMode->handleKey(hwnd, c);
+        return;
+    }
+}
+
 void Keymap::addMapping(const std::string& from, const std::string& to, bool recursive) {
-    auto handler = [this, to, recursive](HWND hwnd, int count) {
+    auto handler = [to, recursive](HWND hwnd, int count) {
         static int depth = 0;
-        if (depth > 10) return;
+        if (depth > 20) {
+            Utils::setStatus(TEXT("Mapping recursion limit reached"));
+            return;
+        }
         depth++;
         
+        bool prevNormalIgnore = g_normalKeymap ? g_normalKeymap->getIgnoreUserMappings() : false;
+        bool prevVisualIgnore = g_visualKeymap ? g_visualKeymap->getIgnoreUserMappings() : false;
+        bool prevInsertIgnore = g_insertKeymap ? g_insertKeymap->getIgnoreUserMappings() : false;
+        bool prevCommandIgnore = g_commandKeymap ? g_commandKeymap->getIgnoreUserMappings() : false;
+
+        if (!recursive) {
+            if (g_normalKeymap) g_normalKeymap->setIgnoreUserMappings(true);
+            if (g_visualKeymap) g_visualKeymap->setIgnoreUserMappings(true);
+            if (g_insertKeymap) g_insertKeymap->setIgnoreUserMappings(true);
+            if (g_commandKeymap) g_commandKeymap->setIgnoreUserMappings(true);
+        }
+
         for (int i = 0; i < count; ++i) {
             for (char c : to) {
-                if (recursive) {
-                    if (this->handleKey(hwnd, c)) {
-                        continue;
-                    }
-                }
-                
-                bool oldBypass = state.bypassKeymap;
-                if (!recursive) {
-                    state.bypassKeymap = true;
-                }
-                
-                ::SendMessage(hwnd, WM_CHAR, (WPARAM)(unsigned char)c, 0);
-                
-                state.bypassKeymap = oldBypass;
+                Keymap::feedKey(hwnd, c);
             }
         }
+
+        if (!recursive) {
+            if (g_normalKeymap) g_normalKeymap->setIgnoreUserMappings(prevNormalIgnore);
+            if (g_visualKeymap) g_visualKeymap->setIgnoreUserMappings(prevVisualIgnore);
+            if (g_insertKeymap) g_insertKeymap->setIgnoreUserMappings(prevInsertIgnore);
+            if (g_commandKeymap) g_commandKeymap->setIgnoreUserMappings(prevCommandIgnore);
+        }
+
         depth--;
     };
-    insertKeySequence(from, handler);
+    insertUserKeySequence(from, handler);
 }
 
 void Keymap::removeMapping(const std::string& from) {
-    // Basic implementation: find the node and clear handler
     auto node = root;
     for (char key : from) {
         if (node->children.find(key) == node->children.end()) return;
         node = node->children[key];
     }
-    node->handler = nullptr;
-    node->isLeaf = false;
+    node->userHandler = nullptr;
+    node->isUserLeaf = false;
+}
+
+static void clearUserNodes(std::shared_ptr<KeymapNode> node) {
+    if (!node) return;
+    node->userHandler = nullptr;
+    node->isUserLeaf = false;
+    for (auto& pair : node->children) {
+        clearUserNodes(pair.second);
+    }
 }
 
 void Keymap::clearDynamicMappings() {
+    clearUserNodes(root);
 }
