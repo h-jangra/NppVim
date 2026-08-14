@@ -11,6 +11,8 @@
 #include "../include/NppVim.h"
 #include "../include/Marks.h"
 #include "../include/TextObject.h"
+#include "../include/Registers.h"
+#include "../include/EditorOps.h"
 #include "../include/Utils.h"
 #include "../plugin/menuCmdID.h"
 #include "../plugin/Notepad_plus_msgs.h"
@@ -26,29 +28,8 @@ int g_macroDepth = 0;
 
 extern VimConfig g_config;
 
-static std::vector<std::string> splitLines(const std::string& str) {
-    std::vector<std::string> lines;
-    std::string current;
-    for (char c : str) {
-        if (c == '\r') continue;
-        if (c == '\n') {
-            lines.push_back(current);
-            current.clear();
-        } else {
-            current.push_back(c);
-        }
-    }
-    if (!current.empty() || str.empty()) {
-        lines.push_back(current);
-    }
-    if (!lines.empty() && lines.back().empty() && !str.empty() && str.back() == '\n') {
-        lines.pop_back();
-    }
-    return lines;
-}
-
 static void pasteBlock(HWND h, const std::string& content, bool pasteAfter) {
-    std::vector<std::string> lines = splitLines(content);
+    std::vector<std::string> lines = Utils::splitLines(content);
     if (lines.empty()) return;
 
     int caretPos = Utils::caretPos(h);
@@ -287,12 +268,8 @@ void NormalMode::setupKeyMaps() {
 
         if (right > left) {
             std::string text = Utils::getTextRange(h, left, right);
-
-            int wideLen = MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1, NULL, 0);
-            if (wideLen > 0) {
-                std::vector<wchar_t> pathWide(wideLen);
-                MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1, pathWide.data(), wideLen);
-
+            std::wstring pathWide = Utils::toWide(text);
+            if (!pathWide.empty()) {
                 wchar_t currentFile[MAX_PATH] = {0};
                 ::SendMessageW(nppData._nppHandle, NPPM_GETFULLCURRENTPATH, MAX_PATH, (LPARAM)currentFile);
 
@@ -301,16 +278,16 @@ void NormalMode::setupKeyMaps() {
                 PathRemoveFileSpecW(currentDir);
 
                 wchar_t fullPath[MAX_PATH] = {0};
-                if (PathIsRelativeW(pathWide.data())) {
-                    PathCombineW(fullPath, currentDir, pathWide.data());
+                if (PathIsRelativeW(pathWide.c_str())) {
+                    PathCombineW(fullPath, currentDir, pathWide.c_str());
                 } else {
-                    wcscpy_s(fullPath, pathWide.data());
+                    wcscpy_s(fullPath, pathWide.c_str());
                 }
 
                 if (PathFileExistsW(fullPath)) {
                     ::SendMessageW(nppData._nppHandle, NPPM_DOOPEN, 0, (LPARAM)fullPath);
                 } else {
-                    ::SendMessageW(nppData._nppHandle, NPPM_DOOPEN, 0, (LPARAM)pathWide.data());
+                    ::SendMessageW(nppData._nppHandle, NPPM_DOOPEN, 0, (LPARAM)pathWide.c_str());
                 }
             }
         }
@@ -337,12 +314,9 @@ void NormalMode::setupKeyMaps() {
 
         if (right > left) {
             std::string text = Utils::getTextRange(h, left, right);
-
-            int wideLen = MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1, NULL, 0);
-            if (wideLen > 0) {
-                std::vector<wchar_t> urlWide(wideLen);
-                MultiByteToWideChar(CP_UTF8, 0, text.c_str(), -1, urlWide.data(), wideLen);
-                ShellExecuteW(NULL, L"open", urlWide.data(), NULL, NULL, SW_SHOWNORMAL);
+            std::wstring urlWide = Utils::toWide(text);
+            if (!urlWide.empty()) {
+                ShellExecuteW(NULL, L"open", urlWide.c_str(), NULL, NULL, SW_SHOWNORMAL);
             }
         }
     })
@@ -643,89 +617,66 @@ void NormalMode::setupKeyMaps() {
     });
 
      k.set("D", "Delete to end", [this](HWND h, int c) {
-         Utils::beginUndo(h);
-         for (int i = 0; i < c; i++) {
-             int pos = Utils::caretPos(h);
-             int line = Utils::caretLine(h);
-             int end = Utils::lineEnd(h, line);
-             if (pos < end) {
-                Utils::clear(h, pos, end);
-             }
+         char reg = Registers::getInstance().getActiveRegister();
+         if (state.deleteToBlackhole) reg = '_';
+         int pos = Utils::caretPos(h);
+         int line = Utils::caretLine(h);
+         int endLine = (std::min)(line + c - 1, Utils::lineCount(h) - 1);
+         int end = Utils::lineEnd(h, endLine);
+         if (pos < end) {
+             EditorOps::erase(h, EditRange::fromPositions(pos, end, false), reg, g_config.dStoreClipboard);
          }
-         Utils::endUndo(h);
+         Registers::getInstance().resetActiveRegister();
+         state.deleteToBlackhole = false;
          state.recordLastOp(OP_MOTION, c, 'D');
      })
      .set("C", "Change to end", [this](HWND h, int c) {
-         Utils::beginUndo(h);
-         for (int i = 0; i < c; i++) {
-             int pos = Utils::caretPos(h);
-             int line = Utils::caretLine(h);
-             int end = Utils::lineEnd(h, line);
-             if (pos < end) {
-                 // Get the text being deleted
-                 std::string text = Utils::getTextRange(h, pos, end);
-                 
-                 // Store in register if not blackhole
-                 if (!state.deleteToBlackhole) {
-                     char reg = Utils::getCurrentRegister();
-                     if (reg != '_') {  // Skip blackhole register
-                         Utils::storeRegister(reg, text.c_str(), g_config.cStoreClipboard);
-                     }
-                 }
-                 
-                 ::SendMessage(h, SCI_DELETERANGE, pos, end - pos);
-             }
+         char reg = Registers::getInstance().getActiveRegister();
+         if (state.deleteToBlackhole) reg = '_';
+         int pos = Utils::caretPos(h);
+         int line = Utils::caretLine(h);
+         int endLine = (std::min)(line + c - 1, Utils::lineCount(h) - 1);
+         int end = Utils::lineEnd(h, endLine);
+         if (pos < end) {
+             EditorOps::change(h, EditRange::fromPositions(pos, end, false), reg, g_config.cStoreClipboard);
          }
-         Utils::endUndo(h);
+         Registers::getInstance().resetActiveRegister();
+         state.deleteToBlackhole = false;
          enterInsertMode();
      });
 
     k.set("x", "Delete char", [this](HWND h, int c) {
-         Utils::beginUndo(h);
+         char reg = Registers::getInstance().getActiveRegister();
+         if (state.deleteToBlackhole) reg = '_';
+         int pos = Utils::caretPos(h);
+         int end = pos;
          for (int i = 0; i < c; ++i) {
-             int pos = Utils::caretPos(h);
-             int docLen = (int)Utils::sci(h, SCI_GETLENGTH);
-             if (pos >= docLen) break;
-             int next = Utils::sci(h, SCI_POSITIONAFTER, pos, 0);
-             
-             // Get the character before deleting
-             std::string text = Utils::getTextRange(h, pos, next);
-             
-             // Store in register if not blackhole
-             if (!state.deleteToBlackhole && g_config.xStoreClipboard) {
-                 char reg = Utils::getCurrentRegister();
-                 if (reg != '_') {  // Skip blackhole register
-                     Utils::storeRegister(reg, text.c_str(), g_config.xStoreClipboard);
-                 }
-             }
-             
-            Utils::clear(h, pos, next);
+             int next = (int)::SendMessage(h, SCI_POSITIONAFTER, end, 0);
+             if (next <= end) break;
+             end = next;
          }
-         Utils::endUndo(h);
+         if (end > pos) {
+             EditorOps::erase(h, EditRange::fromPositions(pos, end, false), reg, g_config.xStoreClipboard);
+         }
+         Registers::getInstance().resetActiveRegister();
+         state.deleteToBlackhole = false;
          state.recordLastOp(OP_MOTION, c, 'x');
      })
      .set("X", "Delete backward", [this](HWND h, int c) {
-         Utils::beginUndo(h);
+         char reg = Registers::getInstance().getActiveRegister();
+         if (state.deleteToBlackhole) reg = '_';
+         int pos = Utils::caretPos(h);
+         int start = pos;
          for (int i = 0; i < c; ++i) {
-             int pos = Utils::caretPos(h);
-             if (pos <= 0) break;
-             int prev = Utils::sci(h, SCI_POSITIONBEFORE, pos, 0);
-             if (prev < 0) prev = 0;
-             
-             // Get the character before deleting
-             std::string text = Utils::getTextRange(h, prev, pos);
-             
-             // Store in register if not blackhole
-             if (!state.deleteToBlackhole) {
-                 char reg = Utils::getCurrentRegister();
-                 if (reg != '_') {  // Skip blackhole register
-                     Utils::storeRegister(reg, text.c_str(), g_config.xStoreClipboard);
-                 }
-             }
-             
-             Utils::sci(h, SCI_DELETERANGE, prev, pos - prev);
+             int prev = (int)::SendMessage(h, SCI_POSITIONBEFORE, start, 0);
+             if (prev >= start) break;
+             start = prev;
          }
-         Utils::endUndo(h);
+         if (pos > start) {
+             EditorOps::erase(h, EditRange::fromPositions(start, pos, false), reg, g_config.xStoreClipboard);
+         }
+         Registers::getInstance().resetActiveRegister();
+         state.deleteToBlackhole = false;
          state.recordLastOp(OP_MOTION, c, 'X');
      })
      .set("r", "Replace char", [this](HWND h, int c) {
@@ -742,192 +693,24 @@ void NormalMode::setupKeyMaps() {
      .motion("~", '~', "Toggle case", [this](HWND h, int c) { motion.toggleCase(h, c); });
 
     k.set("J", "Join lines", [this](HWND h, int c) {
-        Utils::beginUndo(h);
-        Utils::joinLines(h, Utils::caretLine(h), c, true);
-        Utils::endUndo(h);
+        EditorOps::joinLines(h, Utils::caretLine(h), c, true);
         state.recordLastOp(OP_MOTION, c, 'J');
-     });
+    });
 
-   k.set("p", "Paste after", [this](HWND h, int c) {
-        char reg = Utils::getCurrentRegister();
-
-        std::string content;
-
-        if (reg == '+' || reg == '*') {
-            if (OpenClipboard(h)) {
-                HANDLE hData = GetClipboardData(CF_TEXT);
-
-                if (hData) {
-                    char* pszText = (char*)GlobalLock(hData);
-
-                    if (pszText) {
-                        content = pszText;
-                        GlobalUnlock(hData);
-                    }
-                }
-
-                CloseClipboard();
-            }
-        } else {
-            content = Utils::getRegisterContent(reg);
+    k.set("p", "Paste after", [this](HWND h, int c) {
+        char reg = Registers::getInstance().getActiveRegister();
+        for (int i = 0; i < c; i++) {
+            EditorOps::put(h, -1, reg, false);
         }
-
-        if (content.empty())
-            return;
-
-        Utils::beginUndo(h);
-
-        if (state.lastVisualWasBlock) {
-            for (int i = 0; i < c; i++) {
-                pasteBlock(h, content, true);
-            }
-        } else {
-            bool linewise = state.lastYankLinewise;
-
-            for (int i = 0; i < c; i++) {
-
-                if (linewise) {
-
-                int line = Utils::caretLine(h);
-
-                int insertPos =
-                    Utils::lineRange(h, line, true).second;
-
-                ::SendMessage(
-                    h,
-                    SCI_INSERTTEXT,
-                    insertPos,
-                    (LPARAM)content.c_str()
-                );
-
-                ::SendMessage(
-                    h,
-                    SCI_GOTOPOS,
-                    insertPos,
-                    0
-                );
-
-            } else {
-
-                int pos = Utils::caretPos(h);
-
-                int insertPos =
-                    ::SendMessage(
-                        h,
-                        SCI_POSITIONAFTER,
-                        pos,
-                        0
-                    );
-
-                ::SendMessage(
-                    h,
-                    SCI_INSERTTEXT,
-                    insertPos,
-                    (LPARAM)content.c_str()
-                );
-
-                ::SendMessage(
-                    h,
-                    SCI_GOTOPOS,
-                    insertPos + (int)content.size() - 1,
-                    0
-                );
-            }
-        }
-        } // end else for !state.lastVisualWasBlock
-
-        Utils::endUndo(h);
-
+        Registers::getInstance().resetActiveRegister();
         state.recordLastOp(OP_PASTE, c);
     })
     .set("P", "Paste before", [this](HWND h, int c) {
-
-        char reg = Utils::getCurrentRegister();
-
-        std::string content;
-
-        if (reg == '+' || reg == '*') {
-
-            if (OpenClipboard(h)) {
-
-                HANDLE hData = GetClipboardData(CF_TEXT);
-
-                if (hData) {
-
-                    char* pszText =
-                        (char*)GlobalLock(hData);
-
-                    if (pszText) {
-                        content = pszText;
-                        GlobalUnlock(hData);
-                    }
-                }
-
-                CloseClipboard();
-            }
-
-        } else {
-            content = Utils::getRegisterContent(reg);
+        char reg = Registers::getInstance().getActiveRegister();
+        for (int i = 0; i < c; i++) {
+            EditorOps::put(h, -1, reg, true);
         }
-
-        if (content.empty())
-            return;
-
-        Utils::beginUndo(h);
-
-        if (state.lastVisualWasBlock) {
-            for (int i = 0; i < c; i++) {
-                pasteBlock(h, content, false);
-            }
-        } else {
-            bool linewise = state.lastYankLinewise;
-
-            for (int i = 0; i < c; i++) {
-
-                if (linewise) {
-
-                int line = Utils::caretLine(h);
-
-                int insertPos =
-                    Utils::lineStart(h, line);
-
-                ::SendMessage(
-                    h,
-                    SCI_INSERTTEXT,
-                    insertPos,
-                    (LPARAM)content.c_str()
-                );
-
-                ::SendMessage(
-                    h,
-                    SCI_GOTOPOS,
-                    insertPos,
-                    0
-                );
-
-            } else {
-
-                int pos = Utils::caretPos(h);
-
-                ::SendMessage(
-                    h,
-                    SCI_INSERTTEXT,
-                    pos,
-                    (LPARAM)content.c_str()
-                );
-
-                ::SendMessage(
-                    h,
-                    SCI_GOTOPOS,
-                    pos,
-                    0
-                );
-            }
-        }
-        } // end else for !state.lastVisualWasBlock
-
-        Utils::endUndo(h);
-
+        Registers::getInstance().resetActiveRegister();
         state.recordLastOp(OP_PASTE, c);
     });
 
@@ -1775,25 +1558,21 @@ void NormalMode::handleMarkJumpInput(HWND hwnd, char mark, bool exactPosition) {
                     state.lastYankLinewise = false;
                 }
 
-                std::string text = Utils::getTextRange(hwnd, selStart, selEnd);
-                char reg = Utils::getCurrentRegister();
+                char reg = Registers::getInstance().getActiveRegister();
+                EditRange r = EditRange::fromPositions(selStart, selEnd, state.lastYankLinewise);
 
                 if (op == 'y') {
-                    Utils::storeRegister(reg, text, true);
+                    EditorOps::yank(hwnd, r, reg, true);
                     ::SendMessage(hwnd, SCI_GOTOPOS, (exactPosition ? selStart : Utils::lineStart(hwnd, (std::min)(startLine, endLine))), 0);
                     Utils::setStatus(TEXT("-- Yanked --"));
-                } else if (op == 'd' || op == 'c') {
-                    Utils::storeRegister(reg, text, (op == 'd' ? g_config.dStoreClipboard : g_config.cStoreClipboard));
-                    Utils::beginUndo(hwnd);
-                    Utils::select(hwnd, selStart, selEnd);
-                    ::SendMessage(hwnd, SCI_REPLACESEL, 0, (LPARAM)"");
+                } else if (op == 'd') {
+                    EditorOps::erase(hwnd, r, reg, g_config.dStoreClipboard);
                     ::SendMessage(hwnd, SCI_GOTOPOS, selStart, 0);
-                    Utils::endUndo(hwnd);
-                    if (op == 'c') {
-                        enterInsertMode();
-                    } else {
-                        Utils::setStatus(TEXT("-- Deleted --"));
-                    }
+                    Utils::setStatus(TEXT("-- Deleted --"));
+                } else if (op == 'c') {
+                    EditorOps::change(hwnd, r, reg, g_config.cStoreClipboard);
+                    ::SendMessage(hwnd, SCI_GOTOPOS, selStart, 0);
+                    enterInsertMode();
                 }
             }
         } else {
@@ -1809,7 +1588,7 @@ void NormalMode::handleMarkJumpInput(HWND hwnd, char mark, bool exactPosition) {
 
 void NormalMode::handleReplaceInput(HWND hwnd, char replaceChar) {
     int pos = Utils::caretPos(hwnd);
-    int len = ::SendMessage(hwnd, SCI_GETLENGTH, 0, 0);
+    int len = (int)::SendMessage(hwnd, SCI_GETLENGTH, 0, 0);
 
     if (pos < len) {
         char ch = (char)Utils::sci(hwnd, SCI_GETCHARAT, pos);
@@ -1825,48 +1604,18 @@ void NormalMode::handleReplaceInput(HWND hwnd, char replaceChar) {
 }
 
 void NormalMode::deleteLineOnce(HWND hwnd) {
-    int pos = Utils::caretPos(hwnd);
     int line = Utils::caretLine(hwnd);
-    auto range = Utils::lineRange(hwnd, line, true);
-
-    // Get the text before deleting
-    std::string text = Utils::getTextRange(hwnd, range.first, range.second);
-
-    // Store in register if not blackhole
-    if (!state.deleteToBlackhole && g_config.dStoreClipboard) {
-        char reg = Utils::getCurrentRegister();
-        if (reg != '_') {  // Skip blackhole register
-            Utils::storeRegister(reg, text.c_str(), g_config.dStoreClipboard);
-            Utils::setClipboardText(text.c_str());
-        }
-    }
-
-    Utils::select(hwnd, range.first, range.second);
-    ::SendMessage(hwnd, SCI_CUT, 0, 0);
-
-    int newPos = Utils::lineStart(hwnd, line);
-    if (newPos == -1) {
-        newPos = (int)::SendMessage(hwnd, SCI_GETLENGTH, 0, 0);
-    }
-    ::SendMessage(hwnd, SCI_GOTOPOS, newPos, 0);
+    char reg = Registers::getInstance().getActiveRegister();
+    if (state.deleteToBlackhole) reg = '_';
+    EditRange r = EditRange::fromLines(hwnd, line, line);
+    EditorOps::erase(hwnd, r, reg, g_config.dStoreClipboard);
 }
 
 void NormalMode::yankLineOnce(HWND hwnd) {
-    int pos = Utils::caretPos(hwnd);
     int line = Utils::caretLine(hwnd);
-    auto range = Utils::lineRange(hwnd, line, true);
-
-    // Get the text
-    std::string text = Utils::getTextRange(hwnd, range.first, range.second);
-
-    // Store in register
-    char reg = Utils::getCurrentRegister();
-    Utils::storeRegister(reg, text.c_str(), true);
-
-    Utils::select(hwnd, range.first, range.second);
-    ::SendMessage(hwnd, SCI_COPY, 0, 0);
-    Utils::select(hwnd, pos, pos);
-
+    char reg = Registers::getInstance().getActiveRegister();
+    EditRange r = EditRange::fromLines(hwnd, line, line);
+    EditorOps::yank(hwnd, r, reg, true);
     state.recordLastOp(OP_YANK_LINE, 1);
 }
 
@@ -2036,93 +1785,32 @@ void NormalMode::applyOperatorToMotion(HWND hwnd, char op, char motion, int coun
 }
 
 void NormalMode::handlePasteFromRegister(HWND hwnd, char pasteCmd, char reg) {
-    std::string content;
-
-    if (reg == '+' || reg == '*') {
-        // Get from system clipboard
-        if (OpenClipboard(hwnd)) {
-            HANDLE hData = GetClipboardData(CF_TEXT);
-            if (hData) {
-                char* pszText = (char*)GlobalLock(hData);
-                if (pszText) {
-                    content = pszText;
-                    GlobalUnlock(hData);
-                }
-            }
-            CloseClipboard();
-        }
-    } else {
-        content = Utils::getRegisterContent(reg);
+    if (pasteCmd == 'p') {
+        EditorOps::put(hwnd, -1, reg, false);
+    } else if (pasteCmd == 'P') {
+        EditorOps::put(hwnd, -1, reg, true);
     }
-
-    if (!content.empty()) {
-        Utils::beginUndo(hwnd);
-
-        if (pasteCmd == 'p') {
-            // Paste after cursor
-            Utils::pasteAfter(hwnd, 1, false);
-        } else if (pasteCmd == 'P') {
-            // Paste before cursor
-            Utils::pasteBefore(hwnd, 1, false);
-        }
-
-        Utils::endUndo(hwnd);
-        state.recordLastOp(OP_PASTE, 1);
-    } else {
-        Utils::setStatus(TEXT("-- Register empty --"));
-    }
-
-    // Reset to default register
-    Utils::setCurrentRegister('"');
+    state.recordLastOp(OP_PASTE, 1);
+    Registers::getInstance().resetActiveRegister();
     state.deleteToBlackhole = false;
 }
 
 void NormalMode::handleDeleteCharToRegister(HWND hwnd, char deleteCmd, char reg) {
-    Utils::beginUndo(hwnd);
-
     int pos = Utils::caretPos(hwnd);
-    int docLen = ::SendMessage(hwnd, SCI_GETLENGTH, 0, 0);
+    int docLen = (int)::SendMessage(hwnd, SCI_GETLENGTH, 0, 0);
 
     if (deleteCmd == 'x') {
-        // Delete character under cursor
-        if (pos >= docLen) {
-            Utils::endUndo(hwnd);
-            return;
-        }
-
-        int next = ::SendMessage(hwnd, SCI_POSITIONAFTER, pos, 0);
-        std::string text = Utils::getTextRange(hwnd, pos, next);
-
-        // Store in register
-        if (reg != '_') {  // Skip blackhole register
-            Utils::storeRegister(reg, text.c_str(), g_config.xStoreClipboard);
-        }
-
-        ::SendMessage(hwnd, SCI_SETSEL, pos, next);
-        ::SendMessage(hwnd, SCI_CLEAR, 0, 0);
-
+        if (pos >= docLen) return;
+        int next = (int)::SendMessage(hwnd, SCI_POSITIONAFTER, pos, 0);
+        EditorOps::erase(hwnd, EditRange::fromPositions(pos, next, false), reg, g_config.xStoreClipboard);
     } else if (deleteCmd == 'X') {
-        // Delete character before cursor
-        if (pos <= 0) {
-            Utils::endUndo(hwnd);
-            return;
-        }
-
-        int prev = ::SendMessage(hwnd, SCI_POSITIONBEFORE, pos, 0);
-        std::string text = Utils::getTextRange(hwnd, prev, pos);
-        // Store in register
-        if (reg != '_') {  // Skip blackhole register
-            Utils::storeRegister(reg, text.c_str(), g_config.xStoreClipboard);
-        }
-
-        ::SendMessage(hwnd, SCI_SETSEL, prev, pos);
-        ::SendMessage(hwnd, SCI_CLEAR, 0, 0);
+        if (pos <= 0) return;
+        int prev = (int)::SendMessage(hwnd, SCI_POSITIONBEFORE, pos, 0);
+        EditorOps::erase(hwnd, EditRange::fromPositions(prev, pos, false), reg, g_config.xStoreClipboard);
     }
 
-    Utils::endUndo(hwnd);
     state.recordLastOp(OP_MOTION, 1, deleteCmd);
-
-    Utils::setCurrentRegister('"');
+    Registers::getInstance().resetActiveRegister();
     state.deleteToBlackhole = false;
 }
 

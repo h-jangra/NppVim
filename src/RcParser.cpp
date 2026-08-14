@@ -1,6 +1,5 @@
 #include "../include/RcParser.h"
 #include "../include/OptionRegistry.h"
-#include "../include/MappingManager.h"
 #include "../include/ConfigManager.h"
 #include "../include/Utils.h"
 #include "../include/Keymap.h"
@@ -11,13 +10,6 @@
 RcParser& RcParser::getInstance() {
     static RcParser instance;
     return instance;
-}
-
-std::string RcParser::trim(const std::string& s) {
-    size_t first = s.find_first_not_of(" \t\r\n");
-    if (std::string::npos == first) return s;
-    size_t last = s.find_last_not_of(" \t\r\n");
-    return s.substr(first, (last - first + 1));
 }
 
 bool RcParser::isComment(const std::string& line) {
@@ -40,7 +32,7 @@ bool RcParser::parseFile(const std::string& path, HWND hwndEdit) {
 extern CommandMode* g_commandMode;
 
 bool RcParser::executeLine(const std::string& line, HWND hwndEdit) {
-    std::string s = trim(line);
+    std::string s = Utils::trim(line);
     if (isComment(s)) return true;
 
     std::stringstream ss(s);
@@ -49,7 +41,7 @@ bool RcParser::executeLine(const std::string& line, HWND hwndEdit) {
 
     std::string args;
     std::getline(ss, args);
-    args = trim(args);
+    args = Utils::trim(args);
 
     if (cmd == "set") {
         handleSet(args);
@@ -83,7 +75,7 @@ void RcParser::handleCommandDefinition(const std::string& args) {
     std::string alias, target;
     ss >> alias;
     std::getline(ss, target);
-    target = trim(target);
+    target = Utils::trim(target);
 
     if (!alias.empty() && !target.empty()) {
         CommandMode::addUserCommand(alias, target);
@@ -101,39 +93,37 @@ void RcParser::handleMapping(const std::string& cmd, const std::string& args) {
     std::string from, to;
     ss >> from;
     std::getline(ss, to);
-    to = trim(to);
+    to = Utils::trim(to);
 
     if (from.empty() || to.empty()) return;
 
     std::string transFrom = Utils::translateKeyNotation(from);
     std::string transTo = Utils::translateKeyNotation(to);
 
-    if (cmd == "map" || cmd == "noremap") {
-        if (g_normalKeymap) g_normalKeymap->addMapping(transFrom, transTo, recursive);
-        if (g_visualKeymap) g_visualKeymap->addMapping(transFrom, transTo, recursive);
-        if (g_insertKeymap) g_insertKeymap->addMapping(transFrom, transTo, recursive);
-        if (g_commandKeymap) g_commandKeymap->addMapping(transFrom, transTo, recursive);
-    } else if (cmd == "nmap" || cmd == "nnoremap") {
-        if (g_normalKeymap) g_normalKeymap->addMapping(transFrom, transTo, recursive);
-    } else if (cmd == "imap" || cmd == "inoremap") {
-        if (g_insertKeymap) g_insertKeymap->addMapping(transFrom, transTo, recursive);
-    } else if (cmd == "vmap" || cmd == "vnoremap") {
-        if (g_visualKeymap) g_visualKeymap->addMapping(transFrom, transTo, recursive);
-    } else if (cmd == "cmap" || cmd == "cnoremap") {
-        if (g_commandKeymap) g_commandKeymap->addMapping(transFrom, transTo, recursive);
-    }
-    
-    // Also store in MappingManager for listing
     MappingMode mode = MappingMode::All;
     if (cmd[0] == 'n') mode = MappingMode::Normal;
     else if (cmd[0] == 'i') mode = MappingMode::Insert;
     else if (cmd[0] == 'v') mode = MappingMode::Visual;
     else if (cmd[0] == 'c') mode = MappingMode::Command;
-    MappingManager::getInstance().addMapping(mode, from, to, recursive);
+
+    if (mode == MappingMode::All) {
+        if (g_normalKeymap) g_normalKeymap->addMapping(transFrom, transTo, recursive, mode);
+        if (g_visualKeymap) g_visualKeymap->addMapping(transFrom, transTo, recursive, mode);
+        if (g_insertKeymap) g_insertKeymap->addMapping(transFrom, transTo, recursive, mode);
+        if (g_commandKeymap) g_commandKeymap->addMapping(transFrom, transTo, recursive, mode);
+    } else if (mode == MappingMode::Normal) {
+        if (g_normalKeymap) g_normalKeymap->addMapping(transFrom, transTo, recursive, mode);
+    } else if (mode == MappingMode::Insert) {
+        if (g_insertKeymap) g_insertKeymap->addMapping(transFrom, transTo, recursive, mode);
+    } else if (mode == MappingMode::Visual) {
+        if (g_visualKeymap) g_visualKeymap->addMapping(transFrom, transTo, recursive, mode);
+    } else if (mode == MappingMode::Command) {
+        if (g_commandKeymap) g_commandKeymap->addMapping(transFrom, transTo, recursive, mode);
+    }
 }
 
 void RcParser::handleUnmapping(const std::string& cmd, const std::string& args) {
-    std::string from = trim(args);
+    std::string from = Utils::trim(args);
     if (from.empty()) return;
 
     std::string transFrom = Utils::translateKeyNotation(from);
@@ -152,13 +142,6 @@ void RcParser::handleUnmapping(const std::string& cmd, const std::string& args) 
     } else if (cmd == "cunmap") {
         if (g_commandKeymap) g_commandKeymap->removeMapping(transFrom);
     }
-    
-    MappingMode mode = MappingMode::All;
-    if (cmd[0] == 'n') mode = MappingMode::Normal;
-    else if (cmd[0] == 'i') mode = MappingMode::Insert;
-    else if (cmd[0] == 'v') mode = MappingMode::Visual;
-    else if (cmd[0] == 'c') mode = MappingMode::Command;
-    MappingManager::getInstance().removeMapping(mode, from);
 }
 
 void RcParser::handleSource(const std::string& path, HWND hwndEdit) {

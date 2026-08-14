@@ -91,7 +91,15 @@ public:
 
     static std::string toUtf8(wchar_t wch);
     static std::string toUtf8(const std::wstring& wstr);
+    static std::string toUtf8(const wchar_t* wstr);
+    static std::wstring toWide(const std::string& str);
+    static std::wstring toWide(const char* str);
     static std::string trim(const std::string& s);
+    static std::string trimLeft(const std::string& s);
+    static std::string trimRight(const std::string& s);
+    static std::vector<std::string> splitLines(const std::string& str);
+    static std::vector<std::string> split(const std::string& str, char delim);
+    static std::string getCurrentFilePath();
     static std::string translateKeyNotation(const std::string& input);
     static std::string getTextRange(HWND h, int start, int end);
     static void parseLangmap(const std::string& langmapStr);

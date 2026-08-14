@@ -29,6 +29,21 @@ public:
     std::unordered_map<char, std::shared_ptr<KeymapNode>> children;
 };
 
+enum class MappingMode {
+    Normal,
+    Insert,
+    Visual,
+    Command,
+    All
+};
+
+struct Mapping {
+    std::string from;
+    std::string to;
+    bool recursive = true;
+    MappingMode mode = MappingMode::All;
+};
+
 struct KeyBinding {
     std::string keys;
     std::string desc;
@@ -51,9 +66,12 @@ public:
     void reset();
     
     // Support for dynamic mappings
-    void addMapping(const std::string& from, const std::string& to, bool recursive);
+    void addMapping(const std::string& from, const std::string& to, bool recursive, MappingMode mode = MappingMode::All);
     void removeMapping(const std::string& from);
     void clearDynamicMappings();
+    std::vector<Mapping> getUserMappings() const;
+    static std::vector<Mapping> getAllUserMappings(MappingMode mode = MappingMode::All);
+    static void clearAllDynamicMappings();
 
     void setIgnoreUserMappings(bool ignore) { ignoreUserMappings = ignore; }
     bool getIgnoreUserMappings() const { return ignoreUserMappings; }
@@ -72,6 +90,7 @@ private:
     bool allowCount = true;
     bool ignoreUserMappings = false;
     std::vector<KeyBinding> bindings;
+    std::unordered_map<std::string, Mapping> userMappings;
     
     void insertKeySequence(const std::string& keys, KeyHandler handler, char motionChar = 0);
     void insertUserKeySequence(const std::string& keys, KeyHandler handler);

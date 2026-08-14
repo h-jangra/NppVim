@@ -70,21 +70,7 @@ int Marks::getMarkerNumber(char mark) {
 }
 
 std::string Marks::getCurrentFilename() {
-    TCHAR filename[MAX_PATH] = {0};
-    ::SendMessage(nppData._nppHandle, NPPM_GETFULLCURRENTPATH, MAX_PATH, (LPARAM)filename);
-
-    std::string result;
-#ifdef UNICODE
-    int len = WideCharToMultiByte(CP_UTF8, 0, filename, -1, NULL, 0, NULL, NULL);
-    if (len > 0) {
-        result.resize(len);
-        WideCharToMultiByte(CP_UTF8, 0, filename, -1, &result[0], len, NULL, NULL);
-        result.pop_back(); // Remove null terminator
-    }
-#else
-    result = filename;
-#endif
-    return result;
+    return Utils::getCurrentFilePath();
 }
 
 void Marks::recordLastChange(HWND hwndEdit) {
@@ -327,12 +313,8 @@ bool Marks::jumpToMark(HWND hwndEdit, char mark, bool isBacktick) {
     bool fileSwitched = false;
     if (!markInfo.filename.empty() && markInfo.filename != currentFile) {
 #ifdef UNICODE
-        int len = MultiByteToWideChar(CP_UTF8, 0, markInfo.filename.c_str(), -1, NULL, 0);
-        if (len > 0) {
-            std::wstring wideFilename(len, 0);
-            MultiByteToWideChar(CP_UTF8, 0, markInfo.filename.c_str(), -1, &wideFilename[0], len);
-            ::SendMessage(nppData._nppHandle, NPPM_DOOPEN, 0, (LPARAM)wideFilename.c_str());
-        }
+        std::wstring wideFilename = Utils::toWide(markInfo.filename);
+        ::SendMessage(nppData._nppHandle, NPPM_DOOPEN, 0, (LPARAM)wideFilename.c_str());
 #else
         ::SendMessage(nppData._nppHandle, NPPM_DOOPEN, 0, (LPARAM)markInfo.filename.c_str());
 #endif

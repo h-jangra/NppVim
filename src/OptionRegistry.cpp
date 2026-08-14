@@ -1,10 +1,32 @@
 #include "../include/OptionRegistry.h"
+#include "../include/Utils.h"
 #include <sstream>
 #include <algorithm>
 
 OptionRegistry& OptionRegistry::getInstance() {
     static OptionRegistry instance;
     return instance;
+}
+
+std::string OptionRegistry::resolveAlias(const std::string& name) {
+    static const std::unordered_map<std::string, std::string> aliases = {
+        {"so", "scrolloff"},
+        {"nu", "number"},
+        {"rnu", "relativenumber"},
+        {"tw", "textwidth"},
+        {"ic", "ignorecase"},
+        {"noic", "noignorecase"},
+        {"hls", "hlsearch"},
+        {"nohls", "nohlsearch"},
+        {"et", "expandtab"},
+        {"ts", "tabstop"},
+        {"sw", "shiftwidth"},
+        {"cul", "cursorline"},
+        {"wrap", "wrap"},
+        {"list", "list"}
+    };
+    auto it = aliases.find(name);
+    return (it != aliases.end()) ? it->second : name;
 }
 
 void OptionRegistry::registerOption(const std::string& name, OptionType type, OptionValue defaultValue, OptionSetter setter, const std::string& desc) {
@@ -15,11 +37,7 @@ void OptionRegistry::registerOption(const std::string& name, OptionType type, Op
 }
 
 bool OptionRegistry::setOption(const std::string& nameInput, const OptionValue& value) {
-    std::string name = nameInput;
-    if (name == "so") name = "scrolloff";
-    if (name == "nu") name = "number";
-    if (name == "rnu") name = "relativenumber";
-    if (name == "tw") name = "textwidth";
+    std::string name = resolveAlias(nameInput);
     auto it = options.find(name);
     if (it != options.end()) {
         it->second.value = value;
@@ -41,12 +59,8 @@ void OptionRegistry::resetToDefaults() {
 }
 
 bool OptionRegistry::setOptionFromString(const std::string& line) {
-    std::string s = line;
-    if (s.find("set ") == 0) s = s.substr(4);
-    
-    // Trim
-    s.erase(0, s.find_first_not_of(" \t"));
-    s.erase(s.find_last_not_of(" \t") + 1);
+    std::string s = Utils::trim(line);
+    if (s.find("set ") == 0) s = Utils::trim(s.substr(4));
 
     if (s.empty()) return false;
 
@@ -63,22 +77,14 @@ bool OptionRegistry::setOptionFromString(const std::string& line) {
     for (const auto& tok : tokens) {
         std::string name = tok;
         OptionValue value;
-        bool isBool = true;
         bool boolVal = true;
 
         size_t eqPos = tok.find('=');
         if (eqPos != std::string::npos) {
-            name = tok.substr(0, eqPos);
-            std::string valStr = tok.substr(eqPos + 1);
-            
-            // Trim name and valStr
-            name.erase(0, name.find_first_not_of(" \t"));
-            name.erase(name.find_last_not_of(" \t") + 1);
-            valStr.erase(0, valStr.find_first_not_of(" \t"));
-            valStr.erase(valStr.find_last_not_of(" \t") + 1);
+            name = Utils::trim(tok.substr(0, eqPos));
+            std::string valStr = Utils::trim(tok.substr(eqPos + 1));
+            name = resolveAlias(name);
 
-            isBool = false;
-            
             // Check if it's a number or string
             try {
                 value = std::stoi(valStr);
@@ -87,29 +93,22 @@ bool OptionRegistry::setOptionFromString(const std::string& line) {
             }
         } else {
             if (name.find("no") == 0) {
-                std::string potentialName = name.substr(2);
-                // Handle aliases before checking prefix
-                if (potentialName == "nu") potentialName = "number";
-                if (potentialName == "rnu") potentialName = "relativenumber";
-                if (potentialName == "so") potentialName = "scrolloff";
-                if (potentialName == "tw") potentialName = "textwidth";
-
+                std::string potentialName = resolveAlias(name.substr(2));
                 if (options.count(potentialName)) {
                     name = potentialName;
                     boolVal = false;
-                } else if (options.count(name)) {
-                    // it's an option that happens to start with 'no'
+                } else if (options.count(resolveAlias(name))) {
+                    name = resolveAlias(name);
                     boolVal = true;
+                } else {
+                    name = potentialName;
+                    boolVal = false;
                 }
+            } else {
+                name = resolveAlias(name);
             }
             value = boolVal;
         }
-
-        // Handle aliases (for positive case)
-        if (name == "nu") name = "number";
-        if (name == "rnu") name = "relativenumber";
-        if (name == "so") name = "scrolloff";
-        if (name == "tw") name = "textwidth";
 
         if (!setOption(name, value)) {
             allSuccess = false;
@@ -120,11 +119,7 @@ bool OptionRegistry::setOptionFromString(const std::string& line) {
 }
 
 OptionValue OptionRegistry::getOption(const std::string& nameInput) const {
-    std::string name = nameInput;
-    if (name == "so") name = "scrolloff";
-    if (name == "nu") name = "number";
-    if (name == "rnu") name = "relativenumber";
-    if (name == "tw") name = "textwidth";
+    std::string name = resolveAlias(nameInput);
     auto it = options.find(name);
     if (it != options.end()) {
         return it->second.value;

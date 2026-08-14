@@ -2,6 +2,8 @@
 #include "NppVim.h"
 #include <windows.h>
 #include <string>
+#include <unordered_map>
+#include <functional>
 
 #define IND_SUB_MATCH    20
 #define IND_SUB_REPL     21
@@ -30,6 +32,14 @@ struct SubstitutionParsed {
     bool confirmEach = false;
     bool countOnly = false;
     bool suppressError = false;
+};
+
+struct ParsedExCommand {
+    ExRange range;
+    std::string name;
+    bool force = false;
+    std::string args;
+    std::string fullRaw;
 };
 
 class CommandMode {
@@ -72,12 +82,15 @@ public:
     static void executeBufferSwitch(HWND hwndEdit, const std::string& arg);
 
     static bool parseRange(const std::string& input, HWND hwndEdit, const VimState& state, ExRange& range, size_t& cmdStartPos);
+    bool parseExCommand(const std::string& input, HWND hwndEdit, ParsedExCommand& outCmd);
     static std::string expandVimPathVariables(const std::string& cmdStr);
 
 private:
     VimState& state;
     std::string lastPreviewBuffer;
+    std::unordered_map<std::string, std::function<void(HWND, const ParsedExCommand&)>> commandRegistry;
 
+    void initCommandRegistry();
     void handleCommand(HWND hwndEdit);
     void performSubstitution(HWND hwndEdit, const SubstitutionParsed& parsed);
 

@@ -3,6 +3,8 @@
 #include "../include/Utils.h"
 #include "../include/NormalMode.h"
 #include "../include/VisualMode.h"
+#include "../include/Registers.h"
+#include "../include/EditorOps.h"
 #include "../plugin/Scintilla.h"
 #include <cctype>
 
@@ -401,54 +403,37 @@ void TextObject::executeTextObjectOperation(HWND h, VimState& state, char op, in
     if (start >= end) return;
 
     if (op == 'v') {
-        if (state.mode != VISUAL) {
-            state.mode = VISUAL;
-            state.isLineVisual = false;
-            state.isBlockVisual = false;
-            state.visualAnchor = start;
-            state.visualAnchorLine = ::SendMessage(h, SCI_LINEFROMPOSITION, start, 0);
-            ::SendMessage(h, SCI_SETANCHOR, start, 0);
-            ::SendMessage(h, SCI_SETCURRENTPOS, end, 0);
-        } else {
-            state.visualAnchor = start;
-            state.visualAnchorLine = ::SendMessage(h, SCI_LINEFROMPOSITION, start, 0);
-            ::SendMessage(h, SCI_SETANCHOR, start, 0);
-            ::SendMessage(h, SCI_SETCURRENTPOS, end, 0);
-            Utils::select(h, start, end);
-        }
+        state.mode = VISUAL;
+        state.isLineVisual = false;
+        state.isBlockVisual = false;
+        state.visualAnchor = start;
+        state.visualAnchorLine = (int)::SendMessage(h, SCI_LINEFROMPOSITION, start, 0);
+        ::SendMessage(h, SCI_SETANCHOR, start, 0);
+        ::SendMessage(h, SCI_SETCURRENTPOS, end, 0);
+        Utils::select(h, start, end);
         return;
     }
 
-    Utils::select(h, start, end);
+    char reg = Registers::getInstance().getActiveRegister();
+    if (state.deleteToBlackhole && op != 'y') reg = '_';
 
-    std::string text = Utils::getTextRange(h, start, end);
+    EditRange r = EditRange::fromPositions(start, end, false);
 
-    char reg = Utils::getCurrentRegister();
-    
-    if (op == 'y' || op == 'd' || op == 'c') {
-        if (!(state.deleteToBlackhole && op != 'y')) {
-            if (reg != '_') {
-                Utils::storeRegister(reg, text.c_str());
-            }
-        }
-    }
-    
     switch (op) {
     case 'd':
-        ::SendMessage(h, SCI_CLEAR, 0, 0);
-        ::SendMessage(h, SCI_SETCURRENTPOS, start, 0);
+        EditorOps::erase(h, r, reg, g_config.dStoreClipboard);
         state.recordLastOp(OP_MOTION, count, 'd');
         break;
 
     case 'c':
-        ::SendMessage(h, SCI_CLEAR, 0, 0);
+        EditorOps::change(h, r, reg, g_config.cStoreClipboard);
         state.recordLastOp(OP_MOTION, count, 'c');
         if (g_normalMode) g_normalMode->enterInsertMode();
         break;
 
     case 'y':
-        // ::SendMessage(h, SCI_COPY, 0, 0);
-        ::SendMessage(h, SCI_SETSEL, start, start);
+        EditorOps::yank(h, r, reg, true);
+        Utils::select(h, start, start);
         state.recordLastOp(OP_MOTION, count, 'y');
         break;
     }

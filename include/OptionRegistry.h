@@ -35,7 +35,23 @@ public:
     void resetToDefaults();
 
     OptionValue getOption(const std::string& name) const;
+    bool getBool(const std::string& name) const {
+        auto val = getOption(name);
+        if (std::holds_alternative<bool>(val)) return std::get<bool>(val);
+        return false;
+    }
+    int getInt(const std::string& name) const {
+        auto val = getOption(name);
+        if (std::holds_alternative<int>(val)) return std::get<int>(val);
+        return 0;
+    }
+    std::string getString(const std::string& name) const {
+        auto val = getOption(name);
+        if (std::holds_alternative<std::string>(val)) return std::get<std::string>(val);
+        return "";
+    }
     
+    static std::string resolveAlias(const std::string& name);
     std::vector<OptionInfo> getAllOptions() const;
 
 private:

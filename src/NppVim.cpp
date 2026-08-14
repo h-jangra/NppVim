@@ -23,7 +23,7 @@
 #include "../include/Motion.h"
 #include "../include/ConfigManager.h"
 #include "../include/OptionRegistry.h"
-#include "../include/MappingManager.h"
+#include "../include/Keymap.h"
 #include "../include/RcParser.h"
 #include "../include/Marks.h"
 #include <algorithm>
@@ -951,7 +951,7 @@ void reloadConfiguration() {
     if (g_visualMode) delete g_visualMode; 
     if (g_commandMode) delete g_commandMode;
     
-    MappingManager::getInstance().clearMappings();
+    Keymap::clearAllDynamicMappings();
     CommandMode::clearUserCommands();
     OptionRegistry::getInstance().resetToDefaults();
 

@@ -222,7 +222,9 @@ void Keymap::feedKey(HWND hwnd, char c) {
     }
 }
 
-void Keymap::addMapping(const std::string& from, const std::string& to, bool recursive) {
+void Keymap::addMapping(const std::string& from, const std::string& to, bool recursive, MappingMode mode) {
+    userMappings[from] = { from, to, recursive, mode };
+
     auto handler = [to, recursive](HWND hwnd, int count) {
         static int depth = 0;
         if (depth > 20) {
@@ -262,6 +264,7 @@ void Keymap::addMapping(const std::string& from, const std::string& to, bool rec
 }
 
 void Keymap::removeMapping(const std::string& from) {
+    userMappings.erase(from);
     auto node = root;
     for (char key : from) {
         if (node->children.find(key) == node->children.end()) return;
@@ -281,5 +284,47 @@ static void clearUserNodes(std::shared_ptr<KeymapNode> node) {
 }
 
 void Keymap::clearDynamicMappings() {
+    userMappings.clear();
     clearUserNodes(root);
+}
+
+std::vector<Mapping> Keymap::getUserMappings() const {
+    std::vector<Mapping> result;
+    for (const auto& [_, mapping] : userMappings) {
+        result.push_back(mapping);
+    }
+    return result;
+}
+
+std::vector<Mapping> Keymap::getAllUserMappings(MappingMode mode) {
+    std::vector<Mapping> result;
+    auto appendMappings = [&](const Keymap* km) {
+        if (!km) return;
+        for (const auto& m : km->getUserMappings()) {
+            result.push_back(m);
+        }
+    };
+
+    if (mode == MappingMode::Normal) {
+        appendMappings(g_normalKeymap.get());
+    } else if (mode == MappingMode::Visual) {
+        appendMappings(g_visualKeymap.get());
+    } else if (mode == MappingMode::Insert) {
+        appendMappings(g_insertKeymap.get());
+    } else if (mode == MappingMode::Command) {
+        appendMappings(g_commandKeymap.get());
+    } else {
+        appendMappings(g_normalKeymap.get());
+        appendMappings(g_visualKeymap.get());
+        appendMappings(g_insertKeymap.get());
+        appendMappings(g_commandKeymap.get());
+    }
+    return result;
+}
+
+void Keymap::clearAllDynamicMappings() {
+    if (g_normalKeymap) g_normalKeymap->clearDynamicMappings();
+    if (g_visualKeymap) g_visualKeymap->clearDynamicMappings();
+    if (g_insertKeymap) g_insertKeymap->clearDynamicMappings();
+    if (g_commandKeymap) g_commandKeymap->clearDynamicMappings();
 }

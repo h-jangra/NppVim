@@ -4,6 +4,8 @@
 #include "../include/Keymap.h"
 #include "../include/NppVim.h"
 #include "../include/TextObject.h"
+#include "../include/Registers.h"
+#include "../include/EditorOps.h"
 #include "../include/Utils.h"
 #include "../plugin/menuCmdID.h"
 #include "../plugin/Scintilla.h"
@@ -39,190 +41,61 @@ void VisualMode::updateBlockAfterMove(HWND h, int newCaret) {
 void VisualMode::setupKeyMaps() {
     auto& k = *g_visualKeymap;
 
-    k.set("d", "Delete selection", [this](HWND h, int c) {
-        char reg = Utils::getCurrentRegister();
-        bool toBlackhole = (reg == '_' || state.deleteToBlackhole);
-
-        Utils::beginUndo(h);
-
+    auto getSelectionRange = [this](HWND h) -> EditRange {
         if (state.isBlockVisual) {
-            BlockSelection blk = Utils::blockSelection(h);
-
-            // Store in register unless it's blackhole
-            if (!toBlackhole && g_config.dStoreClipboard) {
-                std::string content = getSelectedText(h);
-
-                if (!content.empty()) {
-                    Utils::storeRegister(reg, content, g_config.dStoreClipboard);
-                }
-            }
-
-            // Clear the block selection
-            ::SendMessage(h, SCI_CLEAR, 0, 0);
-            Utils::clearBlockSelection(h);
-            int pos = Utils::caretPos(h);
-            Utils::select(h, pos, pos);
-            Utils::setCurrentRegister('"');
-            state.deleteToBlackhole = false;
+            return EditRange::fromBlock(Utils::blockSelection(h));
         }
-        else if (state.isLineVisual) {
-            int startPos = ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
-            int endPos = ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
+        int s = (int)::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
+        int e = (int)::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
+        return EditRange::fromPositions(s, e, state.isLineVisual);
+    };
 
-            // Store in register unless it's blackhole
-            if (!toBlackhole && g_config.dStoreClipboard) {
-                std::string content = getSelectedText(h);
-                if (!content.empty()) {
-                    Utils::storeRegister(reg, content, g_config.dStoreClipboard);
-                }
-                state.lastYankLinewise = true;
-            }
-
-            Utils::clear(h, startPos, endPos);
-            Utils::setCurrentRegister('"');
-            state.deleteToBlackhole = false;
-        }
-        else {
-            int startPos = ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
-            int endPos = ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
-
-            // Store in register unless it's blackhole
-            if (!toBlackhole && g_config.dStoreClipboard) {
-                std::string content = getSelectedText(h);
-                if (!content.empty()) {
-                    Utils::storeRegister(reg, content, g_config.dStoreClipboard);
-                }
-                state.lastYankLinewise = false;
-            }
-
-            Utils::clear(h, startPos, endPos);
-        }
-         Utils::endUndo(h);
-         state.recordLastOp(OP_MOTION, c, 'd');
-         
-         saveVisualSelection(h);
-         exitToNormal(h);
-     })
-    .set("x", "Clear selection", [this](HWND h, int c) {
-        char reg = Utils::getCurrentRegister();
-        bool toBlackhole = (reg == '_' || state.deleteToBlackhole);
-
-        Utils::beginUndo(h);
-
-        if (state.isBlockVisual) {
-            if (!toBlackhole && g_config.xStoreClipboard) {
-                std::string content = getSelectedText(h);
-                if (!content.empty()) {
-                    Utils::storeRegister(reg, content, g_config.xStoreClipboard);
-                }
-            }
-            ::SendMessage(h, SCI_CLEAR, 0, 0);
-            Utils::clearBlockSelection(h);
-            int pos = Utils::caretPos(h);
-            Utils::select(h, pos, pos);
-        } else {
-            int startPos = ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
-            int endPos = ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
-
-            if (!toBlackhole && g_config.xStoreClipboard) {
-                std::string content = getSelectedText(h);
-
-                if (!content.empty()) {
-                    Utils::storeRegister(reg, content, g_config.xStoreClipboard);
-                }
-
-                state.lastYankLinewise = state.isLineVisual;
-            }
-
-            Utils::clear(h, startPos, endPos);
-        }
-
-        Utils::endUndo(h);
-
-        Utils::setCurrentRegister('"');
+    k.set("d", "Delete selection", [this, getSelectionRange](HWND h, int c) {
+        char reg = Registers::getInstance().getActiveRegister();
+        if (state.deleteToBlackhole) reg = '_';
+        EditorOps::erase(h, getSelectionRange(h), reg, g_config.dStoreClipboard);
+        Registers::getInstance().resetActiveRegister();
+        state.deleteToBlackhole = false;
+        state.recordLastOp(OP_MOTION, c, 'd');
+        saveVisualSelection(h);
+        exitToNormal(h);
+    })
+    .set("x", "Clear selection", [this, getSelectionRange](HWND h, int c) {
+        char reg = Registers::getInstance().getActiveRegister();
+        if (state.deleteToBlackhole) reg = '_';
+        EditorOps::erase(h, getSelectionRange(h), reg, g_config.xStoreClipboard);
+        Registers::getInstance().resetActiveRegister();
         state.deleteToBlackhole = false;
         state.recordLastOp(OP_MOTION, c, 'x');
-
         saveVisualSelection(h);
         exitToNormal(h);
     })
-    .set("y", "Yank selection", [this](HWND h, int c) {
-        char reg = Utils::getCurrentRegister();
-
-        if (state.isBlockVisual) {
-            int anchor = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
-            int caret = ::SendMessage(h, SCI_GETRECTANGULARSELECTIONCARET, 0, 0);
-
-            if (anchor == caret) {
-                state.recordLastOp(OP_MOTION, c, 'y');
-                exitToNormal(h);
-                return;
-            }
-
-            std::string content = getSelectedText(h);
-
-            if (!content.empty() && reg != '_') {
-                Utils::storeRegister(reg, content, true);
-            }
-        }
-        else if (state.isLineVisual) {
-            int startPos = ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
-            int endPos = ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
-
-            std::string content = getSelectedText(h);
-            if (!content.empty() && reg != '_') {
-                Utils::storeRegister(reg, content, true);
-            }
-            state.lastYankLinewise = true;
-        }
-        else {
-            int startPos = ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
-            int endPos = ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
-
-            std::string content = getSelectedText(h);
-            if (!content.empty() && reg != '_') {
-                Utils::storeRegister(reg, content, true);
-            }
-            state.lastYankLinewise = false;
-        }
-
-        Utils::setCurrentRegister('"');
+    .set("y", "Yank selection", [this, getSelectionRange](HWND h, int c) {
+        char reg = Registers::getInstance().getActiveRegister();
+        EditorOps::yank(h, getSelectionRange(h), reg, true);
+        Registers::getInstance().resetActiveRegister();
         state.deleteToBlackhole = false;
         state.recordLastOp(OP_MOTION, c, 'y');
-
         saveVisualSelection(h);
         exitToNormal(h);
     })
-     .set("c", "Change selection", [this](HWND h, int c) {
-        char reg = Utils::getCurrentRegister();
-        bool toBlackhole = (reg == '_' || state.deleteToBlackhole);
-
-        Utils::beginUndo(h);
-
+    .set("c", "Change selection", [this, getSelectionRange](HWND h, int c) {
+        char reg = Registers::getInstance().getActiveRegister();
+        if (state.deleteToBlackhole) reg = '_';
         if (state.isBlockVisual) {
             BlockSelection blk = Utils::blockSelection(h);
-
-            // Store in register unless it's blackhole
-            if (!toBlackhole) {
-                std::string content = getSelectedText(h);
-
-                if (!content.empty()) {
-                    Utils::storeRegister(reg, content, g_config.cStoreClipboard);
-                }
+            std::string content = getSelectedText(h);
+            if (!content.empty() && reg != '_') {
+                Registers::getInstance().set(reg, content, RegisterType::BlockWise, g_config.cStoreClipboard);
             }
-
-            // Clear the block selection
             ::SendMessage(h, SCI_CLEAR, 0, 0);
             Utils::clearBlockSelection(h);
             ::SendMessage(h, SCI_CLEARSELECTIONS, 0, 0);
-
-            // Set up multiple cursors at the start of each line in the block
             bool first = true;
             for (int line = blk.startLine; line <= blk.endLine; line++) {
                 int lineEnd = Utils::lineEnd(h, line);
                 int pos = (int)::SendMessage(h, SCI_FINDCOLUMN, line, blk.startCol);
                 if (pos > lineEnd) pos = lineEnd;
-
                 if (first) {
                     Utils::select(h, pos, pos);
                     first = false;
@@ -230,27 +103,14 @@ void VisualMode::setupKeyMaps() {
                     ::SendMessage(h, SCI_ADDSELECTION, pos, pos);
                 }
             }
+        } else {
+            EditorOps::change(h, getSelectionRange(h), reg, g_config.cStoreClipboard);
         }
-        else {
-            int startPos = ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
-            int endPos = ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
-
-            // Store in register unless it's blackhole
-            if (!toBlackhole && g_config.cStoreClipboard) {
-                std::string content = getSelectedText(h);
-                if (!content.empty()) {
-                    Utils::storeRegister(reg, content, g_config.cStoreClipboard);
-                }
-            }
-
-            Utils::clear(h, startPos, endPos);
-        }
-         Utils::endUndo(h);
-         state.recordLastOp(OP_MOTION, c, 'c');
-         Utils::setCurrentRegister('"');
-         state.deleteToBlackhole = false;
-         if (g_normalMode) g_normalMode->enterInsertMode();
-     })
+        Registers::getInstance().resetActiveRegister();
+        state.deleteToBlackhole = false;
+        state.recordLastOp(OP_MOTION, c, 'c');
+        if (g_normalMode) g_normalMode->enterInsertMode();
+    })
     .set("o", "Switch cursor", [this](HWND h, int c) {
         if (state.isLineVisual) {
             int total = ::SendMessage(h, SCI_GETLINECOUNT, 0, 0);
@@ -979,192 +839,62 @@ void VisualMode::setupKeyMaps() {
     });
 
     k.set("p", "Paste over selection", [this](HWND h, int c) {
+        char reg = Registers::getInstance().getActiveRegister();
+        std::string content = Registers::getInstance().get(reg);
+        if (content.empty()) content = Registers::getClipboardText();
+        if (content.empty()) return;
 
-        char reg = Utils::getCurrentRegister();
-
-        std::string content;
-        std::string originalContent;
-
-        if (reg == '+' || reg == '*') {
-
-            if (OpenClipboard(h)) {
-
-                HANDLE hData = GetClipboardData(CF_TEXT);
-
-                if (hData) {
-
-                    char* pszText =
-                        (char*)GlobalLock(hData);
-
-                    if (pszText) {
-                        content = pszText;
-                        GlobalUnlock(hData);
-                    }
-                }
-
-                CloseClipboard();
-            }
-
-        } else {
-            content = Utils::getRegisterContent(reg);
+        std::string replaced = getSelectedText(h);
+        Utils::beginUndo(h);
+        if (!replaced.empty() && reg != '"') {
+            Registers::getInstance().set('"', replaced, RegisterType::CharacterWise, false);
         }
-
-        originalContent = content;
-
-        if (content.empty())
-            return;
 
         if (state.isBlockVisual) {
-            std::string replaced = getSelectedText(h);
-            Utils::beginUndo(h);
-            if (!replaced.empty() && reg != '"') {
-                Utils::storeRegister('"', replaced, false);
-            }
             std::string repeatedContent = "";
-            for (int i = 0; i < c; i++) {
-                repeatedContent += content;
-            }
+            for (int i = 0; i < c; i++) repeatedContent += content;
             ::SendMessage(h, SCI_REPLACESEL, 0, (LPARAM)repeatedContent.c_str());
             Utils::clearBlockSelection(h);
-            Utils::endUndo(h);
-            if (reg == '"') {
-                Utils::storeRegister('"', originalContent, false);
+        } else {
+            int start = (int)::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
+            int end = (int)::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
+            Utils::clear(h, start, end);
+            for (int i = 0; i < c; i++) {
+                ::SendMessage(h, SCI_INSERTTEXT, start, (LPARAM)content.c_str());
             }
-            exitToNormal(h);
-            return;
+            int newEnd = start + ((int)content.size() * c);
+            Utils::select(h, start, newEnd);
         }
-
-        int start =
-            ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
-
-        int end =
-            ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
-
-        std::string replaced =
-            getSelectedText(h);
-
-        Utils::beginUndo(h);
-
-        if (!replaced.empty() && reg != '"') {
-            Utils::storeRegister('"', replaced, false);
-        }
-
-        Utils::clear(h, start, end);
-
-        for (int i = 0; i < c; i++) {
-
-            ::SendMessage(
-                h,
-                SCI_INSERTTEXT,
-                start,
-                (LPARAM)content.c_str()
-            );
-        }
-
-        if (reg == '"') {
-            Utils::storeRegister('"', originalContent, false);
-        }
-
-        int newEnd =
-            start + ((int)content.size() * c);
-
-        Utils::select(h, start, newEnd);
-
         Utils::endUndo(h);
-
         exitToNormal(h);
     })
     .set("P", "Paste before selection", [this](HWND h, int c) {
+        char reg = Registers::getInstance().getActiveRegister();
+        std::string content = Registers::getInstance().get(reg);
+        if (content.empty()) content = Registers::getClipboardText();
+        if (content.empty()) return;
 
-        char reg = Utils::getCurrentRegister();
-
-        std::string content;
-        std::string originalContent;
-
-        if (reg == '+' || reg == '*') {
-
-            if (OpenClipboard(h)) {
-
-                HANDLE hData = GetClipboardData(CF_TEXT);
-
-                if (hData) {
-
-                    char* pszText =
-                        (char*)GlobalLock(hData);
-
-                    if (pszText) {
-                        content = pszText;
-                        GlobalUnlock(hData);
-                    }
-                }
-
-                CloseClipboard();
-            }
-
-        } else {
-            content = Utils::getRegisterContent(reg);
+        std::string replaced = getSelectedText(h);
+        Utils::beginUndo(h);
+        if (!replaced.empty() && reg != '"') {
+            Registers::getInstance().set('"', replaced, RegisterType::CharacterWise, false);
         }
-
-        originalContent = content;
-
-        if (content.empty())
-            return;
 
         if (state.isBlockVisual) {
-            std::string replaced = getSelectedText(h);
-            Utils::beginUndo(h);
-            if (!replaced.empty() && reg != '"') {
-                Utils::storeRegister('"', replaced, false);
-            }
             std::string repeatedContent = "";
-            for (int i = 0; i < c; i++) {
-                repeatedContent += content;
-            }
+            for (int i = 0; i < c; i++) repeatedContent += content;
             ::SendMessage(h, SCI_REPLACESEL, 0, (LPARAM)repeatedContent.c_str());
             Utils::clearBlockSelection(h);
-            Utils::endUndo(h);
-            if (reg == '"') {
-                Utils::storeRegister('"', originalContent, false);
+        } else {
+            int start = (int)::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
+            int end = (int)::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
+            Utils::clear(h, start, end);
+            for (int i = 0; i < c; i++) {
+                ::SendMessage(h, SCI_INSERTTEXT, start, (LPARAM)content.c_str());
             }
-            exitToNormal(h);
-            return;
+            Utils::select(h, start, start);
         }
-
-        int start =
-            ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
-
-        int end =
-            ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
-
-        std::string replaced =
-            getSelectedText(h);
-
-        Utils::beginUndo(h);
-
-        if (!replaced.empty() && reg != '"') {
-            Utils::storeRegister('"', replaced, false);
-        }
-
-        Utils::clear(h, start, end);
-
-        for (int i = 0; i < c; i++) {
-
-            ::SendMessage(
-                h,
-                SCI_INSERTTEXT,
-                start,
-                (LPARAM)content.c_str()
-            );
-        }
-
-        if (reg == '"') {
-            Utils::storeRegister('"', originalContent, false);
-        }
-
-        Utils::select(h, start, start);
-
         Utils::endUndo(h);
-
         exitToNormal(h);
     });
 
@@ -1303,65 +1033,33 @@ void VisualMode::setupKeyMaps() {
     });
 
     k.set("U", [this](HWND h, int c) {
-        int start = ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
-        int end = ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
-        for (int pos = start; pos < end; pos++) {
-            char ch = ::SendMessage(h, SCI_GETCHARAT, pos, 0);
-            if (std::islower(ch)) {
-                ::SendMessage(h, SCI_SETTARGETRANGE, pos, pos + 1);
-                std::string upper(1, std::toupper(ch));
-                ::SendMessage(h, SCI_REPLACETARGET, 1, (LPARAM)upper.c_str());
-            }
-        }
+        int start = (int)::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
+        int end = (int)::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
+        EditorOps::uppercase(h, start, end);
         exitToNormal(h);
     })
     .set("u", [this](HWND h, int c) {
-        int start = ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
-        int end = ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
-        for (int pos = start; pos < end; pos++) {
-            char ch = ::SendMessage(h, SCI_GETCHARAT, pos, 0);
-            if (std::isupper(ch)) {
-                ::SendMessage(h, SCI_SETTARGETRANGE, pos, pos + 1);
-                std::string lower(1, std::tolower(ch));
-                ::SendMessage(h, SCI_REPLACETARGET, 1, (LPARAM)lower.c_str());
-            }
-        }
+        int start = (int)::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0);
+        int end = (int)::SendMessage(h, SCI_GETSELECTIONEND, 0, 0);
+        EditorOps::lowercase(h, start, end);
         exitToNormal(h);
     })
     .set("J", [this](HWND h, int c) {
-        int startLine = ::SendMessage(h, SCI_LINEFROMPOSITION, ::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0), 0);
-        int endLine = ::SendMessage(h, SCI_LINEFROMPOSITION, ::SendMessage(h, SCI_GETSELECTIONEND, 0, 0), 0);
-
-        Utils::beginUndo(h);
-        for (int line = startLine; line < endLine; line++) {
-            int lineEnd = ::SendMessage(h, SCI_GETLINEENDPOSITION, line, 0);
-            int nextLine = ::SendMessage(h, SCI_POSITIONFROMLINE, line + 1, 0);
-            ::SendMessage(h, SCI_SETSEL, lineEnd, nextLine);
-            ::SendMessage(h, SCI_REPLACESEL, 0, (LPARAM)" ");
-        }
-        Utils::endUndo(h);
+        int startLine = (int)::SendMessage(h, SCI_LINEFROMPOSITION, (int)::SendMessage(h, SCI_GETSELECTIONSTART, 0, 0), 0);
+        int endLine = (int)::SendMessage(h, SCI_LINEFROMPOSITION, (int)::SendMessage(h, SCI_GETSELECTIONEND, 0, 0), 0);
+        EditorOps::joinLines(h, startLine, endLine - startLine, true);
         exitToNormal(h);
     })
     .set("r", [this](HWND h, int c) {
         state.visualReplacePending = true;
         Utils::setStatus(TEXT("-- VISUAL REPLACE --"));
     })
-    .set("S", [this](HWND h, int c) {
-        char reg = Utils::getCurrentRegister();
-        bool toBlackhole = (reg == '_' || state.deleteToBlackhole);
-
-        Utils::beginUndo(h);
-
-        // Store the selected text in register unless it's blackhole
-        if (!toBlackhole && g_config.cStoreClipboard) {
-            std::string content = getSelectedText(h);
-            if (!content.empty()) {
-                Utils::storeRegister(reg, content, g_config.cStoreClipboard);
-            }
-        }
-
-        ::SendMessage(h, SCI_CLEAR, 0, 0);
-        Utils::endUndo(h);
+    .set("S", [this, getSelectionRange](HWND h, int c) {
+        char reg = Registers::getInstance().getActiveRegister();
+        if (state.deleteToBlackhole) reg = '_';
+        EditorOps::change(h, getSelectionRange(h), reg, g_config.cStoreClipboard);
+        Registers::getInstance().resetActiveRegister();
+        state.deleteToBlackhole = false;
         if (g_normalMode) g_normalMode->enterInsertMode();
     });
 

@@ -9,6 +9,8 @@
 #include "Notepad_plus_msgs.h"
 
 #include "ConfigManager.h"
+#include "Registers.h"
+#include "EditorOps.h"
 
 NppData Utils::nppData;
 
@@ -237,47 +239,27 @@ int Utils::countSearchMatches(HWND hwndEdit, const std::string &searchTerm, int 
 
 void Utils::handleIndent(HWND hwndEdit, int count) {
     ::SendMessage(hwndEdit, SCI_BEGINUNDOACTION, 0, 0);
-
-    ::SendMessage(hwndEdit, SCI_TAB, 0, 0);
-
+    for (int i = 0; i < count; i++) {
+        ::SendMessage(hwndEdit, SCI_TAB, 0, 0);
+    }
     ::SendMessage(hwndEdit, SCI_ENDUNDOACTION, 0, 0);
-
 }
 
 void Utils::handleUnindent(HWND hwndEdit, int count) {
     ::SendMessage(hwndEdit, SCI_BEGINUNDOACTION, 0, 0);
-
-    ::SendMessage(hwndEdit, SCI_BACKTAB, 0, 0);
-
+    for (int i = 0; i < count; i++) {
+        ::SendMessage(hwndEdit, SCI_BACKTAB, 0, 0);
+    }
     ::SendMessage(hwndEdit, SCI_ENDUNDOACTION, 0, 0);
-
 }
 
 void Utils::handleAutoIndent(HWND hwndEdit, int count) {
-    ::SendMessage(hwndEdit, SCI_BEGINUNDOACTION, 0, 0);
-
     int lineStart = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION,
                       (int)::SendMessage(hwndEdit, SCI_GETSELECTIONSTART, 0, 0), 0);
     int lineEnd = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION,
                     (int)::SendMessage(hwndEdit, SCI_GETSELECTIONEND, 0, 0), 0);
 
-    for (int line = lineStart; line <= lineEnd; line++) {
-        int lineStartPos = (int)::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, line, 0);
-        int lineEndPos = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, line, 0);
-
-        int firstNonSpace = lineStartPos;
-        while (firstNonSpace < lineEndPos) {
-            char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, firstNonSpace, 0);
-            if (ch != ' ' && ch != '\t') break;
-            firstNonSpace++;
-        }
-
-        if (firstNonSpace > lineStartPos) {
-            ::SendMessage(hwndEdit, SCI_DELETERANGE, lineStartPos, firstNonSpace - lineStartPos);
-        }
-    }
-
-    ::SendMessage(hwndEdit, SCI_ENDUNDOACTION, 0, 0);
+    EditorOps::autoIndent(hwndEdit, lineStart, lineEnd);
 
     if (state.mode == VISUAL && g_normalMode) {
         g_normalMode->enter();
@@ -472,31 +454,11 @@ void Utils::charSearch(HWND hwnd, VimState& state, char type, char ch, int count
 }
 
 void Utils::setClipboardText(const std::string& text) {
-    if (!OpenClipboard(nullptr)) return;
-    EmptyClipboard();
-    HGLOBAL h = GlobalAlloc(GMEM_MOVEABLE, text.size() + 1);
-    if (h) {
-        char* p = (char*)GlobalLock(h);
-        memcpy(p, text.c_str(), text.size() + 1);
-        GlobalUnlock(h);
-        SetClipboardData(CF_TEXT, h);
-    }
-    CloseClipboard();
+    Registers::setClipboardText(text);
 }
 
 std::string Utils::getClipboardText() {
-    std::string result;
-    if (!OpenClipboard(nullptr)) return result;
-    HANDLE hData = GetClipboardData(CF_TEXT);
-    if (hData) {
-        char* pszText = (char*)GlobalLock(hData);
-        if (pszText) {
-            result = pszText;
-            GlobalUnlock(hData);
-        }
-    }
-    CloseClipboard();
-    return result;
+    return Registers::getClipboardText();
 }
 
 static void appendSection(std::string& out, const std::string& title, const Keymap& km) {
@@ -593,19 +555,10 @@ std::string Utils::getPluginPath() {
     HMODULE hModule = GetModuleHandle(TEXT("NppVim.dll"));
     if (hModule) {
         GetModuleFileName(hModule, path, MAX_PATH);
-        std::wstring wFull(path);
-        
-        // Correct conversion from wstring to string
-        int size = WideCharToMultiByte(CP_UTF8, 0, wFull.c_str(), -1, NULL, 0, NULL, NULL);
-        if (size > 0) {
-            std::string full(size, 0);
-            WideCharToMultiByte(CP_UTF8, 0, wFull.c_str(), -1, &full[0], size, NULL, NULL);
-            while (!full.empty() && full.back() == '\0') full.pop_back();
-
-            size_t lastSlash = full.find_last_of("\\/");
-            if (lastSlash != std::string::npos) {
-                return full.substr(0, lastSlash);
-            }
+        std::string full = toUtf8(path);
+        size_t lastSlash = full.find_last_of("\\/");
+        if (lastSlash != std::string::npos) {
+            return full.substr(0, lastSlash);
         }
     }
     return "";
@@ -632,60 +585,31 @@ int Utils::getCharBlocking() {
 }
 
 std::string Utils::getRegisterContent(char reg) {
-    if (reg == '+' || reg == '*') {
-        return getClipboardText();
-    }
-    if (state.registers.find(reg) != state.registers.end()) {
-        return state.registers[reg];
-    }
-    if (reg == '"') {
-        std::string clip = getClipboardText();
-        if (!clip.empty()) return clip;
-    }
-    return "";
+    return Registers::getInstance().get(reg);
 }
 
 void Utils::setRegisterContent(char reg, const std::string& content) {
-    state.registers[reg] = content;
+    Registers::getInstance().set(reg, content);
 }
 
 void Utils::appendToRegister(char reg, const std::string& content) {
-    if (state.registers.find(reg) != state.registers.end()) {
-        state.registers[reg] += content;
-    } else {
-        state.registers[reg] = content;
-    }
+    Registers::getInstance().append(reg, content);
 }
 
 bool Utils::isValidRegister(char c) {
-    // Valid registers: a-z (named), 0-9 (numbered), " (default), _ (blackhole), 
-    // +/* (clipboard), / (search), : (command), . (last inserted)
-    return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || 
-           c == '"' || c == '_' || c == '+' || c == '*' || 
-           c == '/' || c == ':' || c == '.';
+    return Registers::isValidRegister(c);
 }
 
 char Utils::getCurrentRegister() {
-    return state.defaultRegister;
+    return Registers::getInstance().getActiveRegister();
 }
 
 void Utils::setCurrentRegister(char reg) {
-    if (isValidRegister(reg)) {
-        state.defaultRegister = reg;
-    }
+    Registers::getInstance().setActiveRegister(reg);
 }
 
 void Utils::storeRegister(char reg, const std::string& text, bool syncClipboard){
-    if (reg == '+' || reg == '*') {
-        Utils::setClipboardText(text);
-        return;
-    }
-
-    Utils::setRegisterContent(reg, text);
-
-    if (syncClipboard && reg == '"') {
-        Utils::setClipboardText(text);
-    }
+    Registers::getInstance().set(reg, text, RegisterType::CharacterWise, syncClipboard);
 }
 
 static std::unordered_map<wchar_t, char> g_langmap;
@@ -694,14 +618,8 @@ void Utils::parseLangmap(const std::string& langmapStr) {
     g_langmap.clear();
     if (langmapStr.empty()) return;
 
-    // We need to decode the UTF-8 langmapStr into wide characters
-    int wideLen = MultiByteToWideChar(CP_UTF8, 0, langmapStr.c_str(), -1, NULL, 0);
-    if (wideLen <= 0) return;
-    std::wstring wStr(wideLen, 0);
-    MultiByteToWideChar(CP_UTF8, 0, langmapStr.c_str(), -1, &wStr[0], wideLen);
-    
-    // Remove the null terminator added by MultiByteToWideChar
-    while (!wStr.empty() && wStr.back() == L'\0') wStr.pop_back();
+    std::wstring wStr = toWide(langmapStr);
+    if (wStr.empty()) return;
 
     std::vector<std::wstring> parts;
     std::wstring current;
@@ -744,6 +662,11 @@ std::string Utils::toUtf8(wchar_t wch) {
     return toUtf8(std::wstring(buf));
 }
 
+std::string Utils::toUtf8(const wchar_t* wstr) {
+    if (!wstr || !*wstr) return "";
+    return toUtf8(std::wstring(wstr));
+}
+
 std::string Utils::toUtf8(const std::wstring& wstr) {
     if (wstr.empty()) return "";
     int size = WideCharToMultiByte(CP_UTF8, 0, wstr.c_str(), -1, NULL, 0, NULL, NULL);
@@ -754,11 +677,79 @@ std::string Utils::toUtf8(const std::wstring& wstr) {
     return str;
 }
 
+std::wstring Utils::toWide(const char* str) {
+    if (!str || !*str) return L"";
+    return toWide(std::string(str));
+}
+
+std::wstring Utils::toWide(const std::string& str) {
+    if (str.empty()) return L"";
+    int size = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, NULL, 0);
+    if (size <= 0) return L"";
+    std::wstring wstr(size, 0);
+    MultiByteToWideChar(CP_UTF8, 0, str.c_str(), -1, &wstr[0], size);
+    while (!wstr.empty() && wstr.back() == L'\0') wstr.pop_back();
+    return wstr;
+}
+
 std::string Utils::trim(const std::string& s) {
     size_t first = s.find_first_not_of(" \t\r\n");
     if (std::string::npos == first) return "";
     size_t last = s.find_last_not_of(" \t\r\n");
     return s.substr(first, (last - first + 1));
+}
+
+std::string Utils::trimLeft(const std::string& s) {
+    size_t first = s.find_first_not_of(" \t\r\n");
+    if (std::string::npos == first) return "";
+    return s.substr(first);
+}
+
+std::string Utils::trimRight(const std::string& s) {
+    size_t last = s.find_last_not_of(" \t\r\n");
+    if (std::string::npos == last) return "";
+    return s.substr(0, last + 1);
+}
+
+std::vector<std::string> Utils::splitLines(const std::string& str) {
+    std::vector<std::string> lines;
+    std::string current;
+    for (char c : str) {
+        if (c == '\r') continue;
+        if (c == '\n') {
+            lines.push_back(current);
+            current.clear();
+        } else {
+            current.push_back(c);
+        }
+    }
+    if (!current.empty() || str.empty()) {
+        lines.push_back(current);
+    }
+    if (!lines.empty() && lines.back().empty() && !str.empty() && str.back() == '\n') {
+        lines.pop_back();
+    }
+    return lines;
+}
+
+std::vector<std::string> Utils::split(const std::string& str, char delim) {
+    std::vector<std::string> tokens;
+    std::string token;
+    std::stringstream ss(str);
+    while (std::getline(ss, token, delim)) {
+        tokens.push_back(token);
+    }
+    return tokens;
+}
+
+std::string Utils::getCurrentFilePath() {
+    TCHAR filename[MAX_PATH] = {0};
+    ::SendMessage(nppData._nppHandle, NPPM_GETFULLCURRENTPATH, MAX_PATH, (LPARAM)filename);
+#ifdef UNICODE
+    return toUtf8(filename);
+#else
+    return std::string(filename);
+#endif
 }
 
 std::string Utils::getTextRange(HWND h, int start, int end) {

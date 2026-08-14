@@ -7,13 +7,14 @@ set(SOURCES
     src/Motion.cpp
     src/NormalMode.cpp
     src/Keymap.cpp
+    src/Registers.cpp
+    src/EditorOps.cpp
     src/NppVim.cpp
     src/TextObject.cpp
     src/Utils.cpp
     src/VisualMode.cpp
     src/ConfigManager.cpp
     src/OptionRegistry.cpp
-    src/MappingManager.cpp
     src/RcParser.cpp
     plugin/NppVim.rc
 )

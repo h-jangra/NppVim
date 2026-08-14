@@ -13,7 +13,6 @@ public:
 private:
     RcParser() = default;
     
-    std::string trim(const std::string& s);
     bool isComment(const std::string& line);
     
     void handleSet(const std::string& args);

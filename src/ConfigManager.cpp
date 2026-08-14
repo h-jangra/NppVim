@@ -16,19 +16,11 @@ ConfigManager& ConfigManager::getInstance() {
 std::string ConfigManager::getPluginsConfigDir() {
     TCHAR configDir[MAX_PATH];
     ::SendMessage(nppData._nppHandle, NPPM_GETPLUGINSCONFIGDIR, MAX_PATH, (LPARAM)configDir);
-
-    std::string path;
 #ifdef UNICODE
-    int len = WideCharToMultiByte(CP_UTF8, 0, configDir, -1, NULL, 0, NULL, NULL);
-    if (len > 0) {
-        path.resize(len);
-        WideCharToMultiByte(CP_UTF8, 0, configDir, -1, &path[0], len, NULL, NULL);
-        path.pop_back();
-    }
+    return Utils::toUtf8(configDir);
 #else
-    path = configDir;
+    return std::string(configDir);
 #endif
-    return path;
 }
 
 std::string ConfigManager::getConfigPath() {
@@ -42,25 +34,13 @@ void ConfigManager::loadConfig() {
 
     std::string line;
     while (std::getline(file, line)) {
-        size_t start = line.find_first_not_of(" \t\r\n");
-        size_t end = line.find_last_not_of(" \t\r\n");
-        if (start == std::string::npos) continue;
-        line = line.substr(start, end - start + 1);
+        std::string trimmed = Utils::trim(line);
+        if (trimmed.empty() || trimmed[0] == '#' || trimmed[0] == ';' || trimmed[0] == '[') continue;
 
-        if (line.empty() || line[0] == '#' || line[0] == ';' || line[0] == '[') continue;
-
-        size_t pos = line.find('=');
+        size_t pos = trimmed.find('=');
         if (pos != std::string::npos) {
-            std::string key = line.substr(0, pos);
-            std::string value = line.substr(pos + 1);
-            
-            start = key.find_first_not_of(" \t");
-            end = key.find_last_not_of(" \t");
-            if (start != std::string::npos) key = key.substr(start, end - start + 1);
-
-            start = value.find_first_not_of(" \t");
-            end = value.find_last_not_of(" \t");
-            if (start != std::string::npos) value = value.substr(start, end - start + 1);
+            std::string key = Utils::trim(trimmed.substr(0, pos));
+            std::string value = Utils::trim(trimmed.substr(pos + 1));
             
             if (key == "enabled" || key == "vim_enabled") enabled = (value == "1" || value == "true");
             else if (key == "show_status_bar") showStatusBar = (value == "1" || value == "true");
