@@ -26,6 +26,9 @@
 - **External Filter (`:[range]!cmd`)**: Filter selected lines or line ranges through external programs via standard input and standard output (e.g. `:'<,'>!sort`, `:<>!column -t`, `:%!clang-format`).
 - **Visual `!` Shortcut**: Pressing `!` in Visual Mode immediately enters command mode with `:'<,'>!` filter prompt.
 
+## Fixed
+- **Korean & CJK IME in Normal/Visual Mode**: Fixed Korean Microsoft IME and other IMEs inserting composed characters while in Normal or Visual mode. IME context is now automatically managed and disassociated in non-insert modes, canceling in-flight compositions and preventing Scintilla from inserting text outside Insert mode.
+
 # 1.14.0.0
 
 ## Added

@@ -5,7 +5,7 @@
 #include <string>
 #include <utility>
 
-struct VimState;
+#include "NppVim.h"
 
 class Keymap;
 
@@ -108,6 +108,11 @@ public:
 
     static void rot13(HWND hwnd, int start, int end);
     static int sci(HWND h, int msg, WPARAM w = 0, LPARAM l = 0);
+
+    static void disableIme(HWND hwnd);
+    static void enableIme(HWND hwnd);
+    static void updateImeForMode(HWND hwnd, VimMode mode);
+    static void syncAllScintillaIme();
 
   private:
     static NppData nppData;

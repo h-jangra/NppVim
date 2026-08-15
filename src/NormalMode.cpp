@@ -439,7 +439,7 @@ void NormalMode::setupKeyMaps() {
         state.opPending = '?';
     })
     .set("gR", "Virtual replace", [this](HWND h, int c) {
-        state.mode = INSERT;
+        enterInsertMode();
         Utils::sci(h, SCI_SETOVERTYPE, true, 0);
     })
     .set("g??", "Rot13 line", [this](HWND h, int c) {
@@ -684,7 +684,7 @@ void NormalMode::setupKeyMaps() {
          Utils::setStatus(TEXT("-- REPLACE CHAR --"));
      })
      .set("R", "Replace mode", [this](HWND h, int c) {
-         state.mode = INSERT;
+         enterInsertMode();
          Utils::setStatus(TEXT("-- REPLACE --"));
          Utils::sci(h, SCI_SETOVERTYPE, true, 0);
          Utils::sci(h, SCI_SETCARETSTYLE, CARETSTYLE_BLOCK, 0);
@@ -1223,6 +1223,9 @@ void NormalMode::enter() {
     HWND hwnd = Utils::getCurrentScintillaHandle();
     int caret = Utils::caretPos(hwnd);
 
+    Utils::updateImeForMode(hwnd, NORMAL);
+    Utils::syncAllScintillaIme();
+
     if (state.mode == VISUAL && !state.restoringVisual) {
         if (state.isBlockVisual) {
             state.lastVisualAnchor = ::SendMessage(hwnd, SCI_GETRECTANGULARSELECTIONANCHOR, 0, 0);
@@ -1280,6 +1283,9 @@ void NormalMode::enterInsertMode() {
     HWND hwnd = Utils::getCurrentScintillaHandle();
     state.mode = INSERT;
     state.reset();
+
+    Utils::updateImeForMode(hwnd, INSERT);
+    Utils::syncAllScintillaIme();
 
     if (g_config.enableKeyboardLayoutSwitching) {
         HWND focusWnd = ::GetFocus();

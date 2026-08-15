@@ -1068,6 +1068,9 @@ void VisualMode::setupKeyMaps() {
 void VisualMode::enterChar(HWND hwnd) {
     state.mode = VISUAL;
     
+    Utils::updateImeForMode(hwnd, VISUAL);
+    Utils::syncAllScintillaIme();
+
     if (g_config.enableKeyboardLayoutSwitching) {
         HWND focusWnd = ::GetFocus();
         HKL targetLayout = Utils::resolveLayout(g_config.normallayout);
@@ -1105,6 +1108,9 @@ void VisualMode::enterLine(HWND hwnd) {
     state.isLineVisual = true;
     state.isBlockVisual = false;
 
+    Utils::updateImeForMode(hwnd, VISUAL);
+    Utils::syncAllScintillaIme();
+
     int caret = Utils::caretPos(hwnd);
     int line = ::SendMessage(hwnd, SCI_LINEFROMPOSITION, caret, 0);
 
@@ -1131,6 +1137,9 @@ void VisualMode::enterBlock(HWND hwnd) {
     state.mode = VISUAL;
     state.isLineVisual = false;
     state.isBlockVisual = true;
+
+    Utils::updateImeForMode(hwnd, VISUAL);
+    Utils::syncAllScintillaIme();
 
     int caret = Utils::caretPos(hwnd);
     state.visualAnchor = caret;

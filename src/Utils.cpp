@@ -11,11 +11,14 @@
 #include "ConfigManager.h"
 #include "Registers.h"
 #include "EditorOps.h"
+#include <imm.h>
+#pragma comment(lib, "imm32.lib")
 
 NppData Utils::nppData;
 
 extern NormalMode* g_normalMode;
 extern VisualMode* g_visualMode;
+extern VimState state;
 
 int Utils::sci(HWND h, int msg, WPARAM w, LPARAM l) {
     return (int)::SendMessage(h, msg, w, l);
@@ -873,3 +876,34 @@ std::string Utils::translateKeyNotation(const std::string& input) {
     }
     return result;
 }
+
+void Utils::disableIme(HWND hwnd) {
+    if (!hwnd || !IsWindow(hwnd)) return;
+    HIMC himc = ImmGetContext(hwnd);
+    if (himc) {
+        ImmNotifyIME(himc, NI_COMPOSITIONSTR, CPS_CANCEL, 0);
+        ImmReleaseContext(hwnd, himc);
+    }
+    ImmAssociateContext(hwnd, NULL);
+}
+
+void Utils::enableIme(HWND hwnd) {
+    if (!hwnd || !IsWindow(hwnd)) return;
+    ImmAssociateContextEx(hwnd, NULL, IACE_DEFAULT);
+}
+
+void Utils::updateImeForMode(HWND hwnd, VimMode mode) {
+    if (!hwnd || !IsWindow(hwnd)) return;
+    if (!state.vimEnabled || mode == INSERT) {
+        enableIme(hwnd);
+    } else {
+        disableIme(hwnd);
+    }
+}
+
+void Utils::syncAllScintillaIme() {
+    HWND mainWnd = nppData._scintillaMainHandle;
+    HWND secondWnd = nppData._scintillaSecondHandle;
+    if (mainWnd && IsWindow(mainWnd)) updateImeForMode(mainWnd, state.mode);
+    if (secondWnd && IsWindow(secondWnd)) updateImeForMode(secondWnd, state.mode);
+}

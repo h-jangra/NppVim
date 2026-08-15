@@ -101,6 +101,9 @@
 " Set to 'system' to keep the active layout.
 "set insertlayout=system
 
+" Examples: en-GB, hi-IN, ko-KR, ja-JP,
+" zh-CN, zh-TW, fr-FR, de-DE, es-ES, it-IT, pt-BR, ru-RU
+
 " Translate characters in Normal/Visual modes (e.g. for non-US keyboard layouts).
 " Default is empty.
 "set langmap=

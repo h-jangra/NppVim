@@ -7,7 +7,9 @@
 #include <commctrl.h>
 #include <vector>
 #include <algorithm>
+#include <imm.h>
 #pragma comment(lib, "Version.lib")
+#pragma comment(lib, "imm32.lib")
 
 #include "../plugin/PluginInterface.h"
 #include "../plugin/Scintilla.h"
@@ -78,6 +80,7 @@ void saveConfig();
 void initializeOptions();
 void updateRelativeLineNumbers(HWND hwnd, bool force = false);
 void applyScintillaScrollPolicy(HWND hwnd);
+void updateCursorForCurrentMode();
 
 void installNppHook() {
     if (nppData._nppHandle && !g_origNppProc) {
@@ -726,9 +729,37 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
         return CallWindowProc(orig, hwnd, msg, wParam, lParam);
     }
 
+    if (msg == WM_SETFOCUS) {
+        LRESULT res = CallWindowProc(orig, hwnd, msg, wParam, lParam);
+        if (state.vimEnabled) {
+            Utils::updateImeForMode(hwnd, state.mode);
+            updateCursorForCurrentMode();
+        }
+        return res;
+    }
+
+    if (msg == WM_KILLFOCUS) {
+        HIMC himc = ImmGetContext(hwnd);
+        if (himc) {
+            ImmNotifyIME(himc, NI_COMPOSITIONSTR, CPS_CANCEL, 0);
+            ImmReleaseContext(hwnd, himc);
+        }
+        return CallWindowProc(orig, hwnd, msg, wParam, lParam);
+    }
+
     if (msg == WM_INPUTLANGCHANGE && g_config.enableKeyboardLayoutSwitching) {
         g_userLayout = (HKL)lParam;
         if (state.mode == INSERT) state.savedInsertLayout = g_userLayout;
+    }
+
+    if ((state.mode == NORMAL || state.mode == VISUAL) &&
+        (msg == WM_IME_STARTCOMPOSITION || msg == WM_IME_COMPOSITION || msg == WM_IME_CHAR || msg == WM_IME_ENDCOMPOSITION)) {
+        HIMC himc = ImmGetContext(hwnd);
+        if (himc) {
+            ImmNotifyIME(himc, NI_COMPOSITIONSTR, CPS_CANCEL, 0);
+            ImmReleaseContext(hwnd, himc);
+        }
+        return 0;
     }
 
     if ((state.mode == NORMAL || state.mode == VISUAL) && msg == WM_KEYDOWN) {
@@ -768,6 +799,14 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
             wchar_t wChar = (wchar_t)wParam;
             g_commandMode->handleKey(hwnd, wChar); 
             return 0; 
+        }
+        if (msg == WM_IME_CHAR) {
+            wchar_t wChar = (wchar_t)wParam;
+            g_commandMode->handleKey(hwnd, wChar);
+            return 0;
+        }
+        if (msg == WM_IME_STARTCOMPOSITION || msg == WM_IME_COMPOSITION || msg == WM_IME_ENDCOMPOSITION) {
+            return 0;
         }
         return CallWindowProc(orig, hwnd, msg, wParam, lParam);
     }
@@ -858,12 +897,39 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
                 std::string utf8 = Utils::toUtf8(wChar);
                 for (char ch : utf8) state.insertMacroBuffers.back().push_back(ch);
             }
-            if ((int)wParam == VK_ESCAPE) { ::SendMessage(hwnd, SCI_SETOVERTYPE, false, 0); g_firstKey = 0; if (state.recordingInsertMacro) { state.insertMacroBuffers.back().push_back('\x1B'); state.recordingInsertMacro = false; } g_normalMode->enter(); return 0; }
+            if ((int)wParam == VK_ESCAPE) {
+                ::SendMessage(hwnd, SCI_SETOVERTYPE, false, 0);
+                g_firstKey = 0;
+                HIMC himc = ImmGetContext(hwnd);
+                if (himc) {
+                    ImmNotifyIME(himc, NI_COMPOSITIONSTR, CPS_CANCEL, 0);
+                    ImmReleaseContext(hwnd, himc);
+                }
+                if (state.recordingInsertMacro) {
+                    state.insertMacroBuffers.back().push_back('\x1B');
+                    state.recordingInsertMacro = false;
+                }
+                g_normalMode->enter();
+                return 0;
+            }
             if (g_config.escapeKey != "esc" && checkEscapeSequence((char)wParam)) {
-                if (state.recordingInsertMacro && !state.insertMacroBuffers.empty()) { state.insertMacroBuffers.back().push_back('\x1B'); state.recordingInsertMacro = false; }
+                HIMC himc = ImmGetContext(hwnd);
+                if (himc) {
+                    ImmNotifyIME(himc, NI_COMPOSITIONSTR, CPS_CANCEL, 0);
+                    ImmReleaseContext(hwnd, himc);
+                }
+                if (state.recordingInsertMacro && !state.insertMacroBuffers.empty()) {
+                    state.insertMacroBuffers.back().push_back('\x1B');
+                    state.recordingInsertMacro = false;
+                }
                 int pos = (int)::SendMessage(hwnd, SCI_GETCURRENTPOS, 0, 0);
-                if (pos >= 1) { ::SendMessage(hwnd, SCI_SETSEL, pos - 1, pos); ::SendMessage(hwnd, SCI_REPLACESEL, 0, (LPARAM)""); }
-                ::SendMessage(hwnd, SCI_SETOVERTYPE, false, 0); g_normalMode->enter(); return 0;
+                if (pos >= 1) {
+                    ::SendMessage(hwnd, SCI_SETSEL, pos - 1, pos);
+                    ::SendMessage(hwnd, SCI_REPLACESEL, 0, (LPARAM)"");
+                }
+                ::SendMessage(hwnd, SCI_SETOVERTYPE, false, 0);
+                g_normalMode->enter();
+                return 0;
             }
         }
         return CallWindowProc(orig, hwnd, msg, wParam, lParam);
@@ -888,11 +954,19 @@ void installScintillaHookFor(HWND hwnd) {
         origProcMap[hwnd] = prev;
         if (hwnd == nppData._scintillaMainHandle) g_origMainProc = prev;
         else if (hwnd == nppData._scintillaSecondHandle) g_origSecondProc = prev;
+        if (state.vimEnabled) {
+            Utils::updateImeForMode(hwnd, state.mode);
+        }
     }
 }
 
 void removeAllScintillaHooks() {
-    for (auto& p : origProcMap) if (IsWindow(p.first)) SetWindowLongPtr(p.first, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(p.second));
+    for (auto& p : origProcMap) {
+        if (IsWindow(p.first)) {
+            Utils::enableIme(p.first);
+            SetWindowLongPtr(p.first, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(p.second));
+        }
+    }
     origProcMap.clear();
     g_origMainProc = nullptr;
     g_origSecondProc = nullptr;
@@ -903,6 +977,9 @@ void ensureScintillaHooks() {
     installScintillaHookFor(nppData._scintillaSecondHandle);
     applyScintillaScrollPolicy(nppData._scintillaMainHandle);
     applyScintillaScrollPolicy(nppData._scintillaSecondHandle);
+    if (state.vimEnabled) {
+        Utils::syncAllScintillaIme();
+    }
 }
 
 void updateCursorForCurrentMode() {
@@ -918,8 +995,21 @@ void toggleVimMode() {
     state.vimEnabled = !state.vimEnabled; g_config.vimEnabled = state.vimEnabled; saveConfig();
     HMENU hMenu = (HMENU)::SendMessage(nppData._nppHandle, NPPM_GETMENUHANDLE, NPPPLUGINMENU, 0);
     if (hMenu) ::CheckMenuItem(hMenu, funcItem[0]._cmdID, MF_BYCOMMAND | (state.vimEnabled ? MF_CHECKED : MF_UNCHECKED));
-    if (state.vimEnabled) { ensureScintillaHooks(); g_normalMode->enter(); updateCursorForCurrentMode(); Utils::setStatus(TEXT("-- NORMAL --")); }
-    else { Utils::setStatus(TEXT(" ")); removeAllScintillaHooks(); updateCursorForCurrentMode(); }
+    if (state.vimEnabled) {
+        ensureScintillaHooks();
+        g_normalMode->enter();
+        updateCursorForCurrentMode();
+        Utils::setStatus(TEXT("-- NORMAL --"));
+    }
+    else {
+        Utils::setStatus(TEXT(" "));
+        HWND mainWnd = nppData._scintillaMainHandle;
+        HWND secondWnd = nppData._scintillaSecondHandle;
+        if (mainWnd && IsWindow(mainWnd)) Utils::enableIme(mainWnd);
+        if (secondWnd && IsWindow(secondWnd)) Utils::enableIme(secondWnd);
+        removeAllScintillaHooks();
+        updateCursorForCurrentMode();
+    }
 }
 
 void about() { DialogBox(g_hInstance, MAKEINTRESOURCE(IDD_ABOUT), nppData._nppHandle, AboutDlgProc); }
@@ -927,6 +1017,10 @@ void about() { DialogBox(g_hInstance, MAKEINTRESOURCE(IDD_ABOUT), nppData._nppHa
 BOOL APIENTRY DllMain(HANDLE hModule, DWORD reasonForCall, LPVOID) {
     if (reasonForCall == DLL_PROCESS_ATTACH) g_hInstance = (HINSTANCE)hModule;
     else if (reasonForCall == DLL_PROCESS_DETACH) {
+        HWND mainWnd = nppData._scintillaMainHandle;
+        HWND secondWnd = nppData._scintillaSecondHandle;
+        if (mainWnd && IsWindow(mainWnd)) Utils::enableIme(mainWnd);
+        if (secondWnd && IsWindow(secondWnd)) Utils::enableIme(secondWnd);
         removeNppHook();
         removeAllScintillaHooks(); CleanupDialogResources();
         if (g_normalMode) delete g_normalMode; if (g_visualMode) delete g_visualMode; if (g_commandMode) delete g_commandMode;
@@ -941,7 +1035,13 @@ extern "C" __declspec(dllexport) void setInfo(NppData notpadPlusData) {
     g_normalMode = new NormalMode(state); g_visualMode = new VisualMode(state); g_commandMode = new CommandMode(state);
     loadConfig();
     g_englishLayout = LoadKeyboardLayout(TEXT("00000409"), KLF_ACTIVATE); g_userLayout = GetKeyboardLayout(0);
-    state.vimEnabled = g_config.vimEnabled; if (state.vimEnabled) { ensureScintillaHooks(); g_normalMode->enter(); updateCursorForCurrentMode(); }
+    state.vimEnabled = g_config.vimEnabled;
+    if (state.vimEnabled) {
+        ensureScintillaHooks();
+        g_normalMode->enter();
+        updateCursorForCurrentMode();
+        Utils::syncAllScintillaIme();
+    }
 }
 
 extern "C" __declspec(dllexport) const TCHAR* getName() { return PLUGIN_NAME; }

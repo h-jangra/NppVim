@@ -25,8 +25,17 @@ and UI behavior organized.
 This is your primary startup script, similar to a .vimrc file. It is used for
 Vim-specific settings, custom mappings, and executing commands on startup. 
 
-Note: Any command-mode command (e.g., :w, :split, :command) can be placed in
-this file.
+Startup Location Fallback Order:
+  1. Custom path configured in config.ini (via rc_file=...)
+  2. %USERPROFILE%\.nppvimrc (e.g. C:\Users\<Username>\.nppvimrc)
+  3. %APPDATA%\Notepad++\plugins\Config\NppVim\nppvim.rc
+
+Commands:
+  :erc / :rc / :editrc    Open the active nppvim.rc file for editing.
+  :reload / :so / :source Reload configuration and keymaps immediately.
+
+Note: Any command-mode command (e.g., :w, :split, :command, :set, :map) can be
+placed in this file.
 
 Supported Options in .rc                                    *nppvim-rc-options*
 ------------------------
@@ -119,14 +128,20 @@ Insert mode:
   Ctrl-T    Indent the current line by one 'shiftwidth'.
   Ctrl-D    Unindent the current line by one 'shiftwidth'.
 
-File Editing Command                                          *nppvim-rc-edit*
---------------------
+File Editing and Configuration Commands                       *nppvim-rc-edit*
+---------------------------------------
 The ":edit" (or ":e") command is fully compatible with Vim:
   :edit / :e
         Reloads the current buffer file from disk.
   :edit <filename> / :e <filename>
         Opens the specified file. If the file does not exist, it will be
         created automatically. Supports both relative and absolute paths.
+  :erc / :rc / :editrc / :edit rc
+        Opens the active nppvim.rc startup configuration script in Notepad++.
+  :eini / :ini / :editini / :edit ini
+        Opens the active config.ini configuration file in Notepad++.
+  :reload / :so / :source
+        Reloads nppvim.rc settings and mappings immediately without restarting.
 
 Ex Commands and Ranges                                        *nppvim-ex-cmds*
 ----------------------
@@ -179,8 +194,15 @@ Path wildcards for :!:
 2.2 config.ini (UI & Shortcut Overrides)                     *nppvim-config-ini*
 
 This file stores settings managed via the Configuration Dialog ("Plugins ->
-NppVim -> Configuration Dialog"). These settings control how NppVim interacts
-with Notepad++ itself.
+NppVim -> Configuration Dialog") or edited directly via ":eini" / ":ini".
+These settings control how NppVim interacts with Notepad++ itself.
+
+Location:
+  %APPDATA%\Notepad++\plugins\Config\NppVim\config.ini
+
+Commands:
+  :eini / :ini / :editini   Open config.ini for editing in Notepad++.
+  :config                   Open the Configuration Dialog GUI.
 
 Note: Changes made in the Dialog box are saved to config.ini only. They are not
 added to your .rc file.
@@ -196,6 +218,7 @@ enabled (or vim_enabled) Boolean  1        Enable or disable the NppVim emulator
 show_status_bar         Boolean  1        Toggle Notepad++ status bar visibility.
 debug_logging           Boolean  0        Enable debug logging to a text file.
 rc_file                 String   (empty)  Custom path to the startup script.
+                                          (e.g., C:\path\to\nppvim.rc)
                                           If empty, checks ~/.nppvimrc first,
                                           then falls back to:
                                           %APPDATA%\Notepad++\plugins\Config\

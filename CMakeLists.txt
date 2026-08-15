@@ -36,6 +36,7 @@ target_link_libraries(NppVim PRIVATE
     shlwapi
     uuid
     version
+    imm32
 )
 
 # Build outputs always stay inside binary dir
