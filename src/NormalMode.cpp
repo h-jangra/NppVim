@@ -1240,18 +1240,7 @@ void NormalMode::enter() {
         Marks::recordLastInsert(hwnd);
     }
 
-    if (g_config.enableKeyboardLayoutSwitching) {
-        HWND focusWnd = ::GetFocus();
-        HKL targetLayout = Utils::resolveLayout(g_config.normallayout);
-        if (!targetLayout) targetLayout = ::LoadKeyboardLayout(L"00000409", KLF_ACTIVATE);
-
-        HKL currentLayout = ::GetKeyboardLayout(0);
-        if (currentLayout != targetLayout) {
-            state.savedInsertLayout = currentLayout;
-            ::ActivateKeyboardLayout(targetLayout, 0);
-            ::PostMessage(focusWnd, WM_INPUTLANGCHANGEREQUEST, 0, (LPARAM)targetLayout);
-        }
-    }
+    Utils::switchToNormalLayout();
 
     state.mode = NORMAL;
     state.isLineVisual = false;
@@ -1287,22 +1276,7 @@ void NormalMode::enterInsertMode() {
     Utils::updateImeForMode(hwnd, INSERT);
     Utils::syncAllScintillaIme();
 
-    if (g_config.enableKeyboardLayoutSwitching) {
-        HWND focusWnd = ::GetFocus();
-        HKL targetLayout = nullptr;
-        
-        if (g_config.insertlayout == "system") {
-            targetLayout = state.savedInsertLayout;
-            if (!targetLayout) targetLayout = g_userLayout;
-        } else {
-            targetLayout = Utils::resolveLayout(g_config.insertlayout);
-        }
-
-        if (targetLayout) {
-            ::PostMessage(focusWnd, WM_INPUTLANGCHANGEREQUEST, 0, (LPARAM)targetLayout);
-            ::ActivateKeyboardLayout(targetLayout, 0);
-        }
-    }
+    Utils::switchToInsertLayout();
 
     if (state.recordingMacro) {
         state.recordingInsertMacro = true;

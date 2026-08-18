@@ -23,7 +23,9 @@ std::string OptionRegistry::resolveAlias(const std::string& name) {
         {"sw", "shiftwidth"},
         {"cul", "cursorline"},
         {"wrap", "wrap"},
-        {"list", "list"}
+        {"list", "list"},
+        {"keyboard_layout_switching", "keylayout"},
+        {"nokeyboard_layout_switching", "nokeylayout"}
     };
     auto it = aliases.find(name);
     return (it != aliases.end()) ? it->second : name;

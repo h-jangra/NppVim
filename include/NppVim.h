@@ -40,7 +40,7 @@ enum TextObjectType {
 struct VimConfig {
     std::string escapeKey = "esc";
     std::string customEscape = "";
-    bool enableKeyboardLayoutSwitching;
+    bool enableKeyboardLayoutSwitching = false;
     std::string normallayout = "en-US";
     std::string insertlayout = "system";
     int escapeTimeout = 300;

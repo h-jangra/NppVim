@@ -63,20 +63,7 @@ void CommandMode::enter(char prompt) {
   state.commandBuffer.clear();
   state.commandBuffer.push_back(prompt);
 
-  if (g_config.enableKeyboardLayoutSwitching) {
-    HWND focusWnd = ::GetFocus();
-    HKL targetLayout = Utils::resolveLayout(g_config.normallayout);
-    if (!targetLayout) targetLayout = ::LoadKeyboardLayout(L"00000409", KLF_ACTIVATE);
-
-    DWORD threadId = GetWindowThreadProcessId(focusWnd,nullptr);
-    HKL currentLayout = GetKeyboardLayout(threadId);
-    
-    if (currentLayout != targetLayout) {
-      state.savedInsertLayout = currentLayout;
-      ::ActivateKeyboardLayout(targetLayout, 0);
-      ::PostMessage(focusWnd, WM_INPUTLANGCHANGEREQUEST, 0, (LPARAM)targetLayout);
-    }
-  }
+  Utils::switchToNormalLayout();
 
   HWND h = Utils::getCurrentScintillaHandle();
   if (h) {

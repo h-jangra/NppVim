@@ -105,6 +105,8 @@ public:
     static void parseLangmap(const std::string& langmapStr);
     static char applyLangmap(wchar_t c);
     static HKL resolveLayout(const std::string& layoutName);
+    static void switchToNormalLayout();
+    static void switchToInsertLayout();
 
     static void rot13(HWND hwnd, int start, int end);
     static int sci(HWND h, int msg, WPARAM w = 0, LPARAM l = 0);

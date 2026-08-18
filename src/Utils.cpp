@@ -785,29 +785,140 @@ char Utils::applyLangmap(wchar_t c) {
     return 0;
 }
 
+static HKL findLoadedLayout(uint32_t targetVal, WORD langId = 0) {
+    int count = ::GetKeyboardLayoutList(0, NULL);
+    if (count > 0) {
+        std::vector<HKL> layouts(count);
+        count = ::GetKeyboardLayoutList(count, layouts.data());
+        // 1. Exact match on full HKL value
+        for (int i = 0; i < count; ++i) {
+            uint32_t val = (uint32_t)(uintptr_t)layouts[i];
+            if (val == targetVal) {
+                return layouts[i];
+            }
+        }
+        // 2. Match language ID (low word) if langId != 0
+        if (langId != 0) {
+            for (int i = 0; i < count; ++i) {
+                WORD low = LOWORD(layouts[i]);
+                if (low == langId) {
+                    return layouts[i];
+                }
+            }
+        }
+    }
+    return nullptr;
+}
+
 HKL Utils::resolveLayout(const std::string& layoutName) {
     if (layoutName == "system" || layoutName.empty()) return nullptr;
 
-    // Mapping some common names to LCIDs
-    static std::map<std::string, std::string> nameToLcid = {
-        {"en-US", "00000409"}, {"en-GB", "00000809"},
-        {"ru-RU", "00000419"}, {"hi-IN", "00000439"},
-        {"fr-FR", "0000040c"}, {"de-DE", "00000407"},
-        {"es-ES", "0000040a"}, {"it-IT", "00000410"},
-        {"ja-JP", "00000411"}, {"ko-KR", "00000412"},
-        {"zh-CN", "00000804"}
-    };
+    // 1. Check if user provided an 8-character hex KLID (e.g. "00000409", "00010409", "b0010309")
+    if (layoutName.length() == 8 && std::all_of(layoutName.begin(), layoutName.end(), ::isxdigit)) {
+        try {
+            uint32_t val = std::stoul(layoutName, nullptr, 16);
+            WORD langId = LOWORD(val);
+            HKL loaded = findLoadedLayout(val, langId);
+            if (loaded) return loaded;
+        } catch (...) {}
 
-    std::string lcid = "00000409"; // Default to US English
-    auto it = nameToLcid.find(layoutName);
-    if (it != nameToLcid.end()) {
-        lcid = it->second;
-    } else if (layoutName.length() == 8 && std::all_of(layoutName.begin(), layoutName.end(), ::isxdigit)) {
-        lcid = layoutName;
+        std::wstring wklid(layoutName.begin(), layoutName.end());
+        return ::LoadKeyboardLayoutW(wklid.c_str(), KLF_SUBSTITUTE_OK);
     }
 
-    std::wstring wlcid(lcid.begin(), lcid.end());
-    return ::LoadKeyboardLayout(wlcid.c_str(), KLF_ACTIVATE);
+    // 2. Check if user provided a 4-character hex LANGID/LCID (e.g. "0409", "041d")
+    if (layoutName.length() == 4 && std::all_of(layoutName.begin(), layoutName.end(), ::isxdigit)) {
+        try {
+            uint32_t val = std::stoul(layoutName, nullptr, 16);
+            WORD langId = (WORD)val;
+            HKL loaded = findLoadedLayout(val, langId);
+            if (loaded) return loaded;
+
+            wchar_t klidBuf[16];
+            swprintf_s(klidBuf, L"%08x", (unsigned int)val);
+            return ::LoadKeyboardLayoutW(klidBuf, KLF_SUBSTITUTE_OK);
+        } catch (...) {}
+    }
+
+    // 3. Known language tag to KLID map
+    static const std::unordered_map<std::string, std::string> nameToLcid = {
+        {"en-US", "00000409"}, {"en-GB", "00000809"}, {"en-CA", "00001009"}, {"en-AU", "00000c09"},
+        {"ru-RU", "00000419"}, {"hi-IN", "00000439"}, {"sv-SE", "0000041d"}, {"pt-BR", "00000416"},
+        {"pt-PT", "00000816"}, {"fr-FR", "0000040c"}, {"fr-CA", "00000c0c"}, {"de-DE", "00000407"},
+        {"de-CH", "00000807"}, {"es-ES", "0000040a"}, {"es-MX", "0000080a"}, {"it-IT", "00000410"},
+        {"ja-JP", "00000411"}, {"ko-KR", "00000412"}, {"zh-CN", "00000804"}, {"zh-TW", "00000404"},
+        {"nl-NL", "00000413"}, {"pl-PL", "00000415"}, {"cs-CZ", "00000405"}, {"da-DK", "00000406"},
+        {"fi-FI", "0000040b"}, {"nb-NO", "00000414"}, {"nn-NO", "00000814"}, {"tr-TR", "0000041f"},
+        {"uk-UA", "00000422"}, {"ar-SA", "00000401"}, {"he-IL", "0000040d"}, {"el-GR", "00000408"},
+        {"hu-HU", "0000040e"}, {"ro-RO", "00000418"}, {"th-TH", "0000041e"}, {"vi-VN", "0000042a"}
+    };
+
+    auto it = nameToLcid.find(layoutName);
+    if (it != nameToLcid.end()) {
+        try {
+            uint32_t val = std::stoul(it->second, nullptr, 16);
+            WORD langId = LOWORD(val);
+            HKL loaded = findLoadedLayout(val, langId);
+            if (loaded) return loaded;
+
+            std::wstring wklid(it->second.begin(), it->second.end());
+            return ::LoadKeyboardLayoutW(wklid.c_str(), KLF_SUBSTITUTE_OK);
+        } catch (...) {}
+    }
+
+    // 4. Try dynamic resolution via Windows API LocaleNameToLCID
+    std::wstring wLayoutName(layoutName.begin(), layoutName.end());
+    LCID lcid = ::LocaleNameToLCID(wLayoutName.c_str(), LOCALE_ALLOW_NEUTRAL_NAMES);
+    if (lcid != 0) {
+        WORD langId = LOWORD(lcid);
+        HKL loaded = findLoadedLayout(lcid, langId);
+        if (loaded) return loaded;
+
+        wchar_t klidBuf[16];
+        swprintf_s(klidBuf, L"%08x", (unsigned int)lcid);
+        return ::LoadKeyboardLayoutW(klidBuf, KLF_SUBSTITUTE_OK);
+    }
+
+    return nullptr;
+}
+
+void Utils::switchToNormalLayout() {
+    if (!g_config.enableKeyboardLayoutSwitching) return;
+    if (g_config.normallayout == "system" || g_config.normallayout.empty()) return;
+
+    HKL targetLayout = resolveLayout(g_config.normallayout);
+    if (!targetLayout) return;
+
+    HWND focusWnd = ::GetFocus();
+    DWORD threadId = focusWnd ? ::GetWindowThreadProcessId(focusWnd, nullptr) : 0;
+    HKL currentLayout = ::GetKeyboardLayout(threadId);
+    if (currentLayout != targetLayout) {
+        state.savedInsertLayout = currentLayout;
+        ::ActivateKeyboardLayout(targetLayout, 0);
+        if (focusWnd) ::PostMessage(focusWnd, WM_INPUTLANGCHANGEREQUEST, 0, (LPARAM)targetLayout);
+    }
+}
+
+void Utils::switchToInsertLayout() {
+    if (!g_config.enableKeyboardLayoutSwitching) return;
+
+    HKL targetLayout = nullptr;
+    if (g_config.insertlayout == "system" || g_config.insertlayout.empty()) {
+        targetLayout = state.savedInsertLayout;
+        if (!targetLayout) targetLayout = g_userLayout;
+    } else {
+        targetLayout = resolveLayout(g_config.insertlayout);
+    }
+
+    if (!targetLayout) return;
+
+    HWND focusWnd = ::GetFocus();
+    DWORD threadId = focusWnd ? ::GetWindowThreadProcessId(focusWnd, nullptr) : 0;
+    HKL currentLayout = ::GetKeyboardLayout(threadId);
+    if (currentLayout != targetLayout) {
+        ::ActivateKeyboardLayout(targetLayout, 0);
+        if (focusWnd) ::PostMessage(focusWnd, WM_INPUTLANGCHANGEREQUEST, 0, (LPARAM)targetLayout);
+    }
 }
 
 std::string Utils::translateKeyNotation(const std::string& input) {

@@ -1034,7 +1034,8 @@ extern "C" __declspec(dllexport) void setInfo(NppData notpadPlusData) {
     initializeOptions();
     g_normalMode = new NormalMode(state); g_visualMode = new VisualMode(state); g_commandMode = new CommandMode(state);
     loadConfig();
-    g_englishLayout = LoadKeyboardLayout(TEXT("00000409"), KLF_ACTIVATE); g_userLayout = GetKeyboardLayout(0);
+    g_userLayout = GetKeyboardLayout(0);
+    g_englishLayout = g_userLayout;
     state.vimEnabled = g_config.vimEnabled;
     if (state.vimEnabled) {
         ensureScintillaHooks();

@@ -1070,19 +1070,7 @@ void VisualMode::enterChar(HWND hwnd) {
     
     Utils::updateImeForMode(hwnd, VISUAL);
     Utils::syncAllScintillaIme();
-
-    if (g_config.enableKeyboardLayoutSwitching) {
-        HWND focusWnd = ::GetFocus();
-        HKL targetLayout = Utils::resolveLayout(g_config.normallayout);
-        if (!targetLayout) targetLayout = ::LoadKeyboardLayout(L"00000409", KLF_ACTIVATE);
-
-        HKL currentLayout = ::GetKeyboardLayout(0);
-        if (currentLayout != targetLayout) {
-            state.savedInsertLayout = currentLayout;
-            ::ActivateKeyboardLayout(targetLayout, 0);
-            ::PostMessage(focusWnd, WM_INPUTLANGCHANGEREQUEST, 0, (LPARAM)targetLayout);
-        }
-    }
+    Utils::switchToNormalLayout();
 
     state.isLineVisual = false;
     state.isBlockVisual = false;
@@ -1110,6 +1098,7 @@ void VisualMode::enterLine(HWND hwnd) {
 
     Utils::updateImeForMode(hwnd, VISUAL);
     Utils::syncAllScintillaIme();
+    Utils::switchToNormalLayout();
 
     int caret = Utils::caretPos(hwnd);
     int line = ::SendMessage(hwnd, SCI_LINEFROMPOSITION, caret, 0);
@@ -1140,6 +1129,7 @@ void VisualMode::enterBlock(HWND hwnd) {
 
     Utils::updateImeForMode(hwnd, VISUAL);
     Utils::syncAllScintillaIme();
+    Utils::switchToNormalLayout();
 
     int caret = Utils::caretPos(hwnd);
     state.visualAnchor = caret;
