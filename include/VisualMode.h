@@ -15,6 +15,7 @@ public:
     void exitToNormal(HWND hwnd);
     void handleKey(HWND hwnd, char c);
     void visualMoveCursor(HWND hwndEdit, int newPos);
+    void extendSelection(HWND hwndEdit, int newPos);
     
 private:
     VimState& state;
@@ -30,7 +31,6 @@ private:
     void handleBlockWordLeft(HWND hwnd, bool bigWord);
     void handleBlockWordEnd(HWND hwnd, bool bigWord);
 
-    void extendSelection(HWND hwndEdit, int newPos);
     void handleVisualReplaceInput(HWND hwnd, char replaceChar);
     void saveVisualSelection(HWND h);
 };

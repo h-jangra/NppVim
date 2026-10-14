@@ -217,70 +217,11 @@ void VisualMode::setupKeyMaps() {
 
         extendSelection(h, pos);
     })
-    .motion("ge", 'e', [this](HWND h, int c) {
-        for (int i = 0; i < c; i++) {
-            int pos = Utils::caretPos(h);
-
-            if (pos > 0)
-                pos = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
-
-            while (pos > 0) {
-                char ch = ::SendMessage(h, SCI_GETCHARAT, pos, 0);
-                if (!isspace(ch)) break;
-                pos = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
-            }
-
-            while (pos > 0) {
-                char ch = ::SendMessage(h, SCI_GETCHARAT, pos - 1, 0);
-                if (isspace(ch)) break;
-                pos = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
-            }
-
-            while (true) {
-                char ch = ::SendMessage(h, SCI_GETCHARAT, pos, 0);
-                if (isspace(ch)) break;
-
-                int next = ::SendMessage(h, SCI_POSITIONAFTER, pos, 0);
-                if (next == pos) break;
-                pos = next;
-            }
-
-            pos = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
-
-            extendSelection(h, pos);
-        }
-    }).motion("gE", 'E', [this](HWND h, int c) {
-        for (int i = 0; i < c; i++) {
-            int pos = Utils::caretPos(h);
-
-            if (pos > 0)
-                pos = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
-
-            while (pos > 0) {
-                char ch = ::SendMessage(h, SCI_GETCHARAT, pos, 0);
-                if (ch != ' ' && ch != '\t' && ch != '\n') break;
-                pos = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
-            }
-
-            while (pos > 0) {
-                char ch = ::SendMessage(h, SCI_GETCHARAT, pos - 1, 0);
-                if (ch == ' ' || ch == '\t' || ch == '\n') break;
-                pos = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
-            }
-
-            while (true) {
-                char ch = ::SendMessage(h, SCI_GETCHARAT, pos, 0);
-                if (ch == ' ' || ch == '\t' || ch == '\n') break;
-
-                int next = ::SendMessage(h, SCI_POSITIONAFTER, pos, 0);
-                if (next == pos) break;
-                pos = next;
-            }
-
-            pos = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
-
-            extendSelection(h, pos);
-        }
+    .motion("ge", 'e', [](HWND h, int c) {
+        Motion::wordEndPrev(h, c);
+    })
+    .motion("gE", 'E', [](HWND h, int c) {
+        Motion::wordEndPrevBig(h, c);
     }).motion("gm", 'm', [this](HWND h, int c) {
         int first = ::SendMessage(h, SCI_GETFIRSTVISIBLELINE, 0, 0);
         int lines = ::SendMessage(h, SCI_LINESONSCREEN, 0, 0);
@@ -1173,6 +1114,9 @@ void VisualMode::exitToNormal(HWND h) {
 }
 
 void VisualMode::handleKey(HWND hwnd, char c) {
+    if (state.recordingMacro && g_macroDepth == 0) {
+        state.macroBuffer.push_back(c);
+    }
 
     if (state.opPending == 'f' || state.opPending == 'F' ||
         state.opPending == 't' || state.opPending == 'T') {

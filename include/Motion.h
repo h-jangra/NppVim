@@ -15,6 +15,7 @@ public:
     static void wordEnd(HWND hwndEdit, int count);
     static void wordEndBig(HWND hwndEdit, int count);
     static void wordEndPrev(HWND hwndEdit, int count);
+    static void wordEndPrevBig(HWND hwndEdit, int count);
     static void lineEnd(HWND hwndEdit, int count);
     static void lineStart(HWND hwndEdit, int count);
 

@@ -237,6 +237,7 @@ void CommandMode::handleCommand(HWND hwndEdit) {
       }
     } else if (firstChar == ':') {
       if (buf.size() > 1) {
+        Registers::getInstance().set(':', buf.substr(1), RegisterType::CharacterWise, false);
         handleColonCommand(hwndEdit, buf.substr(1));
       } else {
         this->exit();

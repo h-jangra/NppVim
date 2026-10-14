@@ -178,6 +178,9 @@ void Keymap::feedKey(HWND hwnd, char c) {
                 ::state.insertMacroBuffers.back().push_back('\x1B');
                 ::state.recordingInsertMacro = false;
             }
+            if (::state.recordingMacro && g_macroDepth == 0) {
+                ::state.macroBuffer.push_back('\x1B');
+            }
             if (g_normalMode) g_normalMode->enter();
             return;
         }
@@ -186,8 +189,41 @@ void Keymap::feedKey(HWND hwnd, char c) {
             return;
         }
 
+        if (c == 8) {
+            if (::state.recordingInsertMacro && !::state.insertMacroBuffers.empty()) {
+                ::state.insertMacroBuffers.back().push_back(c);
+            }
+            if (::state.recordingMacro && g_macroDepth == 0) {
+                ::state.macroBuffer.push_back(c);
+            }
+            ::SendMessage(hwnd, SCI_DELETEBACK, 0, 0);
+            return;
+        }
+
+        if (c == '\r' || c == '\n') {
+            static char lastNewlineChar = 0;
+            if (c == '\n' && lastNewlineChar == '\r') {
+                lastNewlineChar = 0;
+                return;
+            }
+            lastNewlineChar = c;
+
+            if (::state.recordingInsertMacro && !::state.insertMacroBuffers.empty()) {
+                ::state.insertMacroBuffers.back().push_back(c);
+            }
+            if (::state.recordingMacro && g_macroDepth == 0) {
+                ::state.macroBuffer.push_back(c);
+            }
+            ::SendMessage(hwnd, SCI_NEWLINE, 0, 0);
+            return;
+        }
+
         if (::state.recordingInsertMacro && !::state.insertMacroBuffers.empty()) {
             ::state.insertMacroBuffers.back().push_back(c);
+        }
+
+        if (::state.recordingMacro && g_macroDepth == 0) {
+            ::state.macroBuffer.push_back(c);
         }
 
         char str[2] = { c, '\0' };

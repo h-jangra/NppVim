@@ -146,6 +146,9 @@ struct VimState {
     std::vector<std::vector<char>> insertMacroBuffers; 
     bool recordingInsertMacro = false;
     bool awaitingMacroRegister = false;
+    bool awaitingMacroExecution = false;
+    int pendingMacroCount = 1;
+    char lastMacroRegister = '\0';
     bool bypassKeymap = false;
 
     void reset() {
@@ -157,6 +160,8 @@ struct VimState {
         awaitingMarkSet = false;
         awaitingMarkJump = false;
         isBacktickJump = false;
+        awaitingMacroRegister = false;
+        awaitingMacroExecution = false;
         commandBuffer.clear();
         lastSearchTerm.clear();
         searchFlags = 0;

@@ -897,6 +897,10 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
                 std::string utf8 = Utils::toUtf8(wChar);
                 for (char ch : utf8) state.insertMacroBuffers.back().push_back(ch);
             }
+            if (state.recordingMacro && g_macroDepth == 0 && wChar != VK_ESCAPE) {
+                std::string utf8 = Utils::toUtf8(wChar);
+                for (char ch : utf8) state.macroBuffer.push_back(ch);
+            }
             if ((int)wParam == VK_ESCAPE) {
                 ::SendMessage(hwnd, SCI_SETOVERTYPE, false, 0);
                 g_firstKey = 0;
@@ -908,6 +912,9 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
                 if (state.recordingInsertMacro) {
                     state.insertMacroBuffers.back().push_back('\x1B');
                     state.recordingInsertMacro = false;
+                }
+                if (state.recordingMacro && g_macroDepth == 0) {
+                    state.macroBuffer.push_back('\x1B');
                 }
                 g_normalMode->enter();
                 return 0;
@@ -921,6 +928,15 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
                 if (state.recordingInsertMacro && !state.insertMacroBuffers.empty()) {
                     state.insertMacroBuffers.back().push_back('\x1B');
                     state.recordingInsertMacro = false;
+                }
+                if (state.recordingMacro && g_macroDepth == 0) {
+                    size_t escLen = g_config.escapeKey.length();
+                    if (escLen > 1) {
+                        for (size_t i = 0; i < escLen - 1 && !state.macroBuffer.empty(); ++i) {
+                            state.macroBuffer.pop_back();
+                        }
+                    }
+                    state.macroBuffer.push_back('\x1B');
                 }
                 int pos = (int)::SendMessage(hwnd, SCI_GETCURRENTPOS, 0, 0);
                 if (pos >= 1) {
@@ -940,7 +956,14 @@ LRESULT CALLBACK ScintillaHookProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
         char c = Utils::applyLangmap(wChar);
         if (c == 0) return 0; // Consume unmapped non-ASCII in Normal/Visual mode to prevent text insertion
 
-        if (c == 27) { g_firstKey = 0; g_normalMode->enter(); return 0; }
+        if (c == 27) {
+            if (state.recordingMacro && g_macroDepth == 0 && state.mode == VISUAL) {
+                state.macroBuffer.push_back(27);
+            }
+            g_firstKey = 0;
+            g_normalMode->enter();
+            return 0;
+        }
         if (state.mode == NORMAL) { g_normalMode->handleKey(hwnd, c); return 0; }
         else if (state.mode == VISUAL) { g_visualMode->handleKey(hwnd, c); return 0; }
     }

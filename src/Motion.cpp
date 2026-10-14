@@ -3,6 +3,9 @@
 #include "../plugin/Scintilla.h"
 #include "../include/NppVim.h"
 #include "../include/Utils.h"
+#include "../include/VisualMode.h"
+
+extern VisualMode* g_visualMode;
 
 Motion motion;
 
@@ -167,8 +170,91 @@ void Motion::wordEndBig(HWND hwndEdit, int count) {
     }
 }
 
+enum class MotionCharType { Whitespace, Word, Punctuation };
+
+static MotionCharType getMotionCharType(char c) {
+    unsigned char uc = static_cast<unsigned char>(c);
+    if (isspace(uc) || c == '\0') return MotionCharType::Whitespace;
+    if (isalnum(uc) || c == '_') return MotionCharType::Word;
+    return MotionCharType::Punctuation;
+}
+
+static bool isMotionWhitespace(char c) {
+    unsigned char uc = static_cast<unsigned char>(c);
+    return isspace(uc) || c == '\0';
+}
+
 void Motion::wordEndPrev(HWND hwndEdit, int count) {
-    doMotion(hwndEdit, SCI_WORDLEFTEND, SCI_WORDLEFTENDEXTEND, count);
+    for (int i = 0; i < count; i++) {
+        int pos = Utils::caretPos(hwndEdit);
+        if (pos <= 0) break;
+
+        char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, pos, 0);
+        MotionCharType curType = getMotionCharType(ch);
+        if (curType != MotionCharType::Whitespace) {
+            while (pos > 0) {
+                char prevCh = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, pos - 1, 0);
+                if (getMotionCharType(prevCh) != curType) break;
+                pos = (int)::SendMessage(hwndEdit, SCI_POSITIONBEFORE, pos, 0);
+            }
+            if (pos > 0) {
+                pos = (int)::SendMessage(hwndEdit, SCI_POSITIONBEFORE, pos, 0);
+            }
+        }
+
+        while (pos > 0) {
+            char c = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, pos, 0);
+            if (getMotionCharType(c) != MotionCharType::Whitespace) break;
+            pos = (int)::SendMessage(hwndEdit, SCI_POSITIONBEFORE, pos, 0);
+        }
+
+        if (state.mode == VISUAL) {
+            if (g_visualMode) {
+                g_visualMode->extendSelection(hwndEdit, pos);
+            } else {
+                int anchor = state.visualAnchor;
+                ::SendMessage(hwndEdit, SCI_SETSEL, anchor, pos);
+            }
+        } else {
+            ::SendMessage(hwndEdit, SCI_GOTOPOS, pos, 0);
+        }
+    }
+}
+
+void Motion::wordEndPrevBig(HWND hwndEdit, int count) {
+    for (int i = 0; i < count; i++) {
+        int pos = Utils::caretPos(hwndEdit);
+        if (pos <= 0) break;
+
+        char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, pos, 0);
+        if (!isMotionWhitespace(ch)) {
+            while (pos > 0) {
+                char prevCh = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, pos - 1, 0);
+                if (isMotionWhitespace(prevCh)) break;
+                pos = (int)::SendMessage(hwndEdit, SCI_POSITIONBEFORE, pos, 0);
+            }
+            if (pos > 0) {
+                pos = (int)::SendMessage(hwndEdit, SCI_POSITIONBEFORE, pos, 0);
+            }
+        }
+
+        while (pos > 0) {
+            char c = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, pos, 0);
+            if (!isMotionWhitespace(c)) break;
+            pos = (int)::SendMessage(hwndEdit, SCI_POSITIONBEFORE, pos, 0);
+        }
+
+        if (state.mode == VISUAL) {
+            if (g_visualMode) {
+                g_visualMode->extendSelection(hwndEdit, pos);
+            } else {
+                int anchor = state.visualAnchor;
+                ::SendMessage(hwndEdit, SCI_SETSEL, anchor, pos);
+            }
+        } else {
+            ::SendMessage(hwndEdit, SCI_GOTOPOS, pos, 0);
+        }
+    }
 }
 
 void Motion::lineEnd(HWND hwndEdit, int count) {

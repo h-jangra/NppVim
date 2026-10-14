@@ -1,4 +1,5 @@
 #include "../include/Registers.h"
+#include "../include/Utils.h"
 #include <windows.h>
 #include <cctype>
 #include <set>
@@ -166,13 +167,14 @@ void Registers::saveChanged(char reg, const std::string& text, RegisterType type
 void Registers::setClipboardText(const std::string& text) {
     if (!OpenClipboard(nullptr)) return;
     EmptyClipboard();
-    HGLOBAL h = GlobalAlloc(GMEM_MOVEABLE, text.size() + 1);
+    std::wstring wtext = Utils::toWide(text);
+    HGLOBAL h = GlobalAlloc(GMEM_MOVEABLE, (wtext.size() + 1) * sizeof(wchar_t));
     if (h) {
-        char* p = (char*)GlobalLock(h);
+        wchar_t* p = (wchar_t*)GlobalLock(h);
         if (p) {
-            memcpy(p, text.c_str(), text.size() + 1);
+            memcpy(p, wtext.c_str(), (wtext.size() + 1) * sizeof(wchar_t));
             GlobalUnlock(h);
-            SetClipboardData(CF_TEXT, h);
+            SetClipboardData(CF_UNICODETEXT, h);
         }
     }
     CloseClipboard();
@@ -181,7 +183,17 @@ void Registers::setClipboardText(const std::string& text) {
 std::string Registers::getClipboardText() {
     std::string result;
     if (!OpenClipboard(nullptr)) return result;
-    HANDLE hData = GetClipboardData(CF_TEXT);
+    HANDLE hData = GetClipboardData(CF_UNICODETEXT);
+    if (hData) {
+        wchar_t* pwText = (wchar_t*)GlobalLock(hData);
+        if (pwText) {
+            result = Utils::toUtf8(pwText);
+            GlobalUnlock(hData);
+            CloseClipboard();
+            return result;
+        }
+    }
+    hData = GetClipboardData(CF_TEXT);
     if (hData) {
         char* pszText = (char*)GlobalLock(hData);
         if (pszText) {

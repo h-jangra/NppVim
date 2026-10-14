@@ -180,73 +180,13 @@ void NormalMode::setupKeyMaps() {
          Utils::select(h, pos, pos);
          state.recordLastOp(OP_MOTION, c, 'g');
      })
-     .set("ge", "Previous word end",  [](HWND h, int c) {
-        for (int i = 0; i < c; i++) {
-            int pos = Utils::caretPos(h);
-
-            if (pos > 0)
-                pos = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
-
-            while (pos > 0) {
-                char ch = ::SendMessage(h, SCI_GETCHARAT, pos, 0);
-                if (!isspace(ch)) break;
-                pos = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
-            }
-
-            while (pos > 0) {
-                char ch = ::SendMessage(h, SCI_GETCHARAT, pos - 1, 0);
-                if (isspace(ch)) break;
-                pos = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
-            }
-
-            while (true) {
-                char ch = ::SendMessage(h, SCI_GETCHARAT, pos, 0);
-                if (isspace(ch)) break;
-
-                int next = ::SendMessage(h, SCI_POSITIONAFTER, pos, 0);
-                if (next == pos) break;
-                pos = next;
-            }
-
-            pos = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
-
-            ::SendMessage(h, SCI_GOTOPOS, pos, 0);
-        }
-    })
-    .motion("gE", 'E', "Previous WORD end", [](HWND h, int c) {
-        for (int i = 0; i < c; i++) {
-            int pos = Utils::caretPos(h);
-
-            if (pos > 0)
-                pos = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
-
-            while (pos > 0) {
-                char ch = ::SendMessage(h, SCI_GETCHARAT, pos, 0);
-                if (ch != ' ' && ch != '\t' && ch != '\n') break;
-                pos = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
-            }
-
-            while (pos > 0) {
-                char ch = ::SendMessage(h, SCI_GETCHARAT, pos - 1, 0);
-                if (ch == ' ' || ch == '\t' || ch == '\n') break;
-                pos = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
-            }
-
-            while (true) {
-                char ch = ::SendMessage(h, SCI_GETCHARAT, pos, 0);
-                if (ch == ' ' || ch == '\t' || ch == '\n') break;
-
-                int next = ::SendMessage(h, SCI_POSITIONAFTER, pos, 0);
-                if (next == pos) break;
-                pos = next;
-            }
-
-            pos = ::SendMessage(h, SCI_POSITIONBEFORE, pos, 0);
-
-            ::SendMessage(h, SCI_GOTOPOS, pos, 0);
-        }
-    })
-    .set("gf", "Goto file", [](HWND h, int c) {
+     .motion("ge", 'e', "Previous word end", [](HWND h, int c) {
+         Motion::wordEndPrev(h, c);
+     })
+     .motion("gE", 'E', "Previous WORD end", [](HWND h, int c) {
+         Motion::wordEndPrevBig(h, c);
+     })
+     .set("gf", "Goto file", [](HWND h, int c) {
         int pos = Utils::caretPos(h);
         int line = Utils::caretLine(h);
         int lineStart = Utils::lineStart(h, line);
@@ -962,11 +902,22 @@ void NormalMode::setupKeyMaps() {
         ::SendMessage(h, SCI_TOGGLEFOLD, ::SendMessage(h, SCI_LINEFROMPOSITION, Utils::caretPos(h), 0), 0);
     })
     .set("q", "Start/stop recording macro", [this](HWND h, int c) {
+        if (state.opPending) {
+            state.resetPending();
+            Utils::setStatus(TEXT(""));
+            return;
+        }
         if (state.recordingMacro) {
             if (!state.macroBuffer.empty() && state.macroBuffer.back() == 'q') {
                 state.macroBuffer.pop_back();
             }
-            state.registers[state.macroRegister] = std::string(state.macroBuffer.begin(), state.macroBuffer.end());
+            std::string content(state.macroBuffer.begin(), state.macroBuffer.end());
+            Registers::getInstance().set(state.macroRegister, content, RegisterType::CharacterWise, false);
+            char lowerReg = (state.macroRegister >= 'A' && state.macroRegister <= 'Z')
+                ? (char)std::tolower(static_cast<unsigned char>(state.macroRegister))
+                : state.macroRegister;
+            state.registers[lowerReg] = Registers::getInstance().get(lowerReg);
+            state.lastMacroRegister = lowerReg;
             state.recordingMacro = false;
             state.recordingInsertMacro = false;
             state.macroRegister = '\0';
@@ -981,43 +932,9 @@ void NormalMode::setupKeyMaps() {
             Utils::setStatus(TEXT("Macro recursion limit reached"));
             return;
         }
-
-        char reg = Utils::getCurrentRegister();
-
-        if (state.registers.find(reg) == state.registers.end() || state.registers[reg].empty()) {
-            Utils::setStatus(TEXT("Register is empty"));
-            return;
-        }
-        std::string macroContent = state.registers[reg];
-
-        // Iteration limit to prevent infinite loops
-        const int MAX_MACRO_ITERATIONS = 1000;
-        int iterations = 0;
-
-        g_macroDepth++;
-
-        for (int iteration = 0; iteration < c; ++iteration) {
-            for (char key : macroContent) {
-                if (++iterations > MAX_MACRO_ITERATIONS) {
-                    Utils::setStatus(TEXT("Macro iteration limit reached"));
-                    g_macroDepth--;
-                    return;
-                }
-
-                // Process Windows messages to keep UI responsive
-                // MSG msg;
-                // while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
-                //     TranslateMessage(&msg);
-                //     DispatchMessage(&msg);
-                // }
-
-                handleKey(h, key);
-            }
-        }
-
-        g_macroDepth--;
-        Utils::setCurrentRegister('"');
-        Utils::setStatus(TEXT(""));
+        state.awaitingMacroExecution = true;
+        state.pendingMacroCount = (c > 0) ? c : 1;
+        Utils::setStatus(TEXT("@"));
     });
 
     k.set("m", "Set mark", [this](HWND h, int c) {
@@ -1252,7 +1169,14 @@ void NormalMode::enter() {
 
     if (g_normalKeymap) g_normalKeymap->reset();
 
-    Utils::setStatus(TEXT("-- NORMAL --"));
+    if (state.recordingMacro && state.macroRegister != '\0') {
+        std::wstring status = L"-- Recording @";
+        status += (wchar_t)state.macroRegister;
+        status += L" --";
+        Utils::setStatus(status.c_str());
+    } else {
+        Utils::setStatus(TEXT("-- NORMAL --"));
+    }
     ::SendMessage(hwnd, SCI_SETCARETSTYLE, CARETSTYLE_BLOCK, 0);
 
     ::SendMessage(hwnd, SCI_SETSELECTIONMODE, SC_SEL_STREAM, 0);
@@ -1306,9 +1230,63 @@ void handleInsertModeChar(HWND hwnd, char c, VimState& state) {
     ::SendMessage(hwnd, SCI_ADDTEXT, 1, (LPARAM)&c);
 }
 
+void NormalMode::executeMacro(HWND hwnd, char reg, int count) {
+    if (g_macroDepth >= MAX_MACRO_DEPTH) {
+        Utils::setStatus(TEXT("Macro recursion limit reached"));
+        return;
+    }
+
+    std::string macroContent;
+    if (Utils::isValidRegister(reg)) {
+        macroContent = Registers::getInstance().get(reg);
+    }
+    if (macroContent.empty() && state.registers.count(reg)) {
+        macroContent = state.registers[reg];
+    }
+
+    if (macroContent.empty()) {
+        Utils::setStatus(TEXT("Register is empty"));
+        return;
+    }
+
+    if (reg == ':') {
+        macroContent = ":" + macroContent + "\r";
+    }
+
+    state.lastMacroRegister = (reg >= 'A' && reg <= 'Z')
+        ? (char)std::tolower(static_cast<unsigned char>(reg))
+        : reg;
+
+    const int MAX_MACRO_ITERATIONS = 10000;
+    int iterations = 0;
+
+    g_macroDepth++;
+
+    for (int iteration = 0; iteration < count; ++iteration) {
+        for (char key : macroContent) {
+            if (++iterations > MAX_MACRO_ITERATIONS) {
+                Utils::setStatus(TEXT("Macro iteration limit reached"));
+                g_macroDepth--;
+                return;
+            }
+
+            Keymap::feedKey(hwnd, key);
+        }
+    }
+
+    g_macroDepth--;
+    Utils::setCurrentRegister('"');
+    Utils::setStatus(TEXT(""));
+}
+
 void NormalMode::handleKey(HWND hwnd, char c) {
     if (state.awaitingMacroRegister) {
-        if (Utils::isValidRegister(c)) {
+        if (c == 27) {
+            state.awaitingMacroRegister = false;
+            Utils::setStatus(TEXT(""));
+            return;
+        }
+        if (Utils::isValidRegister(c) && !Registers::isReadOnly(c)) {
             state.macroRegister = c;
             state.recordingMacro = true;
             state.recordingInsertMacro = false;
@@ -1327,7 +1305,48 @@ void NormalMode::handleKey(HWND hwnd, char c) {
         return;
     }
 
-    if (state.recordingMacro && c != 'q' && !state.awaitingRegister) {
+    if (state.awaitingMacroExecution) {
+        state.awaitingMacroExecution = false;
+
+        if (c == 27) { // ESC cancels
+            if (state.recordingMacro && g_macroDepth == 0 && !state.macroBuffer.empty() && state.macroBuffer.back() == '@') {
+                state.macroBuffer.pop_back();
+            }
+            Utils::setStatus(TEXT(""));
+            return;
+        }
+
+        char reg = c;
+        if (reg == '@') {
+            reg = state.lastMacroRegister;
+            if (reg == '\0') {
+                if (state.recordingMacro && g_macroDepth == 0 && !state.macroBuffer.empty() && state.macroBuffer.back() == '@') {
+                    state.macroBuffer.pop_back();
+                }
+                Utils::setStatus(TEXT("No previous macro"));
+                return;
+            }
+        } else if (reg >= 'A' && reg <= 'Z') {
+            reg = (char)std::tolower(static_cast<unsigned char>(reg));
+        }
+
+        if (!Utils::isValidRegister(reg)) {
+            if (state.recordingMacro && g_macroDepth == 0 && !state.macroBuffer.empty() && state.macroBuffer.back() == '@') {
+                state.macroBuffer.pop_back();
+            }
+            Utils::setStatus(TEXT("Invalid register"));
+            return;
+        }
+
+        if (state.recordingMacro && g_macroDepth == 0) {
+            state.macroBuffer.push_back(c);
+        }
+
+        executeMacro(hwnd, reg, state.pendingMacroCount);
+        return;
+    }
+
+    if (state.recordingMacro && g_macroDepth == 0) {
         state.macroBuffer.push_back(c);
     }
 
@@ -1401,6 +1420,16 @@ void NormalMode::handleKey(HWND hwnd, char c) {
         state.textObjectPending = 0;
 
         int count = (state.repeatCount > 0) ? state.repeatCount : 1;
+
+        if (c == 'e' || c == 'E') {
+            char op = state.opPending;
+            state.opPending = 0;
+            state.repeatCount = 0;
+            Utils::beginUndo(hwnd);
+            applyOperatorToMotion(hwnd, op, (c == 'e' ? '\x01' : '\x02'), count);
+            Utils::endUndo(hwnd);
+            return;
+        }
 
         if (g_normalKeymap) {
             g_normalKeymap->handleKey(hwnd, 'g');
@@ -1629,6 +1658,8 @@ void NormalMode::applyOperatorToMotion(HWND hwnd, char op, char motion, int coun
     case 'B': Motion::wordLeftBig(hwnd, count); break;
     case 'e': Motion::wordEnd(hwnd, count); break;
     case 'E': Motion::wordEndBig(hwnd, count); break;
+    case '\x01': Motion::wordEndPrev(hwnd, count); break;
+    case '\x02': Motion::wordEndPrevBig(hwnd, count); break;
     case '$': Motion::lineEnd(hwnd, count); break;
     case '^': Motion::lineStart(hwnd, count); break;
     case '0': Motion::lineStart(hwnd, 1); break;
@@ -1706,7 +1737,7 @@ void NormalMode::applyOperatorToMotion(HWND hwnd, char op, char motion, int coun
         if (start > end) std::swap(start, end);
 
         // For word-end motions, include the character under cursor
-        if (motion == 'e' || motion == 'E') {
+        if (motion == 'e' || motion == 'E' || motion == '\x01' || motion == '\x02') {
             int docLen = ::SendMessage(hwnd, SCI_GETLENGTH, 0, 0);
             if (end < docLen) end = ::SendMessage(hwnd, SCI_POSITIONAFTER, end, 0);
         }

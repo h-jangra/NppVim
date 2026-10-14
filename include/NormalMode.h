@@ -17,6 +17,7 @@ public:
     void decrementNumber(HWND hwnd, int count);
     void jumpBackward(HWND hwnd);
     void jumpForward(HWND hwnd);
+    void executeMacro(HWND hwnd, char reg, int count);
     
 private:
     VimState& state;
