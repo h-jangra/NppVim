@@ -82,9 +82,9 @@ void TextObject::apply(HWND hwndEdit, VimState& state, char op, char modifier, c
         if (inner && start < end) {
             start++;
             end--;
-            if (start >= end) return;
+            if (start > end) return;
         }
-        if (start < end) {
+        if (start <= end) {
             executeTextObjectOperation(hwndEdit, state, op, start, end, count);
             record();
         }
@@ -101,8 +101,8 @@ void TextObject::apply(HWND hwndEdit, VimState& state, char op, char modifier, c
         default: return;
         }
 
-        auto bounds = findBracketBounds(hwndEdit, (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0), openChar, closeChar, inner);
-        if (bounds.first < bounds.second) {
+        auto bounds = findBracketBounds(hwndEdit, (int)::SendMessage(hwndEdit, SCI_GETCURRENTPOS, 0, 0), openChar, closeChar, inner, count);
+        if (bounds.first <= bounds.second && bounds.first != -1) {
             executeTextObjectOperation(hwndEdit, state, op, bounds.first, bounds.second, count);
             record();
         }
@@ -140,16 +140,16 @@ std::pair<int, int> TextObject::getTextObjectBounds(HWND hwndEdit, TextObjectTyp
         bounds = findParagraphBounds(hwndEdit, pos, inner);
         break;
     case TEXT_OBJECT_PAREN:
-        bounds = findBracketBounds(hwndEdit, pos, '(', ')', inner);
+        bounds = findBracketBounds(hwndEdit, pos, '(', ')', inner, count);
         break;
     case TEXT_OBJECT_BRACKET:
-        bounds = findBracketBounds(hwndEdit, pos, '[', ']', inner);
+        bounds = findBracketBounds(hwndEdit, pos, '[', ']', inner, count);
         break;
     case TEXT_OBJECT_BRACE:
-        bounds = findBracketBounds(hwndEdit, pos, '{', '}', inner);
+        bounds = findBracketBounds(hwndEdit, pos, '{', '}', inner, count);
         break;
     case TEXT_OBJECT_ANGLE:
-        bounds = findBracketBounds(hwndEdit, pos, '<', '>', inner);
+        bounds = findBracketBounds(hwndEdit, pos, '<', '>', inner, count);
         break;
     default:
         bounds = { pos, pos };
@@ -166,56 +166,150 @@ std::pair<int, int> TextObject::getTextObjectBounds(HWND hwndEdit, TextObjectTyp
     return bounds;
 }
 
-std::pair<int, int> TextObject::findBracketBounds(HWND hwndEdit, int pos, char openChar, char closeChar, bool inner) {
+std::pair<int, int> TextObject::findBracketBounds(HWND hwndEdit, int pos, char openChar, char closeChar, bool inner, int count) {
     int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
-    int line = ::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, pos, 0);
-    int lineStart = ::SendMessage(hwndEdit, SCI_POSITIONFROMLINE, line, 0);
-    int lineEnd = ::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, line, 0);
+    if (docLen <= 0 || pos < 0 || pos >= docLen) return { pos, pos };
+
+    auto findMatchingForward = [&](int openPos) -> int {
+        int m = (int)::SendMessage(hwndEdit, SCI_BRACEMATCH, openPos, 0);
+        if (m != -1 && m > openPos && (char)::SendMessage(hwndEdit, SCI_GETCHARAT, m, 0) == closeChar) {
+            return m;
+        }
+        int depth = 1;
+        for (int p = openPos + 1; p < docLen; p++) {
+            char c = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, p, 0);
+            if (c == openChar) {
+                depth++;
+            } else if (c == closeChar) {
+                depth--;
+                if (depth == 0) return p;
+            }
+        }
+        return -1;
+    };
+
+    auto findMatchingBackward = [&](int closePos) -> int {
+        int m = (int)::SendMessage(hwndEdit, SCI_BRACEMATCH, closePos, 0);
+        if (m != -1 && m < closePos && (char)::SendMessage(hwndEdit, SCI_GETCHARAT, m, 0) == openChar) {
+            return m;
+        }
+        int depth = 1;
+        for (int p = closePos - 1; p >= 0; p--) {
+            char c = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, p, 0);
+            if (c == closeChar) {
+                depth++;
+            } else if (c == openChar) {
+                depth--;
+                if (depth == 0) return p;
+            }
+        }
+        return -1;
+    };
 
     int startPos = -1;
     int endPos = -1;
-    int minDistance = docLen;
 
-    for (int searchStart = lineStart; searchStart <= lineEnd; searchStart++) {
-        char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, searchStart, 0);
-        if (ch != openChar) continue;
+    char chAtPos = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, pos, 0);
 
-        int bracketCount = 1;
-        int searchPos = searchStart + 1;
-
-        while (searchPos < docLen && bracketCount > 0) {
-            char ch2 = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, searchPos, 0);
-            if (ch2 == openChar) {
-                bracketCount++;
+    // 1. Cursor is directly on openChar
+    if (chAtPos == openChar) {
+        int match = findMatchingForward(pos);
+        if (match != -1) {
+            int selStart = (int)::SendMessage(hwndEdit, SCI_GETSELECTIONSTART, 0, 0);
+            int selEnd = (int)::SendMessage(hwndEdit, SCI_GETSELECTIONEND, 0, 0);
+            bool alreadyOuterSelected = (!inner && selStart == pos && selEnd == match + 1);
+            if (!alreadyOuterSelected) {
+                startPos = pos;
+                endPos = match;
             }
-            else if (ch2 == closeChar) {
-                bracketCount--;
-                if (bracketCount == 0) {
-                    if (pos >= searchStart && pos <= searchPos) {
-                        startPos = searchStart;
-                        endPos = searchPos;
+        }
+    }
+    // 2. Cursor is directly on closeChar
+    else if (chAtPos == closeChar) {
+        int match = findMatchingBackward(pos);
+        if (match != -1) {
+            int selStart = (int)::SendMessage(hwndEdit, SCI_GETSELECTIONSTART, 0, 0);
+            int selEnd = (int)::SendMessage(hwndEdit, SCI_GETSELECTIONEND, 0, 0);
+            bool alreadyInnerSelected = (inner && selStart == match + 1 && selEnd == pos);
+            bool alreadyOuterSelected = (!inner && selStart == match && selEnd == pos + 1);
+            if (!alreadyInnerSelected && !alreadyOuterSelected) {
+                startPos = match;
+                endPos = pos;
+            }
+        }
+    }
+
+    // 3. Cursor is inside a pair: scan backwards from pos - 1 to find innermost enclosing pair
+    if (startPos == -1) {
+        int depth = 0;
+        for (int p = pos - 1; p >= 0; p--) {
+            char c = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, p, 0);
+            if (c == closeChar) {
+                depth++;
+            } else if (c == openChar) {
+                if (depth > 0) {
+                    depth--;
+                } else {
+                    int match = findMatchingForward(p);
+                    if (match >= pos) {
+                        startPos = p;
+                        endPos = match;
                         break;
-                    } else {
-                        int distance = (std::min)(abs(pos - searchStart), abs(pos - searchPos));
-                        if (distance < minDistance) {
-                            minDistance = distance;
-                            startPos = searchStart;
-                            endPos = searchPos;
-                        }
                     }
+                }
+            }
+        }
+    }
+
+    // 4. Fallback: Cursor is before a pair on the current line
+    if (startPos == -1) {
+        int line = (int)::SendMessage(hwndEdit, SCI_LINEFROMPOSITION, pos, 0);
+        int lineEnd = (int)::SendMessage(hwndEdit, SCI_GETLINEENDPOSITION, line, 0);
+        for (int p = pos + 1; p <= lineEnd; p++) {
+            char c = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, p, 0);
+            if (c == openChar) {
+                int match = findMatchingForward(p);
+                if (match != -1) {
+                    startPos = p;
+                    endPos = match;
                     break;
                 }
             }
-            searchPos++;
-        }
-
-        if (startPos != -1 && pos >= startPos && pos <= endPos) {
-            break;
         }
     }
 
     if (startPos == -1 || endPos == -1) {
         return { pos, pos };
+    }
+
+    // Handle count > 1 by expanding to enclosing outer pairs
+    for (int i = 1; i < count; i++) {
+        int nextStart = -1;
+        int nextEnd = -1;
+        int depth = 0;
+        for (int p = startPos - 1; p >= 0; p--) {
+            char c = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, p, 0);
+            if (c == closeChar) {
+                depth++;
+            } else if (c == openChar) {
+                if (depth > 0) {
+                    depth--;
+                } else {
+                    int match = findMatchingForward(p);
+                    if (match >= endPos) {
+                        nextStart = p;
+                        nextEnd = match;
+                        break;
+                    }
+                }
+            }
+        }
+        if (nextStart != -1 && nextEnd != -1) {
+            startPos = nextStart;
+            endPos = nextEnd;
+        } else {
+            break;
+        }
     }
 
     if (inner) {
@@ -400,7 +494,32 @@ bool TextObject::handleCustomTextObject(HWND hwndEdit, VimState& state, char op,
 }
 
 void TextObject::executeTextObjectOperation(HWND h, VimState& state, char op, int start, int end, int count) {
-    if (start >= end) return;
+    if (start > end) return;
+    if (start == end) {
+        if (op == 'c') {
+            ::SendMessage(h, SCI_SETCURRENTPOS, start, 0);
+            ::SendMessage(h, SCI_SETANCHOR, start, 0);
+            state.recordLastOp(OP_MOTION, count, 'c');
+            if (g_normalMode) g_normalMode->enterInsertMode();
+        } else if (op == 'v') {
+            state.mode = VISUAL;
+            state.isLineVisual = false;
+            state.isBlockVisual = false;
+            state.visualAnchor = start;
+            state.visualAnchorLine = (int)::SendMessage(h, SCI_LINEFROMPOSITION, start, 0);
+            ::SendMessage(h, SCI_SETSELECTIONMODE, SC_SEL_STREAM, 0);
+            ::SendMessage(h, SCI_SETANCHOR, start, 0);
+            ::SendMessage(h, SCI_SETCURRENTPOS, start, 0);
+            Utils::select(h, start, start);
+            state.lastVisualAnchor = start;
+            state.lastVisualCaret = start;
+            state.lastVisualWasBlock = false;
+            state.lastVisualWasLine = false;
+            Utils::setStatus(TEXT("-- VISUAL --"));
+            ::SendMessage(h, SCI_SCROLLCARET, 0, 0);
+        }
+        return;
+    }
 
     if (op == 'v') {
         state.mode = VISUAL;
@@ -408,9 +527,16 @@ void TextObject::executeTextObjectOperation(HWND h, VimState& state, char op, in
         state.isBlockVisual = false;
         state.visualAnchor = start;
         state.visualAnchorLine = (int)::SendMessage(h, SCI_LINEFROMPOSITION, start, 0);
+        ::SendMessage(h, SCI_SETSELECTIONMODE, SC_SEL_STREAM, 0);
         ::SendMessage(h, SCI_SETANCHOR, start, 0);
         ::SendMessage(h, SCI_SETCURRENTPOS, end, 0);
         Utils::select(h, start, end);
+        state.lastVisualAnchor = start;
+        state.lastVisualCaret = end;
+        state.lastVisualWasBlock = false;
+        state.lastVisualWasLine = false;
+        Utils::setStatus(TEXT("-- VISUAL --"));
+        ::SendMessage(h, SCI_SCROLLCARET, 0, 0);
         return;
     }
 

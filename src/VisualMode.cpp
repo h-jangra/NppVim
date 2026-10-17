@@ -637,28 +637,148 @@ void VisualMode::setupKeyMaps() {
      });
 
      k.set("iw", [this](HWND h, int c) {
+        state.repeatCount = c;
         TextObject t; t.apply(h, state, 'v', 'i', 'w');
     })
     .set("iW", [this](HWND h, int c) {
+        state.repeatCount = c;
         TextObject t; t.apply(h, state, 'v', 'i', 'W');
     })
     .set("aw", [this](HWND h, int c) {
+        state.repeatCount = c;
         TextObject t; t.apply(h, state, 'v', 'a', 'w');
     })
     .set("aW", [this](HWND h, int c) {
+        state.repeatCount = c;
         TextObject t; t.apply(h, state, 'v', 'a', 'W');
     })
     .set("ip", [this](HWND h, int c) {
+        state.repeatCount = c;
         TextObject t; t.apply(h, state, 'v', 'i', 'p');
     })
     .set("ap", [this](HWND h, int c) {
+        state.repeatCount = c;
         TextObject t; t.apply(h, state, 'v', 'a', 'p');
     })
     .set("is", [this](HWND h, int c) {
+        state.repeatCount = c;
         TextObject t; t.apply(h, state, 'v', 'i', 's');
     })
     .set("as", [this](HWND h, int c) {
+        state.repeatCount = c;
         TextObject t; t.apply(h, state, 'v', 'a', 's');
+    })
+    .set("i(", [this](HWND h, int c) {
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, 'v', 'i', '(');
+    })
+    .set("a(", [this](HWND h, int c) {
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, 'v', 'a', '(');
+    })
+    .set("i)", [this](HWND h, int c) {
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, 'v', 'i', '(');
+    })
+    .set("a)", [this](HWND h, int c) {
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, 'v', 'a', '(');
+    })
+    .set("ib", [this](HWND h, int c) {
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, 'v', 'i', '(');
+    })
+    .set("ab", [this](HWND h, int c) {
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, 'v', 'a', '(');
+    })
+    .set("i[", [this](HWND h, int c) {
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, 'v', 'i', '[');
+    })
+    .set("a[", [this](HWND h, int c) {
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, 'v', 'a', '[');
+    })
+    .set("i]", [this](HWND h, int c) {
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, 'v', 'i', '[');
+    })
+    .set("a]", [this](HWND h, int c) {
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, 'v', 'a', '[');
+    })
+    .set("i{", [this](HWND h, int c) {
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, 'v', 'i', '{');
+    })
+    .set("a{", [this](HWND h, int c) {
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, 'v', 'a', '{');
+    })
+    .set("i}", [this](HWND h, int c) {
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, 'v', 'i', '{');
+    })
+    .set("a}", [this](HWND h, int c) {
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, 'v', 'a', '{');
+    })
+    .set("iB", [this](HWND h, int c) {
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, 'v', 'i', '{');
+    })
+    .set("aB", [this](HWND h, int c) {
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, 'v', 'a', '{');
+    })
+    .set("i<", [this](HWND h, int c) {
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, 'v', 'i', '<');
+    })
+    .set("a<", [this](HWND h, int c) {
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, 'v', 'a', '<');
+    })
+    .set("i>", [this](HWND h, int c) {
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, 'v', 'i', '<');
+    })
+    .set("a>", [this](HWND h, int c) {
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, 'v', 'a', '<');
+    })
+    .set("i\"", [this](HWND h, int c) {
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, 'v', 'i', '"');
+    })
+    .set("a\"", [this](HWND h, int c) {
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, 'v', 'a', '"');
+    })
+    .set("i'", [this](HWND h, int c) {
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, 'v', 'i', '\'');
+    })
+    .set("a'", [this](HWND h, int c) {
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, 'v', 'a', '\'');
+    })
+    .set("i`", [this](HWND h, int c) {
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, 'v', 'i', '`');
+    })
+    .set("a`", [this](HWND h, int c) {
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, 'v', 'a', '`');
+    })
+    .set("it", [this](HWND h, int c) {
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, 'v', 'i', 't');
+    })
+    .set("at", [this](HWND h, int c) {
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, 'v', 'a', 't');
     });
 
     k.set("f", [this](HWND h, int c) {

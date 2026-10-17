@@ -469,62 +469,170 @@ void NormalMode::setupKeyMaps() {
     })
     .set("i(", "Inner parentheses", [this](HWND h, int c) {
         if (!state.opPending) return;
+        state.repeatCount = c;
         TextObject t; t.apply(h, state, state.opPending, 'i', '(');
         state.resetPending();
     })
     .set("a(", "Around parentheses", [this](HWND h, int c) {
         if (!state.opPending) return;
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, state.opPending, 'a', '(');
+        state.resetPending();
+    })
+    .set("i)", "Inner parentheses", [this](HWND h, int c) {
+        if (!state.opPending) return;
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, state.opPending, 'i', '(');
+        state.resetPending();
+    })
+    .set("a)", "Around parentheses", [this](HWND h, int c) {
+        if (!state.opPending) return;
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, state.opPending, 'a', '(');
+        state.resetPending();
+    })
+    .set("ib", "Inner parentheses", [this](HWND h, int c) {
+        if (!state.opPending) return;
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, state.opPending, 'i', '(');
+        state.resetPending();
+    })
+    .set("ab", "Around parentheses", [this](HWND h, int c) {
+        if (!state.opPending) return;
+        state.repeatCount = c;
         TextObject t; t.apply(h, state, state.opPending, 'a', '(');
         state.resetPending();
     })
     .set("i[", "Inner brackets", [this](HWND h, int c) {
         if (!state.opPending) return;
+        state.repeatCount = c;
         TextObject t; t.apply(h, state, state.opPending, 'i', '[');
         state.resetPending();
     })
     .set("a[", "Around brackets", [this](HWND h, int c) {
         if (!state.opPending) return;
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, state.opPending, 'a', '[');
+        state.resetPending();
+    })
+    .set("i]", "Inner brackets", [this](HWND h, int c) {
+        if (!state.opPending) return;
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, state.opPending, 'i', '[');
+        state.resetPending();
+    })
+    .set("a]", "Around brackets", [this](HWND h, int c) {
+        if (!state.opPending) return;
+        state.repeatCount = c;
         TextObject t; t.apply(h, state, state.opPending, 'a', '[');
         state.resetPending();
     })
     .set("i{", "Inner braces", [this](HWND h, int c) {
         if (!state.opPending) return;
+        state.repeatCount = c;
         TextObject t; t.apply(h, state, state.opPending, 'i', '{');
         state.resetPending();
     })
     .set("a{", "Around braces", [this](HWND h, int c) {
         if (!state.opPending) return;
+        state.repeatCount = c;
         TextObject t; t.apply(h, state, state.opPending, 'a', '{');
+        state.resetPending();
+    })
+    .set("i}", "Inner braces", [this](HWND h, int c) {
+        if (!state.opPending) return;
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, state.opPending, 'i', '{');
+        state.resetPending();
+    })
+    .set("a}", "Around braces", [this](HWND h, int c) {
+        if (!state.opPending) return;
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, state.opPending, 'a', '{');
+        state.resetPending();
+    })
+    .set("iB", "Inner braces", [this](HWND h, int c) {
+        if (!state.opPending) return;
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, state.opPending, 'i', '{');
+        state.resetPending();
+    })
+    .set("aB", "Around braces", [this](HWND h, int c) {
+        if (!state.opPending) return;
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, state.opPending, 'a', '{');
+        state.resetPending();
+    })
+    .set("i<", "Inner angle brackets", [this](HWND h, int c) {
+        if (!state.opPending) return;
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, state.opPending, 'i', '<');
+        state.resetPending();
+    })
+    .set("a<", "Around angle brackets", [this](HWND h, int c) {
+        if (!state.opPending) return;
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, state.opPending, 'a', '<');
+        state.resetPending();
+    })
+    .set("i>", "Inner angle brackets", [this](HWND h, int c) {
+        if (!state.opPending) return;
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, state.opPending, 'i', '<');
+        state.resetPending();
+    })
+    .set("a>", "Around angle brackets", [this](HWND h, int c) {
+        if (!state.opPending) return;
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, state.opPending, 'a', '<');
         state.resetPending();
     })
     .set("i\"", "Inner double quotes", [this](HWND h, int c) {
         if (!state.opPending) return;
+        state.repeatCount = c;
         TextObject t; t.apply(h, state, state.opPending, 'i', '"');
         state.resetPending();
     })
     .set("a\"", "Around double quotes", [this](HWND h, int c) {
         if (!state.opPending) return;
+        state.repeatCount = c;
         TextObject t; t.apply(h, state, state.opPending, 'a', '"');
         state.resetPending();
     })
     .set("i'", "Inner single quotes", [this](HWND h, int c) {
         if (!state.opPending) return;
+        state.repeatCount = c;
         TextObject t; t.apply(h, state, state.opPending, 'i', '\'');
         state.resetPending();
     })
     .set("a'", "Around single quotes", [this](HWND h, int c) {
         if (!state.opPending) return;
+        state.repeatCount = c;
         TextObject t; t.apply(h, state, state.opPending, 'a', '\'');
         state.resetPending();
     })
     .set("i`", "Inner backticks", [this](HWND h, int c) {
         if (!state.opPending) return;
+        state.repeatCount = c;
         TextObject t; t.apply(h, state, state.opPending, 'i', '`');
         state.resetPending();
     })
     .set("a`", "Around backticks", [this](HWND h, int c) {
         if (!state.opPending) return;
+        state.repeatCount = c;
         TextObject t; t.apply(h, state, state.opPending, 'a', '`');
+        state.resetPending();
+    })
+    .set("it", "Inner tag", [this](HWND h, int c) {
+        if (!state.opPending) return;
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, state.opPending, 'i', 't');
+        state.resetPending();
+    })
+    .set("at", "Around tag", [this](HWND h, int c) {
+        if (!state.opPending) return;
+        state.repeatCount = c;
+        TextObject t; t.apply(h, state, state.opPending, 'a', 't');
         state.resetPending();
     });
 

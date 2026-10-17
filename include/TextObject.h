@@ -15,7 +15,7 @@ private:
     static std::pair<int, int> getTextObjectBounds(HWND hwndEdit, TextObjectType objType, bool inner, int count);
     static std::pair<int, int> findSentenceBounds(HWND hwndEdit, int pos, bool inner);
     static std::pair<int, int> findParagraphBounds(HWND hwndEdit, int pos, bool inner);
-    static std::pair<int, int> findBracketBounds(HWND hwndEdit, int pos, char openChar, char closeChar, bool inner);
+    static std::pair<int, int> findBracketBounds(HWND hwndEdit, int pos, char openChar, char closeChar, bool inner, int count = 1);
     static std::pair<int, int> findTagBounds(HWND hwndEdit, int pos, bool inner);
     static std::pair<int, int> trimWhitespaceBounds(HWND hwndEdit, std::pair<int, int> bounds);
     static std::pair<int, int> expandToWordBoundaries(HWND hwndEdit, std::pair<int, int> bounds);

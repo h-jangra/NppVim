@@ -84,15 +84,26 @@ std::pair<int, int> Utils::findQuoteBounds(HWND hwndEdit, int pos, char quoteCha
 
     int startPos = -1;
     int endPos = -1;
-    int minDistance = lineEnd - lineStart;
+    int minDistance = lineEnd - lineStart + 1;
 
     bool inQuote = false;
     int quoteStart = -1;
 
+    auto isEscaped = [&](int p, int minBoundary) -> bool {
+        int backslashes = 0;
+        int b = p - 1;
+        while (b >= minBoundary && (char)::SendMessage(hwndEdit, SCI_GETCHARAT, b, 0) == '\\') {
+            backslashes++;
+            b--;
+        }
+        return (backslashes % 2 != 0);
+    };
+
+    // 1. Check current line first
     for (int i = lineStart; i <= lineEnd; i++) {
         char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, i, 0);
         
-        if (ch == quoteChar) {
+        if (ch == quoteChar && !isEscaped(i, lineStart)) {
             if (!inQuote) {
                 quoteStart = i;
                 inQuote = true;
@@ -112,11 +123,35 @@ std::pair<int, int> Utils::findQuoteBounds(HWND hwndEdit, int pos, char quoteCha
         }
     }
 
-    if (startPos == -1 || endPos == -1) {
-        return { -1, -1 };
+    if (startPos != -1 && endPos != -1) {
+        return { startPos, endPos };
     }
 
-    return { startPos, endPos };
+    // 2. Fallback: Search across multiple lines (e.g., template literals or multi-line strings)
+    int docLen = (int)::SendMessage(hwndEdit, SCI_GETTEXTLENGTH, 0, 0);
+    int qStart = -1;
+    for (int i = pos - 1; i >= 0; i--) {
+        char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, i, 0);
+        if (ch == quoteChar && !isEscaped(i, 0)) {
+            qStart = i;
+            break;
+        }
+    }
+
+    int qEnd = -1;
+    for (int i = pos; i < docLen; i++) {
+        char ch = (char)::SendMessage(hwndEdit, SCI_GETCHARAT, i, 0);
+        if (ch == quoteChar && !isEscaped(i, 0)) {
+            qEnd = i;
+            break;
+        }
+    }
+
+    if (qStart != -1 && qEnd != -1 && qStart < qEnd) {
+        return { qStart, qEnd };
+    }
+
+    return { -1, -1 };
 }
 
 void Utils::updateSearchHighlight(HWND hwndEdit, const std::string &searchTerm, int searchFlags)
