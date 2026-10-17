@@ -31,10 +31,15 @@ jobs:
             build_dir: build/x64
             dist_dir: dist/NppVim.x64
             suffix: x64
+          - name: amd64_arm64
+            cmake_arch: arm64
+            build_dir: build/arm64
+            dist_dir: dist/NppVim.arm64
+            suffix: arm64
 
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
 
     - name: Validate version
       shell: powershell
@@ -54,7 +59,7 @@ jobs:
       uses: lukka/get-cmake@v3.30.0
 
     - name: Setup MSVC Compiler
-      uses: ilammy/msvc-dev-cmd@v1
+      uses: TheMrMilchmann/setup-msvc-dev@v4
       with:
         arch: ${{ matrix.arch.name }}
 
@@ -90,7 +95,7 @@ jobs:
         directory: ${{ matrix.arch.dist_dir }}
 
     - name: Create Release / Upload
-      uses: softprops/action-gh-release@v2
+      uses: softprops/action-gh-release@v3
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
