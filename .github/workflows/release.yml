@@ -56,7 +56,7 @@ jobs:
         }
 
     - name: Setup CMake
-      uses: lukka/get-cmake@v3.30.0
+      uses: lukka/get-cmake@v4.4.4
 
     - name: Setup MSVC Compiler
       uses: TheMrMilchmann/setup-msvc-dev@v4
